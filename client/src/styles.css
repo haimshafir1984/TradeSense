@@ -301,6 +301,75 @@ select {
   overflow-x: auto;
 }
 
+.broker-menu-cell {
+  position: relative;
+  width: 1%;
+  white-space: nowrap;
+}
+
+.broker-menu-root {
+  position: relative;
+  display: inline-flex;
+}
+
+.open-broker-button {
+  border: 1px solid rgba(20, 33, 61, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.5rem 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.open-broker-button:hover {
+  background: rgba(11, 143, 106, 0.08);
+  border-color: rgba(10, 109, 89, 0.24);
+  transform: translateY(-1px);
+}
+
+.broker-menu {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  inset-inline-end: 0;
+  width: 240px;
+  padding: 0.8rem;
+  border: 1px solid rgba(20, 33, 61, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 250, 243, 0.98);
+  box-shadow: 0 22px 36px rgba(20, 33, 61, 0.16);
+  z-index: 12;
+}
+
+.broker-menu-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.broker-menu-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.broker-menu-item {
+  width: 100%;
+  border: 1px solid rgba(20, 33, 61, 0.08);
+  background: #fff;
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.72rem 0.8rem;
+  text-align: right;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.broker-menu-item:hover {
+  background: rgba(11, 143, 106, 0.08);
+  border-color: rgba(10, 109, 89, 0.18);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -363,6 +432,11 @@ th {
     inset-inline-end: auto;
     inset-inline-start: 0;
     width: min(260px, 70vw);
+  }
+
+  .broker-menu {
+    inset-inline-end: auto;
+    inset-inline-start: 0;
   }
 
   th,

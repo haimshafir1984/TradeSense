@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const exchangeOptions = [
   { value: 'NASDAQ', label: 'NASDAQ' },
@@ -45,9 +45,9 @@ const sectorOptions = [
 
 const marketCapOptions = [
   { value: 'any', label: 'הכול' },
-  { value: 'large', label: 'לארג׳ קאפ' },
-  { value: 'mid', label: 'מיד קאפ' },
-  { value: 'small', label: 'סמול קאפ' }
+  { value: 'large', label: 'Large Cap' },
+  { value: 'mid', label: 'Mid Cap' },
+  { value: 'small', label: 'Small Cap' }
 ];
 
 const volatilityOptions = [
@@ -55,6 +55,14 @@ const volatilityOptions = [
   { value: 'low', label: 'נמוכה' },
   { value: 'medium', label: 'בינונית' },
   { value: 'high', label: 'גבוהה' }
+];
+
+const BROKER_LINKS = [
+  { id: 'ibi', label: 'IBI Trade', url: 'https://www.ibi.co.il/solutions/trading/' },
+  { id: 'meitav', label: 'מיטב טרייד', url: 'https://www.meitav.co.il/trade/' },
+  { id: 'interactive', label: 'Interactive Israel', url: 'https://www.inter-il.com/client-portal/' },
+  { id: 'tradeon', label: 'TradeON', url: 'https://www.leumi.co.il/biz/Trade-On' },
+  { id: 'atrade', label: 'ATRADE', url: 'https://www.atrade.co.il/' }
 ];
 
 const initialFilters = {
@@ -87,6 +95,33 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
+  const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
+
+  useEffect(() => {
+    if (!openBrokerMenu) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (!event.target.closest('[data-broker-menu-root="true"]')) {
+        setOpenBrokerMenu(null);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setOpenBrokerMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [openBrokerMenu]);
 
   const handleFieldChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -107,6 +142,7 @@ function App() {
     setIsLoading(true);
     setError('');
     setHasSearched(true);
+    setOpenBrokerMenu(null);
 
     console.log('[TradeSense] Starting scan', form);
 
@@ -131,10 +167,16 @@ function App() {
       console.error('[TradeSense] Scan failed', requestError);
       setResults([]);
       setMeta(null);
+      setOpenBrokerMenu(null);
       setError(requestError.message);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleBrokerSelect = (url) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setOpenBrokerMenu(null);
   };
 
   const emptyStateMessage = isLoading
@@ -153,7 +195,8 @@ function App() {
           <p className="eyebrow">בורסה חכמה לסינון מניות</p>
           <h1>TradeSense</h1>
           <p className="hero-copy">
-            מנוע סריקה שמדרג מניות לפי שיטת השקעה, רמת סיכון ופילטרים מתקדמים על בסיס נתוני שוק אמיתיים.
+            מנוע סריקה שמדרג מניות לפי שיטת השקעה, רמת סיכון ופילטרים מתקדמים על בסיס
+            נתוני שוק אמיתיים.
           </p>
         </section>
 
@@ -207,7 +250,10 @@ function App() {
 
             <div className="strategy-info-list">
               {investmentMethodOptions.map((option) => (
-                <div key={option.value} className={`strategy-info-item ${form.strategy === option.value ? 'active' : ''}`}>
+                <div
+                  key={option.value}
+                  className={`strategy-info-item ${form.strategy === option.value ? 'active' : ''}`}
+                >
                   <span className="strategy-info-name">{option.shortLabel}</span>
                   <span className="tooltip-wrap" tabIndex="0" aria-label={option.description}>
                     i
@@ -269,7 +315,9 @@ function App() {
                     min="0"
                     step="0.1"
                     value={form.filters.minDividendYield}
-                    onChange={(event) => handleFilterChange('minDividendYield', event.target.value)}
+                    onChange={(event) =>
+                      handleFilterChange('minDividendYield', event.target.value)
+                    }
                     placeholder="למשל 2.5"
                   />
                 </Field>
@@ -350,8 +398,25 @@ function App() {
 
           {meta ? (
             <div className="result-meta-bar">
-              <span className={`source-badge ${meta.source === 'fmp' || meta.source === 'finnhub' ? 'live' : meta.source === 'fmp_partial' || meta.source === 'finnhub_partial' ? 'partial' : 'demo'}`}>
-                מקור נתונים: {meta.source === 'fmp' ? 'נתוני אמת (FMP)' : meta.source === 'fmp_partial' ? 'נתונים חיים חלקיים (FMP)' : meta.source === 'finnhub' ? 'נתוני אמת (Finnhub)' : meta.source === 'finnhub_partial' ? 'נתונים חיים חלקיים (Finnhub)' : 'נתוני דמו'}
+              <span
+                className={`source-badge ${
+                  meta.source === 'fmp' || meta.source === 'finnhub'
+                    ? 'live'
+                    : meta.source === 'fmp_partial' || meta.source === 'finnhub_partial'
+                      ? 'partial'
+                      : 'demo'
+                }`}
+              >
+                מקור נתונים:{' '}
+                {meta.source === 'fmp'
+                  ? 'נתוני אמת (FMP)'
+                  : meta.source === 'fmp_partial'
+                    ? 'נתונים חיים חלקיים (FMP)'
+                    : meta.source === 'finnhub'
+                      ? 'נתוני אמת (Finnhub)'
+                      : meta.source === 'finnhub_partial'
+                        ? 'נתונים חיים חלקיים (Finnhub)'
+                        : 'נתוני דמו'}
               </span>
             </div>
           ) : null}
@@ -365,12 +430,13 @@ function App() {
                   <th>אחוז התאמה</th>
                   <th>אסטרטגיה</th>
                   <th>הסבר קצר</th>
+                  <th>פתיחה</th>
                 </tr>
               </thead>
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="empty-state">
+                    <td colSpan="6" className="empty-state">
                       {emptyStateMessage}
                     </td>
                   </tr>
@@ -382,6 +448,42 @@ function App() {
                       <td>{result.matchScore}%</td>
                       <td>{result.strategyName}</td>
                       <td>{result.explanation}</td>
+                      <td className="broker-menu-cell">
+                        <div className="broker-menu-root" data-broker-menu-root="true">
+                          <button
+                            type="button"
+                            className="open-broker-button"
+                            onClick={() =>
+                              setOpenBrokerMenu((current) =>
+                                current === result.ticker ? null : result.ticker
+                              )
+                            }
+                            aria-expanded={openBrokerMenu === result.ticker}
+                            aria-haspopup="menu"
+                          >
+                            פתח
+                          </button>
+
+                          {openBrokerMenu === result.ticker ? (
+                            <div className="broker-menu" role="menu">
+                              <p className="broker-menu-title">בחר מערכת מסחר לפתיחה</p>
+                              <div className="broker-menu-list">
+                                {BROKER_LINKS.map((broker) => (
+                                  <button
+                                    key={broker.id}
+                                    type="button"
+                                    className="broker-menu-item"
+                                    onClick={() => handleBrokerSelect(broker.url)}
+                                    role="menuitem"
+                                  >
+                                    {broker.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}

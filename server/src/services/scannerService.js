@@ -1,5 +1,16 @@
 const { getMarketData } = require('./marketDataService');
 const { STRATEGY_LABELS, scoreStockByStrategy } = require('./strategies');
+const {
+  assessDataQuality,
+  validateResults,
+  computeConfidence,
+  assessCrossStrategyConfluence,
+  assessRiskOverlay,
+  buildSummary,
+  groupResults,
+  summarizeResultLayers
+} = require('./analysisService');
+const { enrichExplanation } = require('./explanationService');
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -15,11 +26,64 @@ async function analyzeMarket(request = {}) {
   });
 
   const { stocks, source } = await getMarketData(exchange);
+  const dataQuality = assessDataQuality({ stocks, source });
   const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters, risk));
   const scoredStocks = filteredStocks
     .map((stock) => scoreStockByStrategy(strategy, stock))
     .sort((left, right) => right.score - left.score)
     .slice(0, 10);
+  const validation = validateResults({ results: scoredStocks });
+  const confidenceScore = computeConfidence({
+    dataQuality,
+    validation,
+    results: scoredStocks,
+    source
+  });
+  const results = scoredStocks.map((stock) => {
+    const matchScore = Math.round(stock.score * 100);
+    const deterministicExplanation = stock.explanation;
+    const confluence = assessCrossStrategyConfluence({
+      stock,
+      selectedStrategy: strategy
+    });
+    const riskOverlay = assessRiskOverlay({
+      stock,
+      dataQuality,
+      strategy
+    });
+
+    return {
+      ticker: stock.ticker,
+      companyName: stock.companyName,
+      matchScore,
+      strategyName: STRATEGY_LABELS[strategy] || STRATEGY_LABELS.micha_stocks,
+      explanation: deterministicExplanation,
+      enrichedExplanation: enrichExplanation({
+        stock,
+        strategy,
+        deterministicExplanation,
+        dataQuality,
+        confluence,
+        riskOverlay
+      }),
+      confidenceScore,
+      dataSource: stock.data_source || source,
+      confluence,
+      riskOverlay,
+      volatility: round(stock.volatility, 4),
+      market_cap: Math.round(stock.market_cap)
+    };
+  });
+  const layerSummary = summarizeResultLayers(results);
+  const summary = buildSummary({
+    results,
+    confidenceScore,
+    dataQuality,
+    validation,
+    confluenceSummary: layerSummary.confluence,
+    riskSummary: layerSummary.risk
+  });
+  const groups = groupResults(results);
 
   console.log('[analyze] Completed scan', {
     exchange,
@@ -31,20 +95,23 @@ async function analyzeMarket(request = {}) {
   });
 
   return {
-    results: scoredStocks.map((stock) => ({
-      ticker: stock.ticker,
-      companyName: stock.companyName,
-      matchScore: Math.round(stock.score * 100),
-      strategyName: STRATEGY_LABELS[strategy] || STRATEGY_LABELS.micha_stocks,
-      explanation: stock.explanation
-    })),
+    results,
     meta: {
       exchange,
       strategy,
       risk,
       source,
       analyzedCount: filteredStocks.length,
-      returnedCount: Math.min(scoredStocks.length, 10)
+      returnedCount: Math.min(scoredStocks.length, 10),
+      confidenceScore
+    },
+    analysis: {
+      dataQuality,
+      validation,
+      confidenceScore,
+      overlays: layerSummary,
+      summary,
+      groups
     }
   };
 }
@@ -162,6 +229,11 @@ function matchesRisk(stock, risk) {
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function round(value, digits) {
+  const factor = 10 ** digits;
+  return Math.round(Number(value || 0) * factor) / factor;
 }
 
 module.exports = {
