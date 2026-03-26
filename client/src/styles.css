@@ -110,6 +110,11 @@ select {
   padding: 1.5rem;
 }
 
+.portfolio-card {
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
 .section-head {
   display: flex;
   justify-content: space-between;
@@ -289,6 +294,26 @@ select {
   cursor: progress;
 }
 
+.submit-button.small {
+  width: fit-content;
+  padding: 0.85rem 1rem;
+}
+
+.ghost-button {
+  border: 1px solid rgba(20, 33, 61, 0.12);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ghost-button:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
 .error-box {
   margin: 0;
   padding: 0.9rem 1rem;
@@ -299,6 +324,96 @@ select {
 
 .results-wrapper {
   overflow-x: auto;
+}
+
+.portfolio-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.portfolio-summary-grid.secondary {
+  margin-bottom: 1.25rem;
+}
+
+.summary-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid rgba(20, 33, 61, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.summary-card-positive {
+  border-color: rgba(11, 143, 106, 0.2);
+}
+
+.summary-card-negative {
+  border-color: rgba(184, 53, 53, 0.18);
+}
+
+.summary-label,
+.summary-caption,
+.cell-subtext {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.summary-value {
+  font-size: 1.2rem;
+}
+
+.portfolio-forms-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.inset-card {
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.42);
+  border-radius: 22px;
+}
+
+.watchlist-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portfolio-section + .portfolio-section {
+  margin-top: 1.25rem;
+}
+
+.table-action-button {
+  border: 1px solid rgba(20, 33, 61, 0.1);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+}
+
+.table-action-button:hover:not(:disabled) {
+  border-color: rgba(10, 109, 89, 0.2);
+  background: rgba(11, 143, 106, 0.08);
+}
+
+.value-tone {
+  font-weight: 700;
+}
+
+.value-tone.positive {
+  color: #0a6d59;
+}
+
+.value-tone.negative {
+  color: #8a2020;
+}
+
+.value-tone.neutral {
+  color: var(--text);
 }
 
 .broker-menu-cell {
@@ -402,6 +517,11 @@ th {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .portfolio-summary-grid,
+  .portfolio-forms-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .section-head {
     flex-direction: column;
     align-items: start;
@@ -424,7 +544,10 @@ th {
   .grid-secondary,
   .toggle-grid,
   .price-range,
-  .strategy-info-list {
+  .strategy-info-list,
+  .portfolio-summary-grid,
+  .portfolio-forms-grid,
+  .watchlist-form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -43,6 +43,31 @@ const STOCK_UNIVERSE = {
   ]
 };
 
+function getTickerContext(ticker) {
+  const normalizedTicker = String(ticker || '').trim().toUpperCase();
+
+  for (const [exchange, entries] of Object.entries(STOCK_UNIVERSE)) {
+    const match = entries.find(([symbol]) => symbol === normalizedTicker);
+
+    if (match) {
+      return {
+        exchange,
+        ticker: match[0],
+        companyName: match[1],
+        sector: match[2]
+      };
+    }
+  }
+
+  return {
+    exchange: 'NASDAQ',
+    ticker: normalizedTicker,
+    companyName: normalizedTicker,
+    sector: 'Unknown'
+  };
+}
+
 module.exports = {
-  STOCK_UNIVERSE
+  STOCK_UNIVERSE,
+  getTickerContext
 };

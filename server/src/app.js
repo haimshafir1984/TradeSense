@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const analyzeRouter = require('./routes/analyze');
+const portfolioRouter = require('./routes/portfolio');
 
 const app = express();
 
@@ -16,5 +17,6 @@ app.get('/api/health', (_request, response) => {
 });
 
 app.use('/api/analyze', analyzeRouter);
+app.use('/api/portfolio', portfolioRouter);
 
 module.exports = app;

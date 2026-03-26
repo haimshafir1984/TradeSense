@@ -1,4 +1,4 @@
-const { STOCK_UNIVERSE } = require('../data/universe');
+const { STOCK_UNIVERSE, getTickerContext } = require('../data/universe');
 
 function getExchangeSymbols(exchange) {
   return STOCK_UNIVERSE[exchange] || STOCK_UNIVERSE.NASDAQ;
@@ -37,6 +37,49 @@ async function getMarketData(exchange) {
     stocks: demoStocks,
     source: 'demo'
   };
+}
+
+async function getStockSnapshot(ticker) {
+  const context = getTickerContext(ticker);
+  const mode = (process.env.DATA_MODE || 'fmp').toLowerCase();
+
+  if (mode === 'fmp' && process.env.FMP_API_KEY) {
+    const to = new Date();
+    const from = new Date();
+    from.setFullYear(from.getFullYear() - 1);
+    const snapshot = await getBestEffortFmpStock(
+      context.exchange,
+      context.ticker,
+      context.companyName,
+      context.sector,
+      process.env.FMP_API_KEY,
+      from.toISOString().slice(0, 10),
+      to.toISOString().slice(0, 10)
+    );
+
+    if (snapshot) {
+      return snapshot;
+    }
+  }
+
+  if (mode === 'finnhub' && process.env.FINNHUB_API_KEY) {
+    const snapshot = await getBestEffortFinnhubStock(
+      context.exchange,
+      context.ticker,
+      context.companyName,
+      context.sector
+    );
+
+    if (snapshot) {
+      return snapshot;
+    }
+  }
+
+  return createDemoStock(context.exchange, context.ticker, context.companyName, context.sector);
+}
+
+async function getStockSnapshots(tickers = []) {
+  return Promise.all(tickers.map((ticker) => getStockSnapshot(ticker)));
 }
 
 async function getFmpData(exchange, entries) {
@@ -422,5 +465,7 @@ function clamp(value) {
 }
 
 module.exports = {
-  getMarketData
+  getMarketData,
+  getStockSnapshot,
+  getStockSnapshots
 };

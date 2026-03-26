@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import PortfolioSection from './components/PortfolioSection';
 
 const exchangeOptions = [
   { value: 'NASDAQ', label: 'NASDAQ' },
@@ -146,14 +147,10 @@ function App() {
     setHasSearched(true);
     setOpenBrokerMenu(null);
 
-    console.log('[TradeSense] Starting scan', form);
-
     try {
       const response = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
       });
 
@@ -162,11 +159,9 @@ function App() {
       }
 
       const data = await response.json();
-      console.log('[TradeSense] Scan response', data);
       setResults(data.results ?? []);
       setMeta(data.meta ?? null);
     } catch (requestError) {
-      console.error('[TradeSense] Scan failed', requestError);
       setResults([]);
       setMeta(null);
       setOpenBrokerMenu(null);
@@ -174,11 +169,6 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleBrokerSelect = (url) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
-    setOpenBrokerMenu(null);
   };
 
   const emptyStateMessage = isLoading
@@ -211,40 +201,25 @@ function App() {
           <form className="scanner-form" onSubmit={handleSubmit}>
             <div className="grid grid-primary">
               <Field label="בורסה">
-                <select
-                  value={form.exchange}
-                  onChange={(event) => handleFieldChange('exchange', event.target.value)}
-                >
+                <select value={form.exchange} onChange={(event) => handleFieldChange('exchange', event.target.value)}>
                   {exchangeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </Field>
 
               <Field label="רמת סיכון">
-                <select
-                  value={form.risk}
-                  onChange={(event) => handleFieldChange('risk', event.target.value)}
-                >
+                <select value={form.risk} onChange={(event) => handleFieldChange('risk', event.target.value)}>
                   {riskOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </Field>
 
               <Field label="שיטת השקעה">
-                <select
-                  value={form.strategy}
-                  onChange={(event) => handleFieldChange('strategy', event.target.value)}
-                >
+                <select value={form.strategy} onChange={(event) => handleFieldChange('strategy', event.target.value)}>
                   {investmentMethodOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </Field>
@@ -252,10 +227,7 @@ function App() {
 
             <div className="strategy-info-list">
               {investmentMethodOptions.map((option) => (
-                <div
-                  key={option.value}
-                  className={`strategy-info-item ${form.strategy === option.value ? 'active' : ''}`}
-                >
+                <div key={option.value} className={`strategy-info-item ${form.strategy === option.value ? 'active' : ''}`}>
                   <span className="strategy-info-name">{option.shortLabel}</span>
                   <span className="tooltip-wrap" tabIndex="0" aria-label={option.description}>
                     i
@@ -273,40 +245,25 @@ function App() {
 
               <div className="grid grid-secondary">
                 <Field label="סקטור">
-                  <select
-                    value={form.filters.sector}
-                    onChange={(event) => handleFilterChange('sector', event.target.value)}
-                  >
+                  <select value={form.filters.sector} onChange={(event) => handleFilterChange('sector', event.target.value)}>
                     {sectorOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
+                      <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
                 </Field>
 
                 <Field label="שווי שוק">
-                  <select
-                    value={form.filters.marketCap}
-                    onChange={(event) => handleFilterChange('marketCap', event.target.value)}
-                  >
+                  <select value={form.filters.marketCap} onChange={(event) => handleFilterChange('marketCap', event.target.value)}>
                     {marketCapOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
+                      <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
                 </Field>
 
                 <Field label="תנודתיות">
-                  <select
-                    value={form.filters.volatility}
-                    onChange={(event) => handleFilterChange('volatility', event.target.value)}
-                  >
+                  <select value={form.filters.volatility} onChange={(event) => handleFilterChange('volatility', event.target.value)}>
                     {volatilityOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
+                      <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
                 </Field>
@@ -317,9 +274,7 @@ function App() {
                     min="0"
                     step="0.1"
                     value={form.filters.minDividendYield}
-                    onChange={(event) =>
-                      handleFilterChange('minDividendYield', event.target.value)
-                    }
+                    onChange={(event) => handleFilterChange('minDividendYield', event.target.value)}
                     placeholder="למשל 2.5"
                   />
                 </Field>
@@ -357,26 +312,10 @@ function App() {
               </div>
 
               <div className="toggle-grid">
-                <Checkbox
-                  label="דיבידנד בלבד"
-                  checked={form.filters.dividendOnly}
-                  onChange={(checked) => handleFilterChange('dividendOnly', checked)}
-                />
-                <Checkbox
-                  label="נפח חריג"
-                  checked={form.filters.unusualVolume}
-                  onChange={(checked) => handleFilterChange('unusualVolume', checked)}
-                />
-                <Checkbox
-                  label="רכישות מוסדיות"
-                  checked={form.filters.institutionalBuying}
-                  onChange={(checked) => handleFilterChange('institutionalBuying', checked)}
-                />
-                <Checkbox
-                  label="רכישות פנים"
-                  checked={form.filters.insiderBuying}
-                  onChange={(checked) => handleFilterChange('insiderBuying', checked)}
-                />
+                <Checkbox label="דיבידנד בלבד" checked={form.filters.dividendOnly} onChange={(checked) => handleFilterChange('dividendOnly', checked)} />
+                <Checkbox label="נפח חריג" checked={form.filters.unusualVolume} onChange={(checked) => handleFilterChange('unusualVolume', checked)} />
+                <Checkbox label="רכישות מוסדיות" checked={form.filters.institutionalBuying} onChange={(checked) => handleFilterChange('institutionalBuying', checked)} />
+                <Checkbox label="רכישות פנים" checked={form.filters.insiderBuying} onChange={(checked) => handleFilterChange('insiderBuying', checked)} />
               </div>
             </div>
 
@@ -400,26 +339,7 @@ function App() {
 
           {meta ? (
             <div className="result-meta-bar">
-              <span
-                className={`source-badge ${
-                  meta.source === 'fmp' || meta.source === 'finnhub'
-                    ? 'live'
-                    : meta.source === 'fmp_partial' || meta.source === 'finnhub_partial'
-                      ? 'partial'
-                      : 'demo'
-                }`}
-              >
-                מקור נתונים:{' '}
-                {meta.source === 'fmp'
-                  ? 'נתוני אמת (FMP)'
-                  : meta.source === 'fmp_partial'
-                    ? 'נתונים חיים חלקיים (FMP)'
-                    : meta.source === 'finnhub'
-                      ? 'נתוני אמת (Finnhub)'
-                      : meta.source === 'finnhub_partial'
-                        ? 'נתונים חיים חלקיים (Finnhub)'
-                        : 'נתוני דמו'}
-              </span>
+              <span className={`source-badge ${sourceClassName(meta.source)}`}>מקור נתונים: {sourceLabel(meta.source)}</span>
             </div>
           ) : null}
 
@@ -438,9 +358,7 @@ function App() {
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="empty-state">
-                      {emptyStateMessage}
-                    </td>
+                    <td colSpan="6" className="empty-state">{emptyStateMessage}</td>
                   </tr>
                 ) : (
                   results.map((result) => (
@@ -451,40 +369,12 @@ function App() {
                       <td>{result.strategyName}</td>
                       <td>{result.explanation}</td>
                       <td className="broker-menu-cell">
-                        <div className="broker-menu-root" data-broker-menu-root="true">
-                          <button
-                            type="button"
-                            className="open-broker-button"
-                            onClick={() =>
-                              setOpenBrokerMenu((current) =>
-                                current === result.ticker ? null : result.ticker
-                              )
-                            }
-                            aria-expanded={openBrokerMenu === result.ticker}
-                            aria-haspopup="menu"
-                          >
-                            פתח
-                          </button>
-
-                          {openBrokerMenu === result.ticker ? (
-                            <div className="broker-menu" role="menu">
-                              <p className="broker-menu-title">בחר מערכת מסחר לפתיחה</p>
-                              <div className="broker-menu-list">
-                                {BROKER_LINKS.map((broker) => (
-                                  <button
-                                    key={broker.id}
-                                    type="button"
-                                    className="broker-menu-item"
-                                    onClick={() => handleBrokerSelect(broker.url)}
-                                    role="menuitem"
-                                  >
-                                    {broker.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
+                        <BrokerMenu
+                          isOpen={openBrokerMenu === result.ticker}
+                          onToggle={() =>
+                            setOpenBrokerMenu((current) => (current === result.ticker ? null : result.ticker))
+                          }
+                        />
                       </td>
                     </tr>
                   ))
@@ -493,7 +383,38 @@ function App() {
             </table>
           </div>
         </section>
+
+        <PortfolioSection apiBaseUrl={API_BASE_URL} />
       </main>
+    </div>
+  );
+}
+
+function BrokerMenu({ isOpen, onToggle }) {
+  return (
+    <div className="broker-menu-root" data-broker-menu-root="true">
+      <button type="button" className="open-broker-button" onClick={onToggle} aria-expanded={isOpen} aria-haspopup="menu">
+        פתח
+      </button>
+
+      {isOpen ? (
+        <div className="broker-menu" role="menu">
+          <p className="broker-menu-title">בחר מערכת מסחר לפתיחה</p>
+          <div className="broker-menu-list">
+            {BROKER_LINKS.map((broker) => (
+              <button
+                key={broker.id}
+                type="button"
+                className="broker-menu-item"
+                role="menuitem"
+                onClick={() => window.open(broker.url, '_blank', 'noopener,noreferrer')}
+              >
+                {broker.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -510,14 +431,24 @@ function Field({ label, children }) {
 function Checkbox({ label, checked, onChange }) {
   return (
     <label className="checkbox">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>{label}</span>
     </label>
   );
+}
+
+function sourceClassName(source) {
+  if (source === 'fmp' || source === 'finnhub') return 'live';
+  if (source === 'fmp_partial' || source === 'finnhub_partial') return 'partial';
+  return 'demo';
+}
+
+function sourceLabel(source) {
+  if (source === 'fmp') return 'נתוני אמת (FMP)';
+  if (source === 'fmp_partial') return 'נתונים חיים חלקיים (FMP)';
+  if (source === 'finnhub') return 'נתוני אמת (Finnhub)';
+  if (source === 'finnhub_partial') return 'נתונים חיים חלקיים (Finnhub)';
+  return 'נתוני דמו';
 }
 
 export default App;
