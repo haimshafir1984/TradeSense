@@ -16,22 +16,24 @@ const riskOptions = [
 const investmentMethodOptions = [
   {
     value: 'micha_stocks',
-    label: 'השקעה לטווח ארוך - Micha Stocks',
-    shortLabel: 'Micha Stocks',
+    label: "השקעה לטווח ארוך - William O'Neil",
+    shortLabel: "William O'Neil",
     description:
-      'שיטת השקעה לטווח ארוך המתמקדת במניות עם מגמה חיובית חזקה ושילוב של ניתוח טכני ופונדמנטלי.'
+      'שיטת השקעה לטווח ארוך המשלבת מגמה חיובית, חוזק יחסי, הובלת שוק וקרבה למניות איכות עם בסיס פונדמנטלי חזק.'
   },
   {
     value: 'mark_minervini',
     label: 'מסחר לטווח קצר - Mark Minervini',
     shortLabel: 'Mark Minervini',
-    description: 'שיטת מסחר לטווח קצר המתמקדת במניות עם מומנטום חזק ופריצות טכניות.'
+    description:
+      'שיטת מסחר לטווח קצר המתמקדת במניות עם מומנטום חזק, חוזק יחסי גבוה ופריצות טכניות איכותיות.'
   },
   {
     value: 'ross_cameron',
-    label: 'מסחר יומי - Ross Cameron',
-    shortLabel: 'Ross Cameron',
-    description: 'שיטת מסחר יומי המתמקדת במניות עם תנודתיות גבוהה ונפח מסחר חריג.'
+    label: 'מסחר יומי - Linda Bradford Raschke',
+    shortLabel: 'Linda Raschke',
+    description:
+      'שיטת מסחר יומי המתמקדת ב-price action, מומנטום קצר טווח, נפח חריג ותגובה מהירה למבנה המחיר.'
   }
 ];
 
@@ -95,6 +97,7 @@ function App() {
   });
   const [results, setResults] = useState([]);
   const [meta, setMeta] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
@@ -161,9 +164,11 @@ function App() {
       const data = await response.json();
       setResults(data.results ?? []);
       setMeta(data.meta ?? null);
+      setAnalysis(data.analysis ?? null);
     } catch (requestError) {
       setResults([]);
       setMeta(null);
+      setAnalysis(null);
       setOpenBrokerMenu(null);
       setError(requestError.message);
     } finally {
@@ -187,8 +192,7 @@ function App() {
           <p className="eyebrow">בורסה חכמה לסינון מניות</p>
           <h1>TradeSense</h1>
           <p className="hero-copy">
-            מנוע סריקה שמדרג מניות לפי שיטת השקעה, רמת סיכון ופילטרים מתקדמים על בסיס
-            נתוני שוק אמיתיים.
+            מנוע סריקה שמדרג מניות לפי שיטת השקעה, רמת סיכון ופילטרים מתקדמים על בסיס נתוני שוק אמיתיים.
           </p>
         </section>
 
@@ -203,7 +207,9 @@ function App() {
               <Field label="בורסה">
                 <select value={form.exchange} onChange={(event) => handleFieldChange('exchange', event.target.value)}>
                   {exchangeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </Field>
@@ -211,7 +217,9 @@ function App() {
               <Field label="רמת סיכון">
                 <select value={form.risk} onChange={(event) => handleFieldChange('risk', event.target.value)}>
                   {riskOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </Field>
@@ -219,7 +227,9 @@ function App() {
               <Field label="שיטת השקעה">
                 <select value={form.strategy} onChange={(event) => handleFieldChange('strategy', event.target.value)}>
                   {investmentMethodOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </Field>
@@ -247,7 +257,9 @@ function App() {
                 <Field label="סקטור">
                   <select value={form.filters.sector} onChange={(event) => handleFilterChange('sector', event.target.value)}>
                     {sectorOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -255,7 +267,9 @@ function App() {
                 <Field label="שווי שוק">
                   <select value={form.filters.marketCap} onChange={(event) => handleFilterChange('marketCap', event.target.value)}>
                     {marketCapOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -263,7 +277,9 @@ function App() {
                 <Field label="תנודתיות">
                   <select value={form.filters.volatility} onChange={(event) => handleFilterChange('volatility', event.target.value)}>
                     {volatilityOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -340,6 +356,19 @@ function App() {
           {meta ? (
             <div className="result-meta-bar">
               <span className={`source-badge ${sourceClassName(meta.source)}`}>מקור נתונים: {sourceLabel(meta.source)}</span>
+              {analysis?.marketRegime ? (
+                <>
+                  <span className={`source-badge regime ${regimeClassName(analysis.marketRegime.regime)}`}>
+                    מצב שוק: {analysis.marketRegime.label}
+                  </span>
+                  <span className={`source-badge fit ${fitClassName(analysis.marketRegime.strategyFit?.level)}`}>
+                    התאמת אסטרטגיה: {analysis.marketRegime.strategyFit?.label || 'בינונית'}
+                  </span>
+                </>
+              ) : null}
+              {analysis?.marketRegime?.strategyFit?.note ? (
+                <p className="market-regime-note">{analysis.marketRegime.strategyFit.note}</p>
+              ) : null}
             </div>
           ) : null}
 
@@ -358,7 +387,9 @@ function App() {
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="empty-state">{emptyStateMessage}</td>
+                    <td colSpan="6" className="empty-state">
+                      {emptyStateMessage}
+                    </td>
                   </tr>
                 ) : (
                   results.map((result) => (
@@ -366,14 +397,19 @@ function App() {
                       <td>{result.ticker}</td>
                       <td>{result.companyName}</td>
                       <td>{result.matchScore}%</td>
-                      <td>{result.strategyName}</td>
-                      <td>{result.explanation}</td>
+                      <td>
+                        <div>{result.strategyName}</div>
+                        <div className="cell-subtext">ראשי: {result.expertSupport?.primary?.shortName || 'האסטרטגיה הנבחרת'}</div>
+                      </td>
+                      <td>
+                        <div>{result.explanation}</div>
+                        <ExpertSupportSummary expertSupport={result.expertSupport} />
+                      </td>
                       <td className="broker-menu-cell">
                         <BrokerMenu
                           isOpen={openBrokerMenu === result.ticker}
-                          onToggle={() =>
-                            setOpenBrokerMenu((current) => (current === result.ticker ? null : result.ticker))
-                          }
+                          onToggle={() => setOpenBrokerMenu((current) => (current === result.ticker ? null : result.ticker))}
+                          onClose={() => setOpenBrokerMenu(null)}
                         />
                       </td>
                     </tr>
@@ -390,7 +426,29 @@ function App() {
   );
 }
 
-function BrokerMenu({ isOpen, onToggle }) {
+function ExpertSupportSummary({ expertSupport }) {
+  const supporters = expertSupport?.supporters || [];
+
+  if (!supporters.length) {
+    return <div className="cell-subtext expert-support-empty">ללא תמיכה חזקה נוספת</div>;
+  }
+
+  return (
+    <div className="expert-support-row">
+      <span className="cell-subtext">תמיכה:</span>
+      <div className="expert-support-badges">
+        {supporters.slice(0, 2).map((expert) => (
+          <span key={expert.id} className="expert-support-badge">
+            {expert.shortName}
+          </span>
+        ))}
+        {supporters.length > 2 ? <span className="expert-support-badge">+{supporters.length - 2}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function BrokerMenu({ isOpen, onToggle, onClose }) {
   return (
     <div className="broker-menu-root" data-broker-menu-root="true">
       <button type="button" className="open-broker-button" onClick={onToggle} aria-expanded={isOpen} aria-haspopup="menu">
@@ -407,7 +465,10 @@ function BrokerMenu({ isOpen, onToggle }) {
                 type="button"
                 className="broker-menu-item"
                 role="menuitem"
-                onClick={() => window.open(broker.url, '_blank', 'noopener,noreferrer')}
+                onClick={() => {
+                  window.open(broker.url, '_blank', 'noopener,noreferrer');
+                  onClose();
+                }}
               >
                 {broker.label}
               </button>
@@ -449,6 +510,19 @@ function sourceLabel(source) {
   if (source === 'finnhub') return 'נתוני אמת (Finnhub)';
   if (source === 'finnhub_partial') return 'נתונים חיים חלקיים (Finnhub)';
   return 'נתוני דמו';
+}
+
+function regimeClassName(regime) {
+  if (regime === 'bullish') return 'live';
+  if (regime === 'volatile') return 'partial';
+  if (regime === 'bearish') return 'demo';
+  return '';
+}
+
+function fitClassName(level) {
+  if (level === 'high') return 'live';
+  if (level === 'low') return 'demo';
+  return 'partial';
 }
 
 export default App;

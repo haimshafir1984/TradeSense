@@ -1,5 +1,5 @@
-const { getMarketData } = require('./marketDataService');
-const { STRATEGY_LABELS, scoreStockByStrategy } = require('./strategies');
+const { getMarketData, getStockSnapshots } = require('./marketDataService');
+const { scoreStockByStrategy } = require('./strategies');
 const {
   assessDataQuality,
   validateResults,
@@ -11,6 +11,16 @@ const {
   summarizeResultLayers
 } = require('./analysisService');
 const { enrichExplanation } = require('./explanationService');
+const {
+  STRATEGY_DISPLAY_LABELS,
+  assessExpertSupport,
+  summarizeExpertSupport
+} = require('./expertSupportService');
+const {
+  MARKET_BENCHMARKS,
+  assessMarketRegime,
+  computeRegimeAdjustedConfidence
+} = require('./marketRegimeService');
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -25,7 +35,10 @@ async function analyzeMarket(request = {}) {
     filters
   });
 
-  const { stocks, source } = await getMarketData(exchange);
+  const [{ stocks, source }, benchmarkSnapshots] = await Promise.all([
+    getMarketData(exchange),
+    getStockSnapshots(MARKET_BENCHMARKS)
+  ]);
   const dataQuality = assessDataQuality({ stocks, source });
   const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters, risk));
   const scoredStocks = filteredStocks
@@ -39,10 +52,19 @@ async function analyzeMarket(request = {}) {
     results: scoredStocks,
     source
   });
+  const marketRegime = assessMarketRegime({
+    snapshots: benchmarkSnapshots,
+    selectedStrategy: strategy
+  });
+  const adjustedConfidenceScore = computeRegimeAdjustedConfidence(confidenceScore, marketRegime);
   const results = scoredStocks.map((stock) => {
     const matchScore = Math.round(stock.score * 100);
     const deterministicExplanation = stock.explanation;
     const confluence = assessCrossStrategyConfluence({
+      stock,
+      selectedStrategy: strategy
+    });
+    const expertSupport = assessExpertSupport({
       stock,
       selectedStrategy: strategy
     });
@@ -56,7 +78,7 @@ async function analyzeMarket(request = {}) {
       ticker: stock.ticker,
       companyName: stock.companyName,
       matchScore,
-      strategyName: STRATEGY_LABELS[strategy] || STRATEGY_LABELS.micha_stocks,
+      strategyName: STRATEGY_DISPLAY_LABELS[strategy] || STRATEGY_DISPLAY_LABELS.micha_stocks,
       explanation: deterministicExplanation,
       enrichedExplanation: enrichExplanation({
         stock,
@@ -64,10 +86,12 @@ async function analyzeMarket(request = {}) {
         deterministicExplanation,
         dataQuality,
         confluence,
-        riskOverlay
+        riskOverlay,
+        expertSupport
       }),
-      confidenceScore,
+      confidenceScore: adjustedConfidenceScore,
       dataSource: stock.data_source || source,
+      expertSupport,
       confluence,
       riskOverlay,
       volatility: round(stock.volatility, 4),
@@ -75,13 +99,15 @@ async function analyzeMarket(request = {}) {
     };
   });
   const layerSummary = summarizeResultLayers(results);
+  const expertSupportSummary = summarizeExpertSupport(results);
   const summary = buildSummary({
     results,
-    confidenceScore,
+    confidenceScore: adjustedConfidenceScore,
     dataQuality,
     validation,
     confluenceSummary: layerSummary.confluence,
-    riskSummary: layerSummary.risk
+    riskSummary: layerSummary.risk,
+    expertSupportSummary
   });
   const groups = groupResults(results);
 
@@ -103,13 +129,19 @@ async function analyzeMarket(request = {}) {
       source,
       analyzedCount: filteredStocks.length,
       returnedCount: Math.min(scoredStocks.length, 10),
-      confidenceScore
+      confidenceScore: adjustedConfidenceScore,
+      baseConfidenceScore: confidenceScore
     },
     analysis: {
       dataQuality,
       validation,
-      confidenceScore,
-      overlays: layerSummary,
+      confidenceScore: adjustedConfidenceScore,
+      baseConfidenceScore: confidenceScore,
+      marketRegime,
+      overlays: {
+        ...layerSummary,
+        expertSupport: expertSupportSummary
+      },
       summary,
       groups
     }

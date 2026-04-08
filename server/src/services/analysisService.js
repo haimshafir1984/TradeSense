@@ -251,7 +251,8 @@ function buildSummary({
   dataQuality,
   validation,
   confluenceSummary,
-  riskSummary
+  riskSummary,
+  expertSupportSummary
 }) {
   return {
     totalResults: results.length,
@@ -259,7 +260,8 @@ function buildSummary({
     dataIssuesPresent: dataQuality.issues.length > 0,
     validationWarningsPresent: validation.warnings.length > 0,
     highConfluenceCount: confluenceSummary?.high || 0,
-    highRiskCount: riskSummary?.high || 0
+    highRiskCount: riskSummary?.high || 0,
+    supportedByExpertsCount: (expertSupportSummary?.strong || 0) + (expertSupportSummary?.moderate || 0)
   };
 }
 

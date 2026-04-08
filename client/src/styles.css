@@ -361,6 +361,10 @@ select {
   font-size: 0.9rem;
 }
 
+.cell-subtext {
+  margin-top: 0.35rem;
+}
+
 .summary-value {
   font-size: 1.2rem;
 }
@@ -485,6 +489,35 @@ select {
   border-color: rgba(10, 109, 89, 0.18);
 }
 
+.expert-support-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.expert-support-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.expert-support-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.22rem 0.58rem;
+  background: rgba(11, 143, 106, 0.1);
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.expert-support-empty {
+  display: inline-block;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -569,6 +602,10 @@ th {
 }
 .result-meta-bar {
   margin-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
 }
 
 .source-badge {
@@ -593,4 +630,11 @@ th {
 .source-badge.partial {
   background: rgba(58, 123, 213, 0.14);
   color: #2454a6;
+}
+
+.market-regime-note {
+  flex-basis: 100%;
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
 }

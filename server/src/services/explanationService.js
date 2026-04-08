@@ -4,17 +4,18 @@ function enrichExplanation({
   deterministicExplanation,
   dataQuality,
   confluence,
-  riskOverlay
+  riskOverlay,
+  expertSupport
 }) {
   return {
-    whyItFits: buildWhyItFits(stock, strategy, deterministicExplanation, confluence),
+    whyItFits: buildWhyItFits(stock, strategy, deterministicExplanation, confluence, expertSupport),
     mainRisk: buildMainRisk(stock, dataQuality, riskOverlay),
     fitHorizon: buildFitHorizon(strategy),
-    recommendationStyle: buildRecommendationStyle(confluence, riskOverlay)
+    recommendationStyle: buildRecommendationStyle(confluence, riskOverlay, expertSupport)
   };
 }
 
-function buildWhyItFits(stock, strategy, deterministicExplanation, confluence) {
+function buildWhyItFits(stock, strategy, deterministicExplanation, confluence, expertSupport) {
   const reasons = [];
 
   if (strategy === 'micha_stocks') {
@@ -44,6 +45,10 @@ function buildWhyItFits(stock, strategy, deterministicExplanation, confluence) {
     reasons.push('וקיימת תמיכה מכמה סגנונות מסחר');
   } else if (confluence?.level === 'medium') {
     reasons.push('עם אישור חלקי מאסטרטגיה נוספת');
+  }
+
+  if (expertSupport?.supportCount > 0) {
+    reasons.push(`עם תמיכה נוספת מ${expertSupport.supporters.map((expert) => expert.shortName).join(' ו-')}`);
   }
 
   if (!reasons.length) {
@@ -89,8 +94,8 @@ function buildFitHorizon(strategy) {
   return 'מתאים יותר למסחר יומי ולמעקב צמוד';
 }
 
-function buildRecommendationStyle(confluence, riskOverlay) {
-  if (confluence?.level === 'high' && riskOverlay?.level === 'low') {
+function buildRecommendationStyle(confluence, riskOverlay, expertSupport) {
+  if (confluence?.level === 'high' && riskOverlay?.level === 'low' && expertSupport?.supportCount > 0) {
     return 'מועמד חזק יחסית לבחינה מעמיקה';
   }
 
