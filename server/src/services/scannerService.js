@@ -21,6 +21,10 @@ const {
   assessMarketRegime,
   computeRegimeAdjustedConfidence
 } = require('./marketRegimeService');
+const {
+  assessOpportunity,
+  summarizeOpportunity
+} = require('./opportunityScoringService');
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -73,6 +77,16 @@ async function analyzeMarket(request = {}) {
       dataQuality,
       strategy
     });
+    const opportunity = assessOpportunity({
+      stock,
+      strategy,
+      confidenceScore: adjustedConfidenceScore,
+      dataQuality,
+      confluence,
+      expertSupport,
+      riskOverlay,
+      marketRegime
+    });
 
     return {
       ticker: stock.ticker,
@@ -94,12 +108,18 @@ async function analyzeMarket(request = {}) {
       expertSupport,
       confluence,
       riskOverlay,
+      opportunity,
+      successProbability: opportunity.successProbability,
+      estimatedUpsideRange: opportunity.estimatedUpside.label,
+      expectedReturnPct: opportunity.expectedReturnPct,
+      opportunityScore: opportunity.opportunityScore,
       volatility: round(stock.volatility, 4),
       market_cap: Math.round(stock.market_cap)
     };
   });
   const layerSummary = summarizeResultLayers(results);
   const expertSupportSummary = summarizeExpertSupport(results);
+  const opportunitySummary = summarizeOpportunity(results);
   const summary = buildSummary({
     results,
     confidenceScore: adjustedConfidenceScore,
@@ -107,7 +127,8 @@ async function analyzeMarket(request = {}) {
     validation,
     confluenceSummary: layerSummary.confluence,
     riskSummary: layerSummary.risk,
-    expertSupportSummary
+    expertSupportSummary,
+    opportunitySummary
   });
   const groups = groupResults(results);
 
@@ -140,7 +161,8 @@ async function analyzeMarket(request = {}) {
       marketRegime,
       overlays: {
         ...layerSummary,
-        expertSupport: expertSupportSummary
+        expertSupport: expertSupportSummary,
+        opportunity: opportunitySummary
       },
       summary,
       groups

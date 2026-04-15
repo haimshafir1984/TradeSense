@@ -252,7 +252,8 @@ function buildSummary({
   validation,
   confluenceSummary,
   riskSummary,
-  expertSupportSummary
+  expertSupportSummary,
+  opportunitySummary
 }) {
   return {
     totalResults: results.length,
@@ -261,7 +262,10 @@ function buildSummary({
     validationWarningsPresent: validation.warnings.length > 0,
     highConfluenceCount: confluenceSummary?.high || 0,
     highRiskCount: riskSummary?.high || 0,
-    supportedByExpertsCount: (expertSupportSummary?.strong || 0) + (expertSupportSummary?.moderate || 0)
+    supportedByExpertsCount: (expertSupportSummary?.strong || 0) + (expertSupportSummary?.moderate || 0),
+    averageSuccessProbability: opportunitySummary?.averageSuccessProbability || 0,
+    averageExpectedReturnPct: opportunitySummary?.averageExpectedReturnPct || 0,
+    highestOpportunityTicker: opportunitySummary?.highestOpportunityTicker || null
   };
 }
 

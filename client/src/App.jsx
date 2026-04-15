@@ -366,6 +366,16 @@ function App() {
                   </span>
                 </>
               ) : null}
+              {analysis?.summary?.averageSuccessProbability ? (
+                <>
+                  <span className="source-badge metric">
+                    סיכוי ממוצע: {analysis.summary.averageSuccessProbability}%
+                  </span>
+                  <span className="source-badge metric">
+                    תוחלת ממוצעת: {analysis.summary.averageExpectedReturnPct}%
+                  </span>
+                </>
+              ) : null}
               {analysis?.marketRegime?.strategyFit?.note ? (
                 <p className="market-regime-note">{analysis.marketRegime.strategyFit.note}</p>
               ) : null}
@@ -379,6 +389,9 @@ function App() {
                   <th>סימול</th>
                   <th>שם חברה</th>
                   <th>אחוז התאמה</th>
+                  <th>סיכוי הצלחה</th>
+                  <th>פוטנציאל מהלך</th>
+                  <th>תוחלת</th>
                   <th>אסטרטגיה</th>
                   <th>הסבר קצר</th>
                   <th>פתיחה</th>
@@ -387,7 +400,7 @@ function App() {
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="empty-state">
+                    <td colSpan="9" className="empty-state">
                       {emptyStateMessage}
                     </td>
                   </tr>
@@ -397,6 +410,16 @@ function App() {
                       <td>{result.ticker}</td>
                       <td>{result.companyName}</td>
                       <td>{result.matchScore}%</td>
+                      <td>
+                        <span className={`metric-pill ${probabilityClassName(result.successProbability)}`}>
+                          {result.successProbability}%
+                        </span>
+                      </td>
+                      <td>{result.estimatedUpsideRange}</td>
+                      <td>
+                        <div className="value-tone positive">{result.expectedReturnPct}%</div>
+                        <div className="cell-subtext">{result.opportunity?.recommendationLabel}</div>
+                      </td>
                       <td>
                         <div>{result.strategyName}</div>
                         <div className="cell-subtext">ראשי: {result.expertSupport?.primary?.shortName || 'האסטרטגיה הנבחרת'}</div>
@@ -523,6 +546,12 @@ function fitClassName(level) {
   if (level === 'high') return 'live';
   if (level === 'low') return 'demo';
   return 'partial';
+}
+
+function probabilityClassName(value) {
+  if (value >= 75) return 'high';
+  if (value >= 55) return 'medium';
+  return 'low';
 }
 
 export default App;

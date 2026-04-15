@@ -632,9 +632,38 @@ th {
   color: #2454a6;
 }
 
+.source-badge.metric {
+  background: rgba(20, 33, 61, 0.08);
+  color: var(--text);
+}
+
 .market-regime-note {
   flex-basis: 100%;
   margin: 0.1rem 0 0;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.metric-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.28rem 0.62rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.metric-pill.high {
+  background: rgba(11, 143, 106, 0.12);
+  color: #0a6d59;
+}
+
+.metric-pill.medium {
+  background: rgba(58, 123, 213, 0.14);
+  color: #2454a6;
+}
+
+.metric-pill.low {
+  background: rgba(222, 161, 81, 0.2);
+  color: #8c5b0a;
 }
