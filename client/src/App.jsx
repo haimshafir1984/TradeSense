@@ -103,6 +103,8 @@ function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
 
+  const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
+
   useEffect(() => {
     if (!openBrokerMenu) {
       return undefined;
@@ -368,12 +370,8 @@ function App() {
               ) : null}
               {analysis?.summary?.averageSuccessProbability ? (
                 <>
-                  <span className="source-badge metric">
-                    סיכוי ממוצע: {analysis.summary.averageSuccessProbability}%
-                  </span>
-                  <span className="source-badge metric">
-                    תוחלת ממוצעת: {analysis.summary.averageExpectedReturnPct}%
-                  </span>
+                  <span className="source-badge metric">סיכוי ממוצע: {analysis.summary.averageSuccessProbability}%</span>
+                  <span className="source-badge metric">תוחלת ממוצעת: {analysis.summary.averageExpectedReturnPct}%</span>
                 </>
               ) : null}
               {analysis?.marketRegime?.strategyFit?.note ? (
@@ -392,6 +390,7 @@ function App() {
                   <th>סיכוי הצלחה</th>
                   <th>פוטנציאל מהלך</th>
                   <th>תוחלת</th>
+                  {showIndiColumn ? <th>התאמה ל-Indi</th> : null}
                   <th>אסטרטגיה</th>
                   <th>הסבר קצר</th>
                   <th>פתיחה</th>
@@ -400,7 +399,7 @@ function App() {
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="empty-state">
+                    <td colSpan={showIndiColumn ? 10 : 9} className="empty-state">
                       {emptyStateMessage}
                     </td>
                   </tr>
@@ -420,6 +419,11 @@ function App() {
                         <div className="value-tone positive">{result.expectedReturnPct}%</div>
                         <div className="cell-subtext">{result.opportunity?.recommendationLabel}</div>
                       </td>
+                      {showIndiColumn ? (
+                        <td>
+                          <IndiFitCell indiFit={result.indiFit} />
+                        </td>
+                      ) : null}
                       <td>
                         <div>{result.strategyName}</div>
                         <div className="cell-subtext">ראשי: {result.expertSupport?.primary?.shortName || 'האסטרטגיה הנבחרת'}</div>
@@ -445,6 +449,19 @@ function App() {
 
         <PortfolioSection apiBaseUrl={API_BASE_URL} />
       </main>
+    </div>
+  );
+}
+
+function IndiFitCell({ indiFit }) {
+  if (!indiFit) {
+    return <span className="cell-subtext">לא רלוונטי</span>;
+  }
+
+  return (
+    <div>
+      <span className={`metric-pill ${indiFitClassName(indiFit.label)}`}>{indiFit.label}</span>
+      <div className="cell-subtext">{indiFit.note}</div>
     </div>
   );
 }
@@ -551,6 +568,12 @@ function fitClassName(level) {
 function probabilityClassName(value) {
   if (value >= 75) return 'high';
   if (value >= 55) return 'medium';
+  return 'low';
+}
+
+function indiFitClassName(label) {
+  if (label === 'חזקה' || label === 'כן') return 'high';
+  if (label === 'מעקב') return 'medium';
   return 'low';
 }
 

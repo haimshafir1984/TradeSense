@@ -25,6 +25,7 @@ const {
   assessOpportunity,
   summarizeOpportunity
 } = require('./opportunityScoringService');
+const { assessIndiFit } = require('./indiOverlayService');
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -87,6 +88,13 @@ async function analyzeMarket(request = {}) {
       riskOverlay,
       marketRegime
     });
+    const indiFit = assessIndiFit({
+      stock,
+      strategy,
+      opportunity,
+      riskOverlay,
+      marketRegime
+    });
 
     return {
       ticker: stock.ticker,
@@ -109,6 +117,7 @@ async function analyzeMarket(request = {}) {
       confluence,
       riskOverlay,
       opportunity,
+      indiFit,
       successProbability: opportunity.successProbability,
       estimatedUpsideRange: opportunity.estimatedUpside.label,
       expectedReturnPct: opportunity.expectedReturnPct,
