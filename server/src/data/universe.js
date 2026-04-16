@@ -22,33 +22,7 @@ const NASDAQ_UNIVERSE = [
   ['INTU', 'Intuit', 'Technology'],
   ['AMAT', 'Applied Materials', 'Technology'],
   ['SBUX', 'Starbucks', 'Consumer'],
-  ['BKNG', 'Booking Holdings', 'Consumer'],
-  ['ISRG', 'Intuitive Surgical', 'Healthcare'],
-  ['MU', 'Micron Technology', 'Technology'],
-  ['ADI', 'Analog Devices', 'Technology'],
-  ['LRCX', 'Lam Research', 'Technology'],
-  ['KLAC', 'KLA', 'Technology'],
-  ['PANW', 'Palo Alto Networks', 'Technology'],
-  ['SNPS', 'Synopsys', 'Technology'],
-  ['CDNS', 'Cadence Design Systems', 'Technology'],
-  ['CRWD', 'CrowdStrike', 'Technology'],
-  ['PYPL', 'PayPal', 'Finance'],
-  ['ASML', 'ASML', 'Technology'],
-  ['ABNB', 'Airbnb', 'Consumer'],
-  ['MELI', 'MercadoLibre', 'Consumer'],
-  ['MRVL', 'Marvell Technology', 'Technology'],
-  ['MAR', 'Marriott International', 'Consumer'],
-  ['ROST', 'Ross Stores', 'Consumer'],
-  ['NXPI', 'NXP Semiconductors', 'Technology'],
-  ['FTNT', 'Fortinet', 'Technology'],
-  ['TEAM', 'Atlassian', 'Technology'],
-  ['CTSH', 'Cognizant', 'Technology'],
-  ['PCAR', 'Paccar', 'Industrial'],
-  ['EXC', 'Exelon', 'Energy'],
-  ['MNST', 'Monster Beverage', 'Consumer'],
-  ['KDP', 'Keurig Dr Pepper', 'Consumer'],
-  ['ORLY', "O'Reilly Automotive", 'Consumer'],
-  ['PAYX', 'Paychex', 'Technology']
+  ['BKNG', 'Booking Holdings', 'Consumer']
 ];
 
 const NYSE_UNIVERSE = [
@@ -76,32 +50,7 @@ const NYSE_UNIVERSE = [
   ['BA', 'Boeing', 'Industrial'],
   ['DE', 'Deere & Company', 'Industrial'],
   ['SCHW', 'Charles Schwab', 'Finance'],
-  ['T', 'AT&T', 'Technology'],
-  ['FCX', 'Freeport-McMoRan', 'Energy'],
-  ['RTX', 'RTX', 'Industrial'],
-  ['ABBV', 'AbbVie', 'Healthcare'],
-  ['LIN', 'Linde', 'Industrial'],
-  ['NKE', 'Nike', 'Consumer'],
-  ['MMM', '3M', 'Industrial'],
-  ['SO', 'Southern Company', 'Energy'],
-  ['ET', 'Energy Transfer', 'Energy'],
-  ['COP', 'ConocoPhillips', 'Energy'],
-  ['BX', 'Blackstone', 'Finance'],
-  ['SPGI', 'S&P Global', 'Finance'],
-  ['UPS', 'UPS', 'Industrial'],
-  ['LOW', "Lowe's", 'Consumer'],
-  ['ELV', 'Elevance Health', 'Healthcare'],
-  ['C', 'Citigroup', 'Finance'],
-  ['INFY', 'Infosys', 'Technology'],
-  ['HWM', 'Howmet Aerospace', 'Industrial'],
-  ['APD', 'Air Products', 'Industrial'],
-  ['ECL', 'Ecolab', 'Industrial'],
-  ['CL', 'Colgate-Palmolive', 'Consumer'],
-  ['CB', 'Chubb', 'Finance'],
-  ['MS', 'Morgan Stanley', 'Finance'],
-  ['PM', 'Philip Morris', 'Consumer'],
-  ['DHR', 'Danaher', 'Healthcare'],
-  ['SLB', 'Schlumberger', 'Energy']
+  ['T', 'AT&T', 'Technology']
 ];
 
 const TASE_UNIVERSE = [
@@ -127,40 +76,13 @@ const TASE_UNIVERSE = [
   ['ALHE', 'Alony Hetz', 'Consumer'],
   ['FOX', 'Fox Wizel', 'Consumer'],
   ['AMOT', 'Amot Investments', 'Consumer'],
-  ['MLSR', 'Melisron', 'Consumer'],
-  ['NOVA', 'Nova', 'Technology'],
-  ['NWMD', 'Nawamed', 'Healthcare'],
-  ['MMHD', 'Menora Mivtachim', 'Finance'],
-  ['ORL', 'Ormat', 'Energy'],
-  ['RATI', 'Ratio Energies', 'Energy'],
-  ['HARL', 'Harel Insurance', 'Finance'],
-  ['ISCD', 'Israel Discount Capital', 'Finance'],
-  ['TASE', 'TASE', 'Finance'],
-  ['DANE', 'Danel', 'Healthcare'],
-  ['MLTM', 'Matrix IT', 'Technology'],
-  ['ONE', 'One Software', 'Technology'],
-  ['ASHO', 'Ashtrom Group', 'Industrial'],
-  ['AFRE', 'Africa Residences', 'Consumer'],
-  ['BLSR', 'Blue Square Real Estate', 'Consumer'],
-  ['KEN', 'Kenon Holdings', 'Energy'],
-  ['ACKR', 'Ackerstein Group', 'Industrial'],
-  ['ARPT', 'Airport City', 'Consumer'],
-  ['MVNE', 'Mivne Real Estate', 'Consumer'],
-  ['FORTY', 'Formula Systems', 'Technology'],
-  ['DRAL', 'Doral Energy', 'Energy'],
-  ['YHNF', 'Y.H. Dimri', 'Consumer'],
-  ['SKBN', 'Shikun & Binui', 'Industrial'],
-  ['ORON', 'Oron Group', 'Industrial'],
-  ['SANO1', 'Sano Bruno', 'Consumer'],
-  ['RMLI', 'Ramla Industrial', 'Industrial'],
-  ['ISRS', 'Isras Investment', 'Consumer'],
-  ['IDIN', 'Direct Insurance', 'Finance']
+  ['MLSR', 'Melisron', 'Consumer']
 ];
 
 const STOCK_UNIVERSE = {
-  NASDAQ: NASDAQ_UNIVERSE,
-  NYSE: NYSE_UNIVERSE,
-  TASE: TASE_UNIVERSE
+  NASDAQ: NASDAQ_UNIVERSE.slice(0, 20),
+  NYSE: NYSE_UNIVERSE.slice(0, 20),
+  TASE: TASE_UNIVERSE.slice(0, 20)
 };
 
 function getTickerContext(ticker) {

@@ -1,5 +1,13 @@
 const { STOCK_UNIVERSE, getTickerContext } = require('../data/universe');
 
+const REQUEST_CACHE = new Map();
+const MARKET_DATA_CACHE = new Map();
+const SNAPSHOT_CACHE = new Map();
+
+const REQUEST_CACHE_TTL_MS = 10 * 60 * 1000;
+const MARKET_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
+const SNAPSHOT_CACHE_TTL_MS = 5 * 60 * 1000;
+
 function getExchangeSymbols(exchange) {
   return STOCK_UNIVERSE[exchange] || STOCK_UNIVERSE.NASDAQ;
 }
@@ -7,12 +15,20 @@ function getExchangeSymbols(exchange) {
 async function getMarketData(exchange) {
   const entries = getExchangeSymbols(exchange);
   const mode = (process.env.DATA_MODE || 'fmp').toLowerCase();
+  const cacheKey = `${mode}:${exchange}`;
+
+  const cachedMarketData = readCache(MARKET_DATA_CACHE, cacheKey);
+  if (cachedMarketData) {
+    console.log(`[marketData] Using cached market data. exchange=${exchange} mode=${mode} symbols=${cachedMarketData.stocks.length}`);
+    return cachedMarketData;
+  }
 
   console.log(`[marketData] Requested exchange=${exchange} mode=${mode} symbols=${entries.length}`);
 
   if (mode === 'fmp' && process.env.FMP_API_KEY) {
     const result = await getFmpData(exchange, entries);
     if (result) {
+      writeCache(MARKET_DATA_CACHE, cacheKey, result, MARKET_DATA_CACHE_TTL_MS);
       return result;
     }
   } else if (mode === 'fmp' && !process.env.FMP_API_KEY) {
@@ -33,15 +49,23 @@ async function getMarketData(exchange) {
   );
 
   console.log(`[marketData] Using demo data. exchange=${exchange} count=${demoStocks.length}`);
-  return {
+  const demoResult = {
     stocks: demoStocks,
     source: 'demo'
   };
+  writeCache(MARKET_DATA_CACHE, cacheKey, demoResult, MARKET_DATA_CACHE_TTL_MS);
+  return demoResult;
 }
 
 async function getStockSnapshot(ticker) {
   const context = getTickerContext(ticker);
   const mode = (process.env.DATA_MODE || 'fmp').toLowerCase();
+  const cacheKey = `${mode}:${context.exchange}:${context.ticker}`;
+
+  const cachedSnapshot = readCache(SNAPSHOT_CACHE, cacheKey);
+  if (cachedSnapshot) {
+    return cachedSnapshot;
+  }
 
   if (mode === 'fmp' && process.env.FMP_API_KEY) {
     const to = new Date();
@@ -58,6 +82,7 @@ async function getStockSnapshot(ticker) {
     );
 
     if (snapshot) {
+      writeCache(SNAPSHOT_CACHE, cacheKey, snapshot, SNAPSHOT_CACHE_TTL_MS);
       return snapshot;
     }
   }
@@ -71,11 +96,14 @@ async function getStockSnapshot(ticker) {
     );
 
     if (snapshot) {
+      writeCache(SNAPSHOT_CACHE, cacheKey, snapshot, SNAPSHOT_CACHE_TTL_MS);
       return snapshot;
     }
   }
 
-  return createDemoStock(context.exchange, context.ticker, context.companyName, context.sector);
+  const demoSnapshot = createDemoStock(context.exchange, context.ticker, context.companyName, context.sector);
+  writeCache(SNAPSHOT_CACHE, cacheKey, demoSnapshot, SNAPSHOT_CACHE_TTL_MS);
+  return demoSnapshot;
 }
 
 async function getStockSnapshots(tickers = []) {
@@ -310,6 +338,14 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
 }
 
 async function fetchJson(url, label, allowFailure = false) {
+  const cachedResponse = readCache(REQUEST_CACHE, url);
+  if (cachedResponse) {
+    return {
+      ok: true,
+      data: cachedResponse
+    };
+  }
+
   try {
     const response = await fetch(url);
 
@@ -323,9 +359,12 @@ async function fetchJson(url, label, allowFailure = false) {
       throw error;
     }
 
+    const parsed = await response.json();
+    writeCache(REQUEST_CACHE, url, parsed, REQUEST_CACHE_TTL_MS);
+
     return {
       ok: true,
-      data: await response.json()
+      data: parsed
     };
   } catch (error) {
     if (allowFailure) {
@@ -334,6 +373,28 @@ async function fetchJson(url, label, allowFailure = false) {
     }
     throw error;
   }
+}
+
+function readCache(cache, key) {
+  const entry = cache.get(key);
+
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+
+  return entry.value;
+}
+
+function writeCache(cache, key, value, ttlMs) {
+  cache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs
+  });
 }
 
 function normalizeFmpHistory(payload) {
