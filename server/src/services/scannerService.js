@@ -28,6 +28,11 @@ const {
 } = require('./opportunityScoringService');
 const { assessIndiFit } = require('./indiOverlayService');
 
+// Below this (risk-adjusted) score, a stock is considered too weak a match to present as a
+// recommendation, even if it's among the top 10 of a weak batch. Matches validateResults' own
+// "low average" warning line for consistency.
+const QUALITY_SCORE_THRESHOLD = 0.35;
+
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
   const strategy = request.strategy || 'micha_stocks';
@@ -55,6 +60,11 @@ async function analyzeMarket(request = {}) {
     .map((stock) => applyRiskFitPenalty(stock, risk))
     .sort((left, right) => right.score - left.score)
     .slice(0, 10);
+  // Returning the "best" 10 stocks even when every one of them is a weak match misrepresents a
+  // scan with nothing worth acting on as if it found opportunities. Below this score, a stock
+  // isn't shown as a recommendation - see docs/LOGIC_IMPROVEMENTS.md 3.8.
+  const qualityStocks = scoredStocks.filter((stock) => stock.score >= QUALITY_SCORE_THRESHOLD);
+  const noQualitySetups = scoredStocks.length > 0 && qualityStocks.length === 0;
   const validation = validateResults({ results: scoredStocks });
   const confidenceScore = computeConfidence({
     dataQuality,
@@ -68,7 +78,7 @@ async function analyzeMarket(request = {}) {
     universeStocks: stocks
   });
   const adjustedConfidenceScore = computeRegimeAdjustedConfidence(confidenceScore, marketRegime);
-  const results = scoredStocks.map((stock) => {
+  const results = qualityStocks.map((stock) => {
     const matchScore = Math.round(stock.score * 100);
     const deterministicExplanation = stock.explanation;
     const confluence = assessCrossStrategyConfluence({
@@ -154,7 +164,8 @@ async function analyzeMarket(request = {}) {
     source,
     totalStocks: stocks.length,
     filteredStocks: filteredStocks.length,
-    returnedStocks: scoredStocks.length
+    returnedStocks: results.length,
+    noQualitySetups
   });
 
   return {
@@ -165,7 +176,8 @@ async function analyzeMarket(request = {}) {
       risk,
       source,
       analyzedCount: filteredStocks.length,
-      returnedCount: Math.min(scoredStocks.length, 10),
+      returnedCount: results.length,
+      noQualitySetups,
       confidenceScore: adjustedConfidenceScore,
       baseConfidenceScore: confidenceScore
     },
