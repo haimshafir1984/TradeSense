@@ -64,7 +64,8 @@ async function analyzeMarket(request = {}) {
   });
   const marketRegime = assessMarketRegime({
     snapshots: benchmarkSnapshots,
-    selectedStrategy: strategy
+    selectedStrategy: strategy,
+    universeStocks: stocks
   });
   const adjustedConfidenceScore = computeRegimeAdjustedConfidence(confidenceScore, marketRegime);
   const results = scoredStocks.map((stock) => {
