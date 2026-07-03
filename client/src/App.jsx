@@ -77,9 +77,7 @@ const initialFilters = {
   minPrice: '',
   maxPrice: '',
   volatility: 'any',
-  unusualVolume: false,
-  institutionalBuying: false,
-  insiderBuying: false
+  unusualVolume: false
 };
 
 const numberFormatter = new Intl.NumberFormat('he-IL', {
@@ -332,8 +330,6 @@ function App() {
               <div className="toggle-grid">
                 <Checkbox label="דיבידנד בלבד" checked={form.filters.dividendOnly} onChange={(checked) => handleFilterChange('dividendOnly', checked)} />
                 <Checkbox label="נפח חריג" checked={form.filters.unusualVolume} onChange={(checked) => handleFilterChange('unusualVolume', checked)} />
-                <Checkbox label="רכישות מוסדיות" checked={form.filters.institutionalBuying} onChange={(checked) => handleFilterChange('institutionalBuying', checked)} />
-                <Checkbox label="רכישות פנים" checked={form.filters.insiderBuying} onChange={(checked) => handleFilterChange('insiderBuying', checked)} />
               </div>
             </div>
 

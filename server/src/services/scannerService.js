@@ -222,14 +222,6 @@ function applyFilters(stock, filters, risk) {
     return false;
   }
 
-  if (filters.institutionalBuying && stock.institutional_inflow <= 0) {
-    return false;
-  }
-
-  if (filters.insiderBuying && stock.insider_transactions <= 0) {
-    return false;
-  }
-
   if (!matchesRisk(stock, risk)) {
     return false;
   }
