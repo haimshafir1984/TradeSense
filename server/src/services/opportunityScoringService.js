@@ -2,20 +2,18 @@ function assessOpportunity({
   stock,
   strategy,
   confidenceScore,
-  dataQuality,
-  confluence,
-  expertSupport,
   riskOverlay,
   marketRegime
 }) {
+  // Deliberately NOT fed by confluence/expertSupport/dataQuality/marketRegime: those are all
+  // derived from the same underlying indicators as stock.score and confidenceScore already, so
+  // adding them again here would double-count the same signal under different names (see
+  // docs/LOGIC_IMPROVEMENTS.md section 3.1). confidenceScore already reflects dataQuality and
+  // regime; riskOverlay is the one genuinely distinct (downside) dimension.
   const opportunityRank = computeOpportunityRank({
     stock,
     confidenceScore,
-    dataQuality,
-    confluence,
-    expertSupport,
-    riskOverlay,
-    marketRegime
+    riskOverlay
   });
   const estimatedUpside = estimateUpside({
     stock,
@@ -57,42 +55,14 @@ function summarizeOpportunity(results = []) {
   };
 }
 
-function computeOpportunityRank({
-  stock,
-  confidenceScore,
-  dataQuality,
-  confluence,
-  expertSupport,
-  riskOverlay,
-  marketRegime
-}) {
-  let probability = 20;
+function computeOpportunityRank({ stock, confidenceScore, riskOverlay }) {
+  let rank = 20;
 
-  probability += Number(stock.score || 0) * 45;
-  probability += Number(confidenceScore || 0) * 0.28;
-  probability += (expertSupport?.supportCount || 0) * 4;
+  rank += Number(stock.score || 0) * 55;
+  rank += Number(confidenceScore || 0) * 0.25;
+  rank -= (riskOverlay?.score || 0) * 5;
 
-  if (confluence?.level === 'high') {
-    probability += 8;
-  } else if (confluence?.level === 'medium') {
-    probability += 4;
-  }
-
-  if (marketRegime?.strategyFit?.level === 'high') {
-    probability += 7;
-  } else if (marketRegime?.strategyFit?.level === 'low') {
-    probability -= 10;
-  }
-
-  if (dataQuality?.level === 'low') {
-    probability -= 12;
-  } else if (dataQuality?.level === 'medium') {
-    probability -= 5;
-  }
-
-  probability -= (riskOverlay?.score || 0) * 4.5;
-
-  return clamp(Math.round(probability), 5, 95);
+  return clamp(Math.round(rank), 5, 95);
 }
 
 function estimateUpside({ stock, strategy, marketRegime, riskOverlay }) {

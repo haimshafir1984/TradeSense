@@ -82,9 +82,6 @@ async function analyzeMarket(request = {}) {
       stock,
       strategy,
       confidenceScore: adjustedConfidenceScore,
-      dataQuality,
-      confluence,
-      expertSupport,
       riskOverlay,
       marketRegime
     });

@@ -5,9 +5,11 @@ function assessIndiFit({ stock, strategy, opportunity, riskOverlay, marketRegime
     return null;
   }
 
-  const volumeRatio = stock.volumeRatio || (stock.average_volume_30d ? stock.volume / stock.average_volume_30d : 0);
+  // volumeRatio/highProximity are computed once in strategies.js#enrichStock and carried on
+  // every stock through the pipeline; read them directly instead of re-deriving them here.
+  const volumeRatio = stock.volumeRatio;
   const priceNearHigh = stock.price_near_daily_high || 0;
-  const highProximity = stock.highProximity || (stock.high_52w ? stock.price / stock.high_52w : 0);
+  const highProximity = stock.highProximity;
   const reasons = [];
   let score = 0;
 
