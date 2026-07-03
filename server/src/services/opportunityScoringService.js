@@ -8,7 +8,7 @@ function assessOpportunity({
   riskOverlay,
   marketRegime
 }) {
-  const successProbability = computeSuccessProbability({
+  const opportunityRank = computeOpportunityRank({
     stock,
     confidenceScore,
     dataQuality,
@@ -23,41 +23,41 @@ function assessOpportunity({
     marketRegime,
     riskOverlay
   });
-  const expectedReturnPct = round((successProbability / 100) * estimatedUpside.midPct, 2);
+  const expectedReturnPct = round((opportunityRank / 100) * estimatedUpside.midPct, 2);
   const opportunityScore = clamp(Math.round(expectedReturnPct * 3.2), 0, 100);
 
   return {
-    successProbability,
+    opportunityRank,
     estimatedUpside,
     expectedReturnPct,
     opportunityScore,
-    recommendationLabel: buildRecommendationLabel(opportunityScore, successProbability, estimatedUpside.midPct)
+    recommendationLabel: buildRecommendationLabel(opportunityScore, opportunityRank, estimatedUpside.midPct)
   };
 }
 
 function summarizeOpportunity(results = []) {
   if (!results.length) {
     return {
-      averageSuccessProbability: 0,
+      averageOpportunityRank: 0,
       averageExpectedReturnPct: 0,
       highestOpportunityTicker: null
     };
   }
 
-  const avgSuccessProbability = average(results.map((result) => result.opportunity?.successProbability || 0));
+  const avgOpportunityRank = average(results.map((result) => result.opportunity?.opportunityRank || 0));
   const avgExpectedReturnPct = average(results.map((result) => result.opportunity?.expectedReturnPct || 0));
   const highestOpportunity = [...results].sort(
     (left, right) => (right.opportunity?.opportunityScore || 0) - (left.opportunity?.opportunityScore || 0)
   )[0];
 
   return {
-    averageSuccessProbability: round(avgSuccessProbability, 1),
+    averageOpportunityRank: round(avgOpportunityRank, 1),
     averageExpectedReturnPct: round(avgExpectedReturnPct, 2),
     highestOpportunityTicker: highestOpportunity?.ticker || null
   };
 }
 
-function computeSuccessProbability({
+function computeOpportunityRank({
   stock,
   confidenceScore,
   dataQuality,
@@ -166,12 +166,12 @@ function estimateUpside({ stock, strategy, marketRegime, riskOverlay }) {
   };
 }
 
-function buildRecommendationLabel(opportunityScore, successProbability, midUpside) {
-  if (opportunityScore >= 70 || (successProbability >= 75 && midUpside >= 18)) {
+function buildRecommendationLabel(opportunityScore, opportunityRank, midUpside) {
+  if (opportunityScore >= 70 || (opportunityRank >= 75 && midUpside >= 18)) {
     return 'הזדמנות בולטת';
   }
 
-  if (opportunityScore >= 45 || (successProbability >= 65 && midUpside >= 10)) {
+  if (opportunityScore >= 45 || (opportunityRank >= 65 && midUpside >= 10)) {
     return 'הזדמנות טובה';
   }
 

@@ -119,7 +119,7 @@ async function analyzeMarket(request = {}) {
       riskOverlay,
       opportunity,
       indiFit,
-      successProbability: opportunity.successProbability,
+      opportunityRank: opportunity.opportunityRank,
       estimatedUpsideRange: opportunity.estimatedUpside.label,
       expectedReturnPct: opportunity.expectedReturnPct,
       opportunityScore: opportunity.opportunityScore,

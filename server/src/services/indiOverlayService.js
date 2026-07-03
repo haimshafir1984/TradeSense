@@ -24,7 +24,7 @@ function assessIndiFit({ stock, strategy, opportunity, riskOverlay, marketRegime
       score += 12;
       reasons.push('מעל ממוצע 50');
     }
-    if ((opportunity?.successProbability || 0) >= 60) {
+    if ((opportunity?.opportunityRank || 0) >= 60) {
       score += 10;
       reasons.push('איכות סטאפ סבירה');
     }

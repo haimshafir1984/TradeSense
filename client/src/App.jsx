@@ -364,10 +364,10 @@ function App() {
                   </span>
                 </>
               ) : null}
-              {analysis?.summary?.averageSuccessProbability ? (
+              {analysis?.summary?.averageOpportunityRank ? (
                 <>
-                  <span className="source-badge metric">סיכוי ממוצע: {analysis.summary.averageSuccessProbability}%</span>
-                  <span className="source-badge metric">תוחלת ממוצעת: {analysis.summary.averageExpectedReturnPct}%</span>
+                  <span className="source-badge metric">ציון הזדמנות ממוצע: {analysis.summary.averageOpportunityRank}</span>
+                  <span className="source-badge metric">תשואה משוקללת ממוצעת: {analysis.summary.averageExpectedReturnPct}%</span>
                 </>
               ) : null}
               {analysis?.marketRegime?.strategyFit?.note ? (
@@ -383,9 +383,9 @@ function App() {
                   <th>סימול</th>
                   <th>שם חברה</th>
                   <th>אחוז התאמה</th>
-                  <th>סיכוי הצלחה</th>
+                  <th>ציון הזדמנות (יחסי)</th>
                   <th>פוטנציאל מהלך</th>
-                  <th>תוחלת</th>
+                  <th>תשואה משוקללת</th>
                   {showIndiColumn ? <th>התאמה ל-Indi</th> : null}
                   <th>אסטרטגיה</th>
                   <th>הסבר קצר</th>
@@ -406,8 +406,8 @@ function App() {
                       <td>{result.companyName}</td>
                       <td>{result.matchScore}%</td>
                       <td>
-                        <span className={`metric-pill ${probabilityClassName(result.successProbability)}`}>
-                          {result.successProbability}%
+                        <span className={`metric-pill ${probabilityClassName(result.opportunityRank)}`}>
+                          {result.opportunityRank}
                         </span>
                       </td>
                       <td>{result.estimatedUpsideRange}</td>

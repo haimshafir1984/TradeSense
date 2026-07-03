@@ -275,7 +275,7 @@ function buildSummary({
     highConfluenceCount: confluenceSummary?.high || 0,
     highRiskCount: riskSummary?.high || 0,
     supportedByExpertsCount: (expertSupportSummary?.strong || 0) + (expertSupportSummary?.moderate || 0),
-    averageSuccessProbability: opportunitySummary?.averageSuccessProbability || 0,
+    averageOpportunityRank: opportunitySummary?.averageOpportunityRank || 0,
     averageExpectedReturnPct: opportunitySummary?.averageExpectedReturnPct || 0,
     highestOpportunityTicker: opportunitySummary?.highestOpportunityTicker || null
   };
