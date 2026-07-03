@@ -161,28 +161,57 @@ function computeConfidence({ dataQuality, validation, results = [], source = 'de
   return clamp(Math.round(score), 0, 100);
 }
 
-function assessCrossStrategyConfluence({ stock, selectedStrategy, marketContext = {} }) {
-  const scoresByStrategy = {};
+// Each strategy normalizes its score with different ranges (see strategies.js), so a raw score
+// of 70 in ross_cameron is not equivalent to 70 in micha_stocks. buildStrategyScoreDistributions
+// scores every stock in the currently-scanned universe under every strategy once, so confluence
+// can compare each stock's *percentile within its own strategy's distribution* instead of raw
+// scores against a fixed threshold. See docs/LOGIC_IMPROVEMENTS.md 3.6.
+function buildStrategyScoreDistributions(stocks = [], marketContext = {}) {
+  const distributions = {};
 
   for (const strategyKey of STRATEGY_KEYS) {
-    scoresByStrategy[strategyKey] = round(scoreStockByStrategy(strategyKey, stock, marketContext).score * 100);
+    distributions[strategyKey] = stocks
+      .map((stock) => scoreStockByStrategy(strategyKey, stock, marketContext).score)
+      .sort((left, right) => left - right);
   }
 
-  const selectedScore = scoresByStrategy[selectedStrategy] || 0;
+  return distributions;
+}
+
+function percentileRank(sortedValues, value) {
+  if (!sortedValues.length) {
+    return 50;
+  }
+
+  const countAtOrBelow = sortedValues.filter((entry) => entry <= value).length;
+  return Math.round((countAtOrBelow / sortedValues.length) * 100);
+}
+
+function assessCrossStrategyConfluence({ stock, selectedStrategy, marketContext = {}, scoreDistributions = {} }) {
+  const scoresByStrategy = {};
+  const percentileByStrategy = {};
+
+  for (const strategyKey of STRATEGY_KEYS) {
+    const rawScore = scoreStockByStrategy(strategyKey, stock, marketContext).score;
+    scoresByStrategy[strategyKey] = round(rawScore * 100);
+    percentileByStrategy[strategyKey] = percentileRank(scoreDistributions[strategyKey] || [], rawScore);
+  }
+
+  const selectedPercentile = percentileByStrategy[selectedStrategy] || 0;
   const supportingStrategies = STRATEGY_KEYS.filter(
-    (strategyKey) => strategyKey !== selectedStrategy && scoresByStrategy[strategyKey] >= 60
+    (strategyKey) => strategyKey !== selectedStrategy && percentileByStrategy[strategyKey] >= 60
   );
   const strongAgreementCount = STRATEGY_KEYS.filter(
-    (strategyKey) => scoresByStrategy[strategyKey] >= 70
+    (strategyKey) => percentileByStrategy[strategyKey] >= 70
   ).length;
 
   let level = 'low';
   const notes = [];
 
-  if (selectedScore >= 75 && strongAgreementCount >= 2) {
+  if (selectedPercentile >= 75 && strongAgreementCount >= 2) {
     level = 'high';
     notes.push('קיימת תמיכה ממספר סגנונות מסחר');
-  } else if (selectedScore >= 65 && supportingStrategies.length >= 1) {
+  } else if (selectedPercentile >= 65 && supportingStrategies.length >= 1) {
     level = 'medium';
     notes.push('קיימת תמיכה חלקית מאסטרטגיה נוספת');
   } else {
@@ -197,6 +226,7 @@ function assessCrossStrategyConfluence({ stock, selectedStrategy, marketContext 
     level,
     selectedStrategy,
     scoresByStrategy,
+    percentileByStrategy,
     supportingStrategies,
     notes
   };
@@ -344,6 +374,7 @@ module.exports = {
   validateResults,
   computeConfidence,
   assessCrossStrategyConfluence,
+  buildStrategyScoreDistributions,
   assessRiskOverlay,
   buildSummary,
   groupResults,

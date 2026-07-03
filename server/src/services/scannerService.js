@@ -5,6 +5,7 @@ const {
   validateResults,
   computeConfidence,
   assessCrossStrategyConfluence,
+  buildStrategyScoreDistributions,
   assessRiskOverlay,
   buildSummary,
   groupResults,
@@ -48,6 +49,7 @@ async function analyzeMarket(request = {}) {
   const spyBenchmark = benchmarkSnapshots.find((snapshot) => snapshot?.ticker === 'SPY');
   const marketContext = { benchmarkReturn3m: Number(spyBenchmark?.return_3m || 0) };
   const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters));
+  const scoreDistributions = buildStrategyScoreDistributions(filteredStocks, marketContext);
   const scoredStocks = filteredStocks
     .map((stock) => scoreStockByStrategy(strategy, stock, marketContext))
     .map((stock) => applyRiskFitPenalty(stock, risk))
@@ -71,7 +73,8 @@ async function analyzeMarket(request = {}) {
     const confluence = assessCrossStrategyConfluence({
       stock,
       selectedStrategy: strategy,
-      marketContext
+      marketContext,
+      scoreDistributions
     });
     const expertSupport = assessExpertSupport({
       stock,
