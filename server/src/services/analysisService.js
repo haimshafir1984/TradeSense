@@ -239,7 +239,7 @@ function assessRiskOverlay({ stock, dataQuality, strategy }) {
 
   if (strategy === 'ross_cameron' && stock.daily_change < 5) {
     points += 1;
-    factors.push('המומנטום היומי אינו חזק במיוחד עבור מסחר יומי');
+    factors.push('המומנטום היומי אינו חזק במיוחד עבור אסטרטגיית מומנטום קצר טווח');
   }
 
   let level = 'low';

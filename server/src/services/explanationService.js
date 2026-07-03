@@ -91,7 +91,7 @@ function buildFitHorizon(strategy) {
     return 'מתאים יותר למסחר לטווח קצר או swing';
   }
 
-  return 'מתאים יותר למסחר יומי ולמעקב צמוד';
+  return 'מומנטום קצר טווח מבוסס נתוני סוף יום (לא מסחר יומי בזמן אמת) - דורש מעקב צמוד ואימות מחיר לפני כניסה';
 }
 
 function buildRecommendationStyle(confluence, riskOverlay, expertSupport) {

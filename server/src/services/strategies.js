@@ -1,7 +1,7 @@
 const STRATEGY_LABELS = {
   micha_stocks: 'השקעה לטווח ארוך - Micha Stocks',
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
-  ross_cameron: 'מסחר יומי - Ross Cameron'
+  ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Ross Cameron'
 };
 
 function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
@@ -140,7 +140,7 @@ function createRossExplanation(stock) {
     parts.push('עם תנודתיות גבוהה');
   }
 
-  return joinExplanation(parts, 'מניה מהירה למסחר יומי');
+  return joinExplanation(parts, 'מניה עם מומנטום קצר טווח (מבוסס נתוני סוף יום)');
 }
 
 function joinExplanation(parts, fallback) {
@@ -159,6 +159,8 @@ function scoreHighProximity(pullbackFromHigh, maxDistance) {
   return clamp(1 - pullbackFromHigh / maxDistance);
 }
 
+// Approximates low-float behavior from market cap since real shares-float data isn't fetched
+// (see docs/LOGIC_IMPROVEMENTS.md 3.3) - a weak proxy, most useful as a coarse tie-breaker.
 function scoreFloatProxy(marketCap) {
   if (marketCap <= 0) {
     return 0;

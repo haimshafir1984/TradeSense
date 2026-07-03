@@ -30,10 +30,10 @@ const investmentMethodOptions = [
   },
   {
     value: 'ross_cameron',
-    label: 'מסחר יומי - Linda Bradford Raschke',
+    label: 'מומנטום קצר טווח (נתוני סוף יום) - Linda Bradford Raschke',
     shortLabel: 'Linda Raschke',
     description:
-      'שיטת מסחר יומי המתמקדת ב-price action, מומנטום קצר טווח, נפח חריג ותגובה מהירה למבנה המחיר.'
+      'שיטה המתמקדת ב-price action, מומנטום קצר טווח ונפח חריג. מבוססת על נתוני סוף יום ולא על מסחר בזמן אמת - אינה תחליף למסך מסחר יומי חי.'
   }
 ];
 

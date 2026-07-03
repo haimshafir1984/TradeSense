@@ -1,7 +1,7 @@
 const STRATEGY_DISPLAY_LABELS = {
   micha_stocks: "השקעה לטווח ארוך - William O'Neil",
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
-  ross_cameron: 'מסחר יומי - Linda Bradford Raschke'
+  ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Linda Bradford Raschke'
 };
 
 const PRIMARY_EXPERTS = {
