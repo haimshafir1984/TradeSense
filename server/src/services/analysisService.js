@@ -161,11 +161,11 @@ function computeConfidence({ dataQuality, validation, results = [], source = 'de
   return clamp(Math.round(score), 0, 100);
 }
 
-function assessCrossStrategyConfluence({ stock, selectedStrategy }) {
+function assessCrossStrategyConfluence({ stock, selectedStrategy, marketContext = {} }) {
   const scoresByStrategy = {};
 
   for (const strategyKey of STRATEGY_KEYS) {
-    scoresByStrategy[strategyKey] = round(scoreStockByStrategy(strategyKey, stock).score * 100);
+    scoresByStrategy[strategyKey] = round(scoreStockByStrategy(strategyKey, stock, marketContext).score * 100);
   }
 
   const selectedScore = scoresByStrategy[selectedStrategy] || 0;

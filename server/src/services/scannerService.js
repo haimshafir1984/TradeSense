@@ -45,9 +45,11 @@ async function analyzeMarket(request = {}) {
     getStockSnapshots(MARKET_BENCHMARKS)
   ]);
   const dataQuality = assessDataQuality({ stocks, source });
+  const spyBenchmark = benchmarkSnapshots.find((snapshot) => snapshot?.ticker === 'SPY');
+  const marketContext = { benchmarkReturn3m: Number(spyBenchmark?.return_3m || 0) };
   const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters, risk));
   const scoredStocks = filteredStocks
-    .map((stock) => scoreStockByStrategy(strategy, stock))
+    .map((stock) => scoreStockByStrategy(strategy, stock, marketContext))
     .sort((left, right) => right.score - left.score)
     .slice(0, 10);
   const validation = validateResults({ results: scoredStocks });
@@ -67,7 +69,8 @@ async function analyzeMarket(request = {}) {
     const deterministicExplanation = stock.explanation;
     const confluence = assessCrossStrategyConfluence({
       stock,
-      selectedStrategy: strategy
+      selectedStrategy: strategy,
+      marketContext
     });
     const expertSupport = assessExpertSupport({
       stock,

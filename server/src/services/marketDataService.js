@@ -200,6 +200,8 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
   const low52 = trackedValue(imputedFields, 'low_52w', [Number(quote?.yearLow), closes.length ? Math.min(...closes, price) : NaN], () => price * 0.85);
   const marketCap = trackedValue(imputedFields, 'market_cap', [Number(quote?.marketCap), Number(profile?.mktCap)], () =>
     seededNumber(`${ticker}-cap`, 900, 220000) * 1000000);
+  const return3m = trackedSignedValue(imputedFields, 'return_3m', [computeReturnPct(closes, price)], () =>
+    ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0);
   const dailyChange = Number.isFinite(quote?.changesPercentage)
     ? Number(quote.changesPercentage)
     : price && previousClose
@@ -234,6 +236,7 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     high_52w: high52,
     low_52w: low52,
     volatility,
+    return_3m: return3m,
     price_near_daily_high: dayHigh ? price / dayHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(closes.slice(0, 20), high52, low52),
@@ -328,6 +331,12 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     [Number(profile?.marketCapitalization), Number(metrics?.metric?.marketCapitalization)],
     () => seededNumber(`${ticker}-cap`, 900, 220000)
   );
+  const return3m = trackedSignedValue(
+    imputedFields,
+    'return_3m',
+    [computeReturnPctFromEnd(candleCloses, price, RETURN_WINDOW_TRADING_DAYS)],
+    () => (ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0)
+  );
   const dailyChange = Number.isFinite(quote?.dp)
     ? Number(quote.dp)
     : price && previousClose
@@ -357,6 +366,7 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     high_52w: high52,
     low_52w: low52,
     volatility,
+    return_3m: return3m,
     price_near_daily_high: dailyHigh ? price / dailyHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(candleCloses.slice(-20), high52, low52),
@@ -490,6 +500,7 @@ function createDemoStock(exchange, ticker, companyName, sector) {
     high_52w: high52,
     low_52w: low52,
     volatility: seededNumber(`${exchange}-${ticker}-volatility`, 0.012, 0.08),
+    return_3m: ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0,
     price_near_daily_high: seededNumber(`${exchange}-${ticker}-dailyhigh`, 0.84, 1),
     ma50_slope: seededNumber(`${exchange}-${ticker}-slope`, -0.04, 0.09),
     consolidation_score: seededNumber(`${exchange}-${ticker}-consolidation`, 0.25, 0.97),
@@ -557,6 +568,33 @@ function trackedValue(tracker, fieldName, candidates, computeFallback) {
 
   tracker.push(fieldName);
   return computeFallback();
+}
+
+// Like trackedValue, but for fields that are legitimately negative (e.g. returns), where a
+// simple positivity check would wrongly treat "down 5%" as missing data.
+function trackedSignedValue(tracker, fieldName, candidates, computeFallback) {
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+
+  tracker.push(fieldName);
+  return computeFallback();
+}
+
+// ~63 trading days ≈ 3 calendar months; history arrays are ordered most-recent-first.
+const RETURN_WINDOW_TRADING_DAYS = 63;
+
+function computeReturnPct(closes, price) {
+  const anchor = closes[RETURN_WINDOW_TRADING_DAYS];
+  return Number.isFinite(anchor) && anchor > 0 ? ((price - anchor) / anchor) * 100 : NaN;
+}
+
+// Finnhub candle arrays are ordered oldest-to-newest, the reverse of the FMP history array.
+function computeReturnPctFromEnd(closes, price, windowDays) {
+  const anchor = closes[closes.length - 1 - windowDays];
+  return Number.isFinite(anchor) && anchor > 0 ? ((price - anchor) / anchor) * 100 : NaN;
 }
 
 function clamp(value) {

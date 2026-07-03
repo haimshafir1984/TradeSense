@@ -4,8 +4,8 @@ const STRATEGY_LABELS = {
   ross_cameron: 'מסחר יומי - Ross Cameron'
 };
 
-function scoreStockByStrategy(strategyKey, stock) {
-  const enrichedStock = enrichStock(stock);
+function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
+  const enrichedStock = enrichStock(stock, marketContext);
 
   if (strategyKey === 'mark_minervini') {
     return scoreMinerviniStrategy(enrichedStock);
@@ -18,21 +18,21 @@ function scoreStockByStrategy(strategyKey, stock) {
   return scoreMichaStrategy(enrichedStock);
 }
 
-function enrichStock(stock) {
+function enrichStock(stock, marketContext = {}) {
   const volumeRatio = stock.average_volume_30d ? stock.volume / stock.average_volume_30d : 0;
   const highProximity = stock.high_52w ? stock.price / stock.high_52w : 0;
   const pullbackFromHigh = stock.high_52w ? ((stock.high_52w - stock.price) / stock.high_52w) * 100 : 0;
-  const relativeStrength = average([
-    normalize(stock.price / Math.max(stock.MA200 || stock.price, 1), 0.9, 1.2),
-    normalize(highProximity, 0.82, 1),
-    normalize(stock.daily_change, 0, 8)
-  ]);
+  // Real relative strength (IBD/Minervini style): the stock's ~3-month return minus the
+  // benchmark's (SPY) ~3-month return over the same window, not an internal-only composite.
+  const excessReturnVsBenchmark = Number(stock.return_3m || 0) - Number(marketContext.benchmarkReturn3m || 0);
+  const relativeStrength = normalize(excessReturnVsBenchmark, -8, 8);
 
   return {
     ...stock,
     volumeRatio,
     highProximity,
     pullbackFromHigh,
+    excessReturnVsBenchmark,
     relativeStrength
   };
 }
