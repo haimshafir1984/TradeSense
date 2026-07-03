@@ -8,8 +8,17 @@ const REQUEST_CACHE_TTL_MS = 10 * 60 * 1000;
 const MARKET_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
 const SNAPSHOT_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const EXCHANGE_SUFFIXES = {
+  TASE: '.TA'
+};
+
 function getExchangeSymbols(exchange) {
   return STOCK_UNIVERSE[exchange] || STOCK_UNIVERSE.NASDAQ;
+}
+
+function getProviderSymbol(exchange, ticker) {
+  const suffix = EXCHANGE_SUFFIXES[exchange];
+  return suffix ? `${ticker}${suffix}` : ticker;
 }
 
 async function getMarketData(exchange) {
@@ -135,17 +144,18 @@ async function getFmpData(exchange, entries) {
     };
   }
 
-  console.warn(`[marketData] No usable FMP live data available for exchange=${exchange}. Falling back to demo.`);
+  console.warn(`[marketData] No usable FMP live data available for exchange=${exchange}. Falling back to demo. If this exchange requires a provider symbol suffix, check EXCHANGE_SUFFIXES.`);
   return null;
 }
 
 async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSector, apiKey, fromDate, toDate) {
+  const providerSymbol = getProviderSymbol(exchange, ticker);
   const [quoteResult, profileResult, historyResult] = await Promise.all([
-    fetchJson(`https://financialmodelingprep.com/stable/quote?symbol=${ticker}&apikey=${apiKey}`, `fmp-quote:${ticker}`, true),
-    fetchJson(`https://financialmodelingprep.com/stable/profile?symbol=${ticker}&apikey=${apiKey}`, `fmp-profile:${ticker}`, true),
+    fetchJson(`https://financialmodelingprep.com/stable/quote?symbol=${providerSymbol}&apikey=${apiKey}`, `fmp-quote:${providerSymbol}`, true),
+    fetchJson(`https://financialmodelingprep.com/stable/profile?symbol=${providerSymbol}&apikey=${apiKey}`, `fmp-profile:${providerSymbol}`, true),
     fetchJson(
-      `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&from=${fromDate}&to=${toDate}&apikey=${apiKey}`,
-      `fmp-history:${ticker}`,
+      `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${providerSymbol}&from=${fromDate}&to=${toDate}&apikey=${apiKey}`,
+      `fmp-history:${providerSymbol}`,
       true
     )
   ]);
@@ -241,7 +251,7 @@ async function getFinnhubData(exchange, entries) {
     };
   }
 
-  console.warn(`[marketData] No usable Finnhub live data available for exchange=${exchange}. Falling back to demo.`);
+  console.warn(`[marketData] No usable Finnhub live data available for exchange=${exchange}. Falling back to demo. If this exchange requires a provider symbol suffix, check EXCHANGE_SUFFIXES.`);
   return null;
 }
 
@@ -249,14 +259,15 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
   const apiKey = process.env.FINNHUB_API_KEY;
   const now = Math.floor(Date.now() / 1000);
   const from = now - 60 * 24 * 60 * 60;
+  const providerSymbol = getProviderSymbol(exchange, ticker);
 
   const [quoteResult, profileResult, metricsResult, candlesResult] = await Promise.all([
-    fetchJson(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${apiKey}`, `quote:${ticker}`, true),
-    fetchJson(`https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${apiKey}`, `profile2:${ticker}`, true),
-    fetchJson(`https://finnhub.io/api/v1/stock/metric?symbol=${ticker}&metric=all&token=${apiKey}`, `metric:${ticker}`, true),
+    fetchJson(`https://finnhub.io/api/v1/quote?symbol=${providerSymbol}&token=${apiKey}`, `quote:${providerSymbol}`, true),
+    fetchJson(`https://finnhub.io/api/v1/stock/profile2?symbol=${providerSymbol}&token=${apiKey}`, `profile2:${providerSymbol}`, true),
+    fetchJson(`https://finnhub.io/api/v1/stock/metric?symbol=${providerSymbol}&metric=all&token=${apiKey}`, `metric:${providerSymbol}`, true),
     fetchJson(
-      `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${now}&token=${apiKey}`,
-      `candle:${ticker}`,
+      `https://finnhub.io/api/v1/stock/candle?symbol=${providerSymbol}&resolution=D&from=${from}&to=${now}&token=${apiKey}`,
+      `candle:${providerSymbol}`,
       true
     )
   ]);
