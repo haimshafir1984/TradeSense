@@ -47,9 +47,10 @@ async function analyzeMarket(request = {}) {
   const dataQuality = assessDataQuality({ stocks, source });
   const spyBenchmark = benchmarkSnapshots.find((snapshot) => snapshot?.ticker === 'SPY');
   const marketContext = { benchmarkReturn3m: Number(spyBenchmark?.return_3m || 0) };
-  const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters, risk));
+  const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters));
   const scoredStocks = filteredStocks
     .map((stock) => scoreStockByStrategy(strategy, stock, marketContext))
+    .map((stock) => applyRiskFitPenalty(stock, risk))
     .sort((left, right) => right.score - left.score)
     .slice(0, 10);
   const validation = validateResults({ results: scoredStocks });
@@ -114,6 +115,7 @@ async function analyzeMarket(request = {}) {
       confidenceScore: adjustedConfidenceScore,
       dataSource: stock.data_source || source,
       imputedFields: stock.imputedFields || [],
+      riskFitPenalty: stock.riskFitPenalty,
       expertSupport,
       confluence,
       riskOverlay,
@@ -180,7 +182,7 @@ async function analyzeMarket(request = {}) {
   };
 }
 
-function applyFilters(stock, filters, risk) {
+function applyFilters(stock, filters) {
   const minDividendYield = toNumber(filters.minDividendYield);
   const minVolume = toNumber(filters.minVolume);
   const minPrice = toNumber(filters.minPrice);
@@ -223,11 +225,64 @@ function applyFilters(stock, filters, risk) {
     return false;
   }
 
-  if (!matchesRisk(stock, risk)) {
-    return false;
+  return true;
+}
+
+// The risk profile (low/medium/high) is a soft preference, not an explicit user filter like the
+// ones above - so instead of a hard cliff (e.g. volatility 0.0301 excluded, 0.0299 included), it
+// scales the stock's score continuously. A stock that doesn't match can still surface if its
+// underlying strategy signal is strong enough; it just ranks lower. See docs/LOGIC_IMPROVEMENTS.md 3.5.
+function applyRiskFitPenalty(stock, risk) {
+  const penalty = computeRiskFitPenalty(stock, risk);
+  return {
+    ...stock,
+    riskFitPenalty: penalty,
+    score: stock.score * penalty
+  };
+}
+
+function computeRiskFitPenalty(stock, risk) {
+  const imputedFields = stock.imputedFields || [];
+  const hasCriticalImputedData = imputedFields.includes('volatility') || imputedFields.includes('volume');
+  let penalty = 1;
+
+  if (risk === 'low') {
+    penalty *= smoothCeiling(stock.volatility, 0.03, 0.07);
+    penalty *= smoothFloor(stock.market_cap, 5000000000, 1000000000);
+    if (hasCriticalImputedData) {
+      penalty *= 0.6;
+    }
+  } else if (risk === 'medium') {
+    penalty *= smoothCeiling(stock.volatility, 0.055, 0.09);
   }
 
-  return true;
+  return clampUnit(penalty, 0.15, 1);
+}
+
+// 1.0 up to idealMax, tapering smoothly down to 0.2 at hardMax, instead of a hard cutoff.
+function smoothCeiling(value, idealMax, hardMax) {
+  if (!Number.isFinite(value) || value <= idealMax) {
+    return 1;
+  }
+  if (value >= hardMax) {
+    return 0.2;
+  }
+  return 1 - 0.8 * ((value - idealMax) / (hardMax - idealMax));
+}
+
+// 1.0 at/above idealMin, tapering smoothly down to 0.2 at hardMin.
+function smoothFloor(value, idealMin, hardMin) {
+  if (!Number.isFinite(value) || value >= idealMin) {
+    return 1;
+  }
+  if (value <= hardMin) {
+    return 0.2;
+  }
+  return 1 - 0.8 * ((idealMin - value) / (idealMin - hardMin));
+}
+
+function clampUnit(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function matchesMarketCap(marketCap, selected) {
@@ -265,24 +320,6 @@ function matchesVolatility(volatility, selected) {
 
   if (selected === 'high') {
     return volatility >= 0.05;
-  }
-
-  return true;
-}
-
-function matchesRisk(stock, risk) {
-  const imputedFields = stock.imputedFields || [];
-  const hasCriticalImputedData = imputedFields.includes('volatility') || imputedFields.includes('volume');
-
-  if (risk === 'low') {
-    if (hasCriticalImputedData) {
-      return false;
-    }
-    return stock.volatility < 0.03 && stock.market_cap >= 5000000000;
-  }
-
-  if (risk === 'medium') {
-    return stock.volatility < 0.055;
   }
 
   return true;

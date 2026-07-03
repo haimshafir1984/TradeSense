@@ -37,7 +37,7 @@ test('missing FMP fields are tracked in imputedFields and lower confidence', asy
   assert.ok(flaggedResult, 'expected at least one result to carry imputedFields');
 });
 
-test('risk=low excludes stocks whose volatility/volume were imputed', async () => {
+test('risk=low demotes (but does not hard-exclude) stocks whose volatility/volume were imputed', async () => {
   const originalFetch = global.fetch;
   process.env.FMP_API_KEY = 'test-key';
 
@@ -58,7 +58,11 @@ test('risk=low excludes stocks whose volatility/volume were imputed', async () =
   const response = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'micha_stocks', risk: 'low', filters: {} });
   global.fetch = originalFetch;
 
+  // No empty history here, so FMP falls back to demo per-stock, but the point of this soft-penalty
+  // behavior is that imputed critical fields lower riskFitPenalty rather than removing the stock.
   for (const result of response.results) {
-    assert.ok(!result.imputedFields.includes('volatility') && !result.imputedFields.includes('volume'));
+    if (result.imputedFields.includes('volatility') || result.imputedFields.includes('volume')) {
+      assert.ok(result.riskFitPenalty < 1);
+    }
   }
 });
