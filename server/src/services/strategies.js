@@ -61,22 +61,30 @@ function scoreMinerviniStrategy(stock) {
     stock.relativeStrength,
     normalize(stock.ma50_slope, 0.002, 0.05)
   ]);
+  // Classic Minervini trend template: price above rising MAs in order, and meaningfully off the
+  // 52-week low (he uses >=25-30%) - both were fetched but never scored before.
+  const aboveLow52Pct = stock.low_52w ? ((stock.price - stock.low_52w) / stock.low_52w) * 100 : 0;
   const trend = average([
     stock.price > stock.MA50 ? 1 : 0,
-    stock.price > stock.MA200 ? 1 : 0
+    stock.price > stock.MA200 ? 1 : 0,
+    stock.MA50 > stock.MA200 ? 1 : 0,
+    normalize(aboveLow52Pct, 20, 30)
   ]);
   const volume = normalize(stock.volumeRatio, 1, 2.5);
+  // consolidation_score approximates a VCP-style tightening range ahead of breakout.
   const breakout = average([
     normalize(stock.highProximity, 0.88, 1),
-    normalize(stock.relativeStrength, 0.55, 1)
+    normalize(stock.relativeStrength, 0.55, 1),
+    Number(stock.consolidation_score || 0)
   ]);
 
-  const score = momentum * 0.35 + trend * 0.25 + volume * 0.25 + breakout * 0.15;
+  const score = momentum * 0.3 + trend * 0.25 + volume * 0.2 + breakout * 0.25;
 
   return {
     ...stock,
+    aboveLow52Pct: round(aboveLow52Pct, 1),
     score: clamp(score),
-    explanation: createMinerviniExplanation(stock)
+    explanation: createMinerviniExplanation(stock, aboveLow52Pct)
   };
 }
 
@@ -111,7 +119,7 @@ function createMichaExplanation(stock) {
   return joinExplanation(parts, 'מניה יציבה עם מגמה ארוכת טווח חיובית');
 }
 
-function createMinerviniExplanation(stock) {
+function createMinerviniExplanation(stock, aboveLow52Pct = 0) {
   const parts = [];
 
   if (stock.highProximity >= 0.9) {
@@ -122,6 +130,15 @@ function createMinerviniExplanation(stock) {
   }
   if (stock.volumeRatio > 1) {
     parts.push('עם נפח מסחר גבוה');
+  }
+  if (stock.MA50 > stock.MA200) {
+    parts.push('וסדר ממוצעים נכון (50 מעל 200)');
+  }
+  if (aboveLow52Pct >= 25) {
+    parts.push('רחוקה משמעותית מהשפל השנתי');
+  }
+  if (Number(stock.consolidation_score || 0) >= 0.6) {
+    parts.push('לאחר תקופת התכנסות (VCP)');
   }
 
   return joinExplanation(parts, 'מניית מומנטום עם מבנה טכני חיובי');
@@ -191,6 +208,11 @@ function clamp(value) {
 
 function average(values) {
   return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function round(value, digits = 1) {
+  const factor = 10 ** digits;
+  return Math.round(Number(value || 0) * factor) / factor;
 }
 
 module.exports = {
