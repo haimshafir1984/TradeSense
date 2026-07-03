@@ -175,23 +175,31 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
   const closes = historyItems.map((item) => item.close).filter(Number.isFinite);
   const volumes = historyItems.map((item) => item.volume).filter(Number.isFinite);
   const latestHistory = historyItems[0] || null;
-  const latestClose = latestHistory?.close || seededNumber(`${ticker}-price`, 18, 460);
-  const price = positiveOrDefault(quote?.price, latestClose);
+  const imputedFields = [];
+
+  const price = trackedValue(imputedFields, 'price', [Number(quote?.price), Number(latestHistory?.close)], () =>
+    seededNumber(`${ticker}-price`, 18, 460));
   const previousClose = positiveOrDefault(quote?.previousClose, historyItems[1]?.close || price * 0.97);
   const dayHigh = positiveOrDefault(quote?.dayHigh, latestHistory?.high || price);
-  const volume = positiveOrDefault(quote?.volume, latestHistory?.volume || seededNumber(`${ticker}-vol`, 500000, 6500000));
-  const averageVolume30d = average(volumes.slice(0, 30)) || seededNumber(`${ticker}-avg`, 350000, 5200000);
-  const ma50 = average(closes.slice(0, 50)) || price * seededNumber(`${ticker}-ma50`, 0.92, 1.06);
-  const ma200 = average(closes.slice(0, 200)) || price * seededNumber(`${ticker}-ma200`, 0.84, 1.1);
+  const volume = trackedValue(imputedFields, 'volume', [Number(quote?.volume), Number(latestHistory?.volume)], () =>
+    seededNumber(`${ticker}-vol`, 500000, 6500000));
+  const averageVolume30d = trackedValue(imputedFields, 'average_volume_30d', [average(volumes.slice(0, 30))], () =>
+    seededNumber(`${ticker}-avg`, 350000, 5200000));
+  const ma50 = trackedValue(imputedFields, 'MA50', [average(closes.slice(0, 50))], () =>
+    price * seededNumber(`${ticker}-ma50`, 0.92, 1.06));
+  const ma200 = trackedValue(imputedFields, 'MA200', [average(closes.slice(0, 200))], () =>
+    price * seededNumber(`${ticker}-ma200`, 0.84, 1.1));
   const previousMa50 = average(closes.slice(5, 55)) || ma50;
   const returns = closes.slice(0, 20).map((value, index) => {
     const nextValue = closes[index + 1];
     return nextValue ? (value - nextValue) / nextValue : 0;
   });
-  const volatility = standardDeviation(returns) || seededNumber(`${ticker}-volatility`, 0.015, 0.07);
-  const high52 = positiveOrDefault(quote?.yearHigh, Math.max(...closes, price));
-  const low52 = positiveOrDefault(quote?.yearLow, Math.min(...closes, price));
-  const marketCap = positiveOrDefault(quote?.marketCap, positiveOrDefault(profile?.mktCap, seededNumber(`${ticker}-cap`, 900, 220000) * 1000000));
+  const volatility = trackedValue(imputedFields, 'volatility', [standardDeviation(returns)], () =>
+    seededNumber(`${ticker}-volatility`, 0.015, 0.07));
+  const high52 = trackedValue(imputedFields, 'high_52w', [Number(quote?.yearHigh), closes.length ? Math.max(...closes, price) : NaN], () => price * 1.1);
+  const low52 = trackedValue(imputedFields, 'low_52w', [Number(quote?.yearLow), closes.length ? Math.min(...closes, price) : NaN], () => price * 0.85);
+  const marketCap = trackedValue(imputedFields, 'market_cap', [Number(quote?.marketCap), Number(profile?.mktCap)], () =>
+    seededNumber(`${ticker}-cap`, 900, 220000) * 1000000);
   const dailyChange = Number.isFinite(quote?.changesPercentage)
     ? Number(quote.changesPercentage)
     : price && previousClose
@@ -229,7 +237,8 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     price_near_daily_high: dayHigh ? price / dayHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(closes.slice(0, 20), high52, low52),
-    data_source: dataSource
+    data_source: dataSource,
+    imputedFields
   };
 }
 
@@ -292,24 +301,32 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     ? candles.v.filter((value) => Number.isFinite(value))
     : [];
 
-  const fallbackPrice = seededNumber(`${ticker}-price`, 18, 460);
-  const price = positiveOrDefault(quote?.c, candleCloses[candleCloses.length - 1] || fallbackPrice);
+  const imputedFields = [];
+  const price = trackedValue(imputedFields, 'price', [Number(quote?.c), candleCloses[candleCloses.length - 1]], () =>
+    seededNumber(`${ticker}-price`, 18, 460));
   const previousClose = positiveOrDefault(quote?.pc, price * 0.97);
   const dailyHigh = positiveOrDefault(quote?.h, price);
-  const volume = candleVolumes[candleVolumes.length - 1] || seededNumber(`${ticker}-vol`, 500000, 6500000);
-  const averageVolume30d = average(candleVolumes.slice(-30)) || seededNumber(`${ticker}-avg`, 350000, 5200000);
-  const ma50 = average(candleCloses.slice(-50)) || price * seededNumber(`${ticker}-ma50`, 0.92, 1.06);
-  const ma200 = average(candleCloses.slice(-200)) || price * seededNumber(`${ticker}-ma200`, 0.84, 1.1);
+  const volume = trackedValue(imputedFields, 'volume', [candleVolumes[candleVolumes.length - 1]], () =>
+    seededNumber(`${ticker}-vol`, 500000, 6500000));
+  const averageVolume30d = trackedValue(imputedFields, 'average_volume_30d', [average(candleVolumes.slice(-30))], () =>
+    seededNumber(`${ticker}-avg`, 350000, 5200000));
+  const ma50 = trackedValue(imputedFields, 'MA50', [average(candleCloses.slice(-50))], () =>
+    price * seededNumber(`${ticker}-ma50`, 0.92, 1.06));
+  const ma200 = trackedValue(imputedFields, 'MA200', [average(candleCloses.slice(-200))], () =>
+    price * seededNumber(`${ticker}-ma200`, 0.84, 1.1));
   const previousMa50 = average(candleCloses.slice(-55, -5)) || ma50;
   const returns = candleCloses.slice(1).map((value, index) =>
     candleCloses[index] ? (value - candleCloses[index]) / candleCloses[index] : 0
   );
-  const volatility = standardDeviation(returns.slice(-20)) || seededNumber(`${ticker}-volatility`, 0.015, 0.07);
-  const high52 = positiveOrDefault(metrics?.metric?.['52WeekHigh'], Math.max(...candleCloses, price));
-  const low52 = positiveOrDefault(metrics?.metric?.['52WeekLow'], Math.min(...candleCloses, price));
-  const marketCapMillions = positiveOrDefault(
-    profile?.marketCapitalization || metrics?.metric?.marketCapitalization,
-    seededNumber(`${ticker}-cap`, 900, 220000)
+  const volatility = trackedValue(imputedFields, 'volatility', [standardDeviation(returns.slice(-20))], () =>
+    seededNumber(`${ticker}-volatility`, 0.015, 0.07));
+  const high52 = trackedValue(imputedFields, 'high_52w', [Number(metrics?.metric?.['52WeekHigh']), candleCloses.length ? Math.max(...candleCloses, price) : NaN], () => price * 1.1);
+  const low52 = trackedValue(imputedFields, 'low_52w', [Number(metrics?.metric?.['52WeekLow']), candleCloses.length ? Math.min(...candleCloses, price) : NaN], () => price * 0.85);
+  const marketCapMillions = trackedValue(
+    imputedFields,
+    'market_cap',
+    [Number(profile?.marketCapitalization), Number(metrics?.metric?.marketCapitalization)],
+    () => seededNumber(`${ticker}-cap`, 900, 220000)
   );
   const dailyChange = Number.isFinite(quote?.dp)
     ? Number(quote.dp)
@@ -343,7 +360,8 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     price_near_daily_high: dailyHigh ? price / dailyHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(candleCloses.slice(-20), high52, low52),
-    data_source: dataSource
+    data_source: dataSource,
+    imputedFields
   };
 }
 
@@ -475,7 +493,8 @@ function createDemoStock(exchange, ticker, companyName, sector) {
     price_near_daily_high: seededNumber(`${exchange}-${ticker}-dailyhigh`, 0.84, 1),
     ma50_slope: seededNumber(`${exchange}-${ticker}-slope`, -0.04, 0.09),
     consolidation_score: seededNumber(`${exchange}-${ticker}-consolidation`, 0.25, 0.97),
-    data_source: 'demo'
+    data_source: 'demo',
+    imputedFields: []
   };
 }
 
@@ -527,6 +546,17 @@ function seededNumber(seed, min, max) {
 
 function positiveOrDefault(value, fallback) {
   return Number(value) > 0 ? Number(value) : fallback;
+}
+
+function trackedValue(tracker, fieldName, candidates, computeFallback) {
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate) && candidate > 0) {
+      return candidate;
+    }
+  }
+
+  tracker.push(fieldName);
+  return computeFallback();
 }
 
 function clamp(value) {

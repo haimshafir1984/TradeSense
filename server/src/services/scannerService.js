@@ -113,6 +113,7 @@ async function analyzeMarket(request = {}) {
       }),
       confidenceScore: adjustedConfidenceScore,
       dataSource: stock.data_source || source,
+      imputedFields: stock.imputedFields || [],
       expertSupport,
       confluence,
       riskOverlay,
@@ -270,7 +271,13 @@ function matchesVolatility(volatility, selected) {
 }
 
 function matchesRisk(stock, risk) {
+  const imputedFields = stock.imputedFields || [];
+  const hasCriticalImputedData = imputedFields.includes('volatility') || imputedFields.includes('volume');
+
   if (risk === 'low') {
+    if (hasCriticalImputedData) {
+      return false;
+    }
     return stock.volatility < 0.03 && stock.market_cap >= 5000000000;
   }
 

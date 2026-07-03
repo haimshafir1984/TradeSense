@@ -29,6 +29,7 @@ function assessDataQuality({ stocks = [], source = 'demo' }) {
   let missingFieldCount = 0;
   let partialStockCount = 0;
   let demoStockCount = 0;
+  let imputedFieldCount = 0;
 
   for (const stock of stocks) {
     if (stock.data_source === 'demo') {
@@ -42,6 +43,8 @@ function assessDataQuality({ stocks = [], source = 'demo' }) {
         missingFieldCount += 1;
       }
     }
+
+    imputedFieldCount += (stock.imputedFields || []).length;
   }
 
   const issues = [];
@@ -71,12 +74,20 @@ function assessDataQuality({ stocks = [], source = 'demo' }) {
     }
   }
 
+  if (imputedFieldCount > 0) {
+    issues.push(`${imputedFieldCount} שדות הושלמו אוטומטית (imputed) בהיעדר נתון חי`);
+    if (level === 'high') {
+      level = 'medium';
+    }
+  }
+
   return {
     level,
     issues,
     missingFieldCount,
     partialStockCount,
-    demoStockCount
+    demoStockCount,
+    imputedFieldCount
   };
 }
 
@@ -144,6 +155,7 @@ function computeConfidence({ dataQuality, validation, results = [], source = 'de
     score -= 20;
   }
 
+  score -= Math.min(15, dataQuality.imputedFieldCount || 0);
   score -= validation.warnings.length * 6;
 
   return clamp(Math.round(score), 0, 100);
