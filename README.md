@@ -287,13 +287,10 @@ TradeSense/
 
 ### Universe
 
-רשימת הסימולים מגיעה מ:
+רשימת ברירת המחדל (סטטית) מגיעה מ:
 - `server/src/data/universe.js`
 
-כרגע הרשימה היא סטטית ומוגדרת בקוד עבור:
-- `NASDAQ`
-- `NYSE`
-- `TASE`
+עבור `NASDAQ`/`NYSE` במצב `DATA_MODE=fmp`, המערכת מנסה קודם universe **דינמי** דרך ה-screener של FMP (`stable/company-screener`, מניות actively-trading), ורק אם הקריאה נכשלת/ריקה חוזרת לרשימה הסטטית. `TASE` תמיד משתמשת ברשימה הסטטית (עם מיפוי `.TA`, ראו שכבת הנתונים למטה).
 
 חשוב:
 המערכת כיום לא סורקת את כל השוק.
@@ -712,10 +709,9 @@ GET /api/health
 
 ## מגבלות ידועות
 
-### 1. Universe סטטי
+### 1. Universe
 
-המערכת אינה מושכת רשימת מניות דינמית.
-היא סורקת universe קשיח שמוגדר בקוד.
+עבור NASDAQ/NYSE במצב FMP יש universe דינמי (FMP screener) עם נפילה לרשימה סטטית. TASE ובמצב demo/Finnhub עדיין תמיד סטטיים. בכל מקרה מדובר בעד ~20 סימולים לבורסה לסריקה - לא סריקה של כל השוק.
 
 ### 2. אין בסיס נתונים
 
@@ -747,13 +743,12 @@ GET /api/health
 
 ## כיווני הרחבה עתידיים
 
-כיוונים אפשריים להמשך:
+כיוונים אפשריים להמשך (מפורטים יותר ב-[`docs/LOGIC_IMPROVEMENTS.md`](docs/LOGIC_IMPROVEMENTS.md)):
 
-- הוספת cache לשכבת הנתונים
 - הוספת request validation עם schema
-- הוספת tests
-- הרחבת universe למקורות דינמיים
-- שמירת היסטוריית סריקות
+- earnings calendar וסימון סנטימנט/חדשות כ-flag
+- universe דינמי גם ל-Finnhub ול-TASE
+- מעבר מ-JSON file store ל-DB אמיתי ל-scan history/portfolio ככל שהנפח גדל
 - שיפור observability
 - הוספת orchestration layer מעל הלוגיקה הקיימת
 - הוספת LangGraph כשכבת stateful orchestration, בלי לגעת בליבת scoring וה-filtering

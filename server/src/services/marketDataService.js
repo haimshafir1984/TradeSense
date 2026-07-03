@@ -22,8 +22,35 @@ function getProviderSymbol(exchange, ticker) {
   return suffix ? `${ticker}${suffix}` : ticker;
 }
 
+// The static universe (~20 hand-picked mega-caps per exchange) is the ceiling on what the scoring
+// logic can ever recommend - it can't surface a stock that isn't on the list, and the mega-cap
+// bias undermines the short-horizon strategies in particular. This queries FMP's screener for an
+// actively-traded, liquid slice of the exchange instead; on any failure it returns null and the
+// caller falls back to the static list. See docs/LOGIC_IMPROVEMENTS.md 5.3.
+const FMP_SCREENER_EXCHANGES = new Set(['NASDAQ', 'NYSE']);
+const DYNAMIC_UNIVERSE_SIZE = 20;
+
+async function getDynamicUniverse(exchange, apiKey) {
+  if (!FMP_SCREENER_EXCHANGES.has(exchange)) {
+    return null;
+  }
+
+  const url = `https://financialmodelingprep.com/stable/company-screener?exchange=${exchange}&isActivelyTrading=true&limit=${DYNAMIC_UNIVERSE_SIZE}&apikey=${apiKey}`;
+  const result = await fetchJson(url, `fmp-screener:${exchange}`, true);
+
+  if (!result.ok || !Array.isArray(result.data) || !result.data.length) {
+    return null;
+  }
+
+  const entries = result.data
+    .filter((item) => item?.symbol && item?.companyName)
+    .slice(0, DYNAMIC_UNIVERSE_SIZE)
+    .map((item) => [item.symbol, item.companyName, item.sector || 'Unknown']);
+
+  return entries.length ? entries : null;
+}
+
 async function getMarketData(exchange) {
-  const entries = getExchangeSymbols(exchange);
   const mode = (process.env.DATA_MODE || 'fmp').toLowerCase();
   const cacheKey = `${mode}:${exchange}`;
 
@@ -33,9 +60,16 @@ async function getMarketData(exchange) {
     return cachedMarketData;
   }
 
+  let entries = getExchangeSymbols(exchange);
   console.log(`[marketData] Requested exchange=${exchange} mode=${mode} symbols=${entries.length}`);
 
   if (mode === 'fmp' && process.env.FMP_API_KEY) {
+    const dynamicEntries = await getDynamicUniverse(exchange, process.env.FMP_API_KEY);
+    if (dynamicEntries) {
+      entries = dynamicEntries;
+      console.log(`[marketData] Using dynamic FMP screener universe. exchange=${exchange} count=${entries.length}`);
+    }
+
     const result = await getFmpData(exchange, entries);
     if (result) {
       writeCache(MARKET_DATA_CACHE, cacheKey, result, MARKET_DATA_CACHE_TTL_MS);
@@ -152,12 +186,17 @@ async function getFmpData(exchange, entries) {
 
 async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSector, apiKey, fromDate, toDate) {
   const providerSymbol = getProviderSymbol(exchange, ticker);
-  const [quoteResult, profileResult, historyResult] = await Promise.all([
+  const [quoteResult, profileResult, historyResult, growthResult] = await Promise.all([
     fetchJson(`https://financialmodelingprep.com/stable/quote?symbol=${providerSymbol}&apikey=${apiKey}`, `fmp-quote:${providerSymbol}`, true),
     fetchJson(`https://financialmodelingprep.com/stable/profile?symbol=${providerSymbol}&apikey=${apiKey}`, `fmp-profile:${providerSymbol}`, true),
     fetchJson(
       `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${providerSymbol}&from=${fromDate}&to=${toDate}&apikey=${apiKey}`,
       `fmp-history:${providerSymbol}`,
+      true
+    ),
+    fetchJson(
+      `https://financialmodelingprep.com/stable/income-statement-growth?symbol=${providerSymbol}&limit=1&apikey=${apiKey}`,
+      `fmp-growth:${providerSymbol}`,
       true
     )
   ]);
@@ -165,6 +204,7 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
   const quote = firstArrayItem(quoteResult.ok ? quoteResult.data : null);
   const profile = firstArrayItem(profileResult.ok ? profileResult.data : null);
   const historyItems = normalizeFmpHistory(historyResult.ok ? historyResult.data : null);
+  const growth = firstArrayItem(growthResult.ok ? growthResult.data : null);
 
   if (!quote && !profile && historyItems.length === 0) {
     console.warn(`[marketData] ${ticker} has no accessible FMP data. Using demo stock.`);
@@ -209,6 +249,14 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     seededNumber(`${ticker}-cap`, 900, 220000) * 1000000);
   const return3m = trackedSignedValue(imputedFields, 'return_3m', [computeReturnPct(closes, price)], () =>
     ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0);
+  // Real fundamental growth (revenue YoY), not the market-cap-as-"growth" proxy strategies.js used
+  // to rely on. Falls back to a neutral 0% (no known signal) rather than a fabricated value.
+  const revenueGrowthPct = trackedSignedValue(
+    imputedFields,
+    'revenue_growth_pct',
+    [Number.isFinite(Number(growth?.growthRevenue)) ? Number(growth.growthRevenue) * 100 : NaN],
+    () => 0
+  );
   const dailyChange = Number.isFinite(quote?.changesPercentage)
     ? Number(quote.changesPercentage)
     : price && previousClose
@@ -244,6 +292,7 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     low_52w: low52,
     volatility,
     return_3m: return3m,
+    revenue_growth_pct: revenueGrowthPct,
     price_near_daily_high: dayHigh ? price / dayHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(closes.slice(0, 20), high52, low52),
@@ -344,6 +393,12 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     [computeReturnPctFromEnd(candleCloses, price, RETURN_WINDOW_TRADING_DAYS)],
     () => (ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0)
   );
+  const revenueGrowthPct = trackedSignedValue(
+    imputedFields,
+    'revenue_growth_pct',
+    [Number(metrics?.metric?.revenueGrowthTTMYoy)],
+    () => 0
+  );
   const dailyChange = Number.isFinite(quote?.dp)
     ? Number(quote.dp)
     : price && previousClose
@@ -374,6 +429,7 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     low_52w: low52,
     volatility,
     return_3m: return3m,
+    revenue_growth_pct: revenueGrowthPct,
     price_near_daily_high: dailyHigh ? price / dailyHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(candleCloses.slice(-20), high52, low52),
@@ -508,6 +564,7 @@ function createDemoStock(exchange, ticker, companyName, sector) {
     low_52w: low52,
     volatility: seededNumber(`${exchange}-${ticker}-volatility`, 0.012, 0.08),
     return_3m: ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0,
+    revenue_growth_pct: seededNumber(`${exchange}-${ticker}-revgrowth`, -8, 25),
     price_near_daily_high: seededNumber(`${exchange}-${ticker}-dailyhigh`, 0.84, 1),
     ma50_slope: seededNumber(`${exchange}-${ticker}-slope`, -0.04, 0.09),
     consolidation_score: seededNumber(`${exchange}-${ticker}-consolidation`, 0.25, 0.97),

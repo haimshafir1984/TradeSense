@@ -45,7 +45,12 @@ function scoreMichaStrategy(stock) {
     stock.price > stock.MA200 ? 1 : 0,
     stock.price > stock.MA50 ? 1 : 0
   ]);
-  const growth = normalize(stock.market_cap, 1000000000, 60000000000);
+  // "Growth" used to just mean company size (market cap), which is a scale measure, not growth.
+  // Blended with real revenue growth (YoY, from FMP/Finnhub fundamentals) so it actually reflects
+  // whether the business is growing. See docs/LOGIC_IMPROVEMENTS.md 5.2.
+  const revenueGrowth = normalize(stock.revenue_growth_pct, 0, 20);
+  const scale = normalize(stock.market_cap, 1000000000, 60000000000);
+  const growth = average([revenueGrowth, scale]);
   const pullback = scoreHighProximity(stock.pullbackFromHigh, 15);
   const volume = normalize(stock.volumeRatio, 1, 2.4);
 
@@ -120,6 +125,9 @@ function createMichaExplanation(stock) {
   }
   if (stock.volumeRatio > 1) {
     parts.push('עם נפח מסחר גבוה מהממוצע');
+  }
+  if (Number(stock.revenue_growth_pct || 0) >= 10) {
+    parts.push('וצמיחת הכנסות שנתית דו-ספרתית');
   }
 
   return joinExplanation(parts, 'מניה יציבה עם מגמה ארוכת טווח חיובית');
