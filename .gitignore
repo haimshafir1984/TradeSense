@@ -3,3 +3,4 @@ dist
 .env
 .DS_Store
 npm-debug.log*
+server/src/data/scanHistory.json

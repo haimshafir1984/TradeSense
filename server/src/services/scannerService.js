@@ -29,6 +29,7 @@ const {
 } = require('./opportunityScoringService');
 const { assessIndiFit } = require('./indiOverlayService');
 const { QUALITY_SCORE_THRESHOLD, RISK_FIT_THRESHOLDS } = require('../config/scoringConfig');
+const { recordScan } = require('./scanHistoryService');
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -136,6 +137,7 @@ async function analyzeMarket(request = {}) {
       estimatedUpsideRange: opportunity.estimatedUpside.label,
       expectedReturnPct: opportunity.expectedReturnPct,
       opportunityScore: opportunity.opportunityScore,
+      price: round(stock.price, 2),
       volatility: round(stock.volatility, 4),
       market_cap: Math.round(stock.market_cap)
     };
@@ -164,6 +166,15 @@ async function analyzeMarket(request = {}) {
     returnedStocks: results.length,
     noQualitySetups
   });
+
+  // Persisting scans is what makes it possible to later check whether opportunityRank etc. mean
+  // anything (see evaluateOutcomes/buildHitRateReport in scanHistoryService.js). Best-effort: a
+  // storage failure shouldn't fail the scan response itself.
+  try {
+    await recordScan({ exchange, strategy, risk, results, spyPriceAtScan: spyBenchmark?.price });
+  } catch (error) {
+    console.warn('[analyze] Failed to record scan history', error.message);
+  }
 
   return {
     results,

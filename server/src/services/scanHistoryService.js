@@ -1,0 +1,175 @@
+const { readScanHistory, writeScanHistory } = require('./scanHistoryStore');
+// Called as marketDataService.getStockSnapshot(...) rather than destructured, so tests can
+// monkey-patch the export without needing to reload this module.
+const marketDataService = require('./marketDataService');
+const { round } = require('./mathUtils');
+
+// This is the feedback loop the rest of the scoring logic has no way to validate itself against:
+// without it, opportunityRank/successProbability-style numbers are just formulas that were never
+// checked against what stocks actually did. See docs/LOGIC_IMPROVEMENTS.md section 5.1.
+//
+// Horizons are calendar days, not trading days, as a simple approximation - see EVALUATION_HORIZON_DAYS.
+const EVALUATION_HORIZON_DAYS = {
+  ross_cameron: 5,
+  mark_minervini: 20,
+  micha_stocks: 60
+};
+const DEFAULT_HORIZON_DAYS = 20;
+
+const OPPORTUNITY_RANK_BUCKETS = [
+  { label: '0-39', min: 0, max: 39 },
+  { label: '40-59', min: 40, max: 59 },
+  { label: '60-79', min: 60, max: 79 },
+  { label: '80-100', min: 80, max: 100 }
+];
+
+async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan }) {
+  if (!Number.isFinite(spyPriceAtScan) || spyPriceAtScan <= 0 || !results.length) {
+    return null;
+  }
+
+  const scans = await readScanHistory();
+  const entry = {
+    id: `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    scannedAt: new Date().toISOString(),
+    exchange,
+    strategy,
+    risk,
+    benchmark: { ticker: 'SPY', priceAtScan: spyPriceAtScan },
+    results: results.map((result) => ({
+      ticker: result.ticker,
+      priceAtScan: result.price,
+      opportunityRank: result.opportunityRank,
+      matchScore: result.matchScore,
+      outcome: null
+    }))
+  };
+
+  scans.push(entry);
+  await writeScanHistory(scans);
+  return entry;
+}
+
+function getHorizonDays(strategy) {
+  return EVALUATION_HORIZON_DAYS[strategy] || DEFAULT_HORIZON_DAYS;
+}
+
+async function evaluateOutcomes({ now = new Date() } = {}) {
+  const scans = await readScanHistory();
+  let evaluatedCount = 0;
+  const spyPriceCache = { value: null };
+
+  for (const scan of scans) {
+    const horizonDays = getHorizonDays(scan.strategy);
+    const ageDays = (now.getTime() - new Date(scan.scannedAt).getTime()) / (24 * 60 * 60 * 1000);
+
+    if (ageDays < horizonDays) {
+      continue;
+    }
+
+    const pendingResults = scan.results.filter((result) => !result.outcome);
+    if (!pendingResults.length) {
+      continue;
+    }
+
+    if (spyPriceCache.value === null) {
+      const spySnapshot = await marketDataService.getStockSnapshot('SPY');
+      spyPriceCache.value = Number(spySnapshot?.price) || null;
+    }
+
+    if (!spyPriceCache.value) {
+      continue;
+    }
+
+    const benchmarkReturnPct = ((spyPriceCache.value - scan.benchmark.priceAtScan) / scan.benchmark.priceAtScan) * 100;
+
+    for (const result of pendingResults) {
+      const snapshot = await marketDataService.getStockSnapshot(result.ticker);
+      const currentPrice = Number(snapshot?.price);
+
+      if (!Number.isFinite(currentPrice) || currentPrice <= 0 || !Number.isFinite(result.priceAtScan) || result.priceAtScan <= 0) {
+        continue;
+      }
+
+      const stockReturnPct = ((currentPrice - result.priceAtScan) / result.priceAtScan) * 100;
+      const excessReturnPct = stockReturnPct - benchmarkReturnPct;
+
+      result.outcome = {
+        evaluatedAt: now.toISOString(),
+        horizonDays,
+        stockReturnPct: round(stockReturnPct, 2),
+        benchmarkReturnPct: round(benchmarkReturnPct, 2),
+        excessReturnPct: round(excessReturnPct, 2),
+        hit: excessReturnPct > 0
+      };
+      evaluatedCount += 1;
+    }
+  }
+
+  if (evaluatedCount > 0) {
+    await writeScanHistory(scans);
+  }
+
+  return { evaluatedCount };
+}
+
+function findOpportunityRankBucket(opportunityRank) {
+  return OPPORTUNITY_RANK_BUCKETS.find((bucket) => opportunityRank >= bucket.min && opportunityRank <= bucket.max)?.label || 'unknown';
+}
+
+function summarize(entries) {
+  const total = entries.length;
+  const hits = entries.filter((entry) => entry.outcome.hit).length;
+  const avgExcessReturnPct = total
+    ? entries.reduce((sum, entry) => sum + entry.outcome.excessReturnPct, 0) / total
+    : 0;
+
+  return {
+    count: total,
+    hits,
+    hitRatePct: total ? round((hits / total) * 100, 1) : null,
+    avgExcessReturnPct: round(avgExcessReturnPct, 2)
+  };
+}
+
+async function buildHitRateReport() {
+  const scans = await readScanHistory();
+  const evaluated = [];
+  let pendingCount = 0;
+
+  for (const scan of scans) {
+    for (const result of scan.results) {
+      if (result.outcome) {
+        evaluated.push({ strategy: scan.strategy, ...result });
+      } else {
+        pendingCount += 1;
+      }
+    }
+  }
+
+  const byStrategy = {};
+  for (const strategyKey of Object.keys(EVALUATION_HORIZON_DAYS)) {
+    byStrategy[strategyKey] = summarize(evaluated.filter((entry) => entry.strategy === strategyKey));
+  }
+
+  const byOpportunityRankBucket = {};
+  for (const bucket of OPPORTUNITY_RANK_BUCKETS) {
+    byOpportunityRankBucket[bucket.label] = summarize(
+      evaluated.filter((entry) => findOpportunityRankBucket(entry.opportunityRank) === bucket.label)
+    );
+  }
+
+  return {
+    overall: summarize(evaluated),
+    byStrategy,
+    byOpportunityRankBucket,
+    evaluatedCount: evaluated.length,
+    pendingCount
+  };
+}
+
+module.exports = {
+  recordScan,
+  evaluateOutcomes,
+  buildHitRateReport
+};
