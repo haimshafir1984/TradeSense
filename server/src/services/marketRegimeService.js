@@ -1,3 +1,5 @@
+const { average, round } = require('./mathUtils');
+
 const MARKET_BENCHMARKS = ['SPY', 'QQQ', 'IWM'];
 
 // A regime built from 3 ETFs on a single day is noisy; breadth across the whole scanned universe
@@ -166,19 +168,6 @@ function buildEmptyIndicators() {
     aboveMA200Count: 0,
     breadth: { aboveMA50Pct: null, aboveMA200Pct: null, sampleSize: 0 }
   };
-}
-
-function average(values) {
-  const filtered = values.filter((value) => Number.isFinite(value));
-  if (!filtered.length) {
-    return 0;
-  }
-
-  return filtered.reduce((sum, value) => sum + value, 0) / filtered.length;
-}
-
-function round(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 module.exports = {

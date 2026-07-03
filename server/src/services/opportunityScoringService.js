@@ -1,3 +1,5 @@
+const { clamp, round, average } = require('./mathUtils');
+
 function assessOpportunity({
   stock,
   strategy,
@@ -80,8 +82,10 @@ function estimateUpside({ stock, strategy, marketRegime, riskOverlay }) {
     maxPct = 14;
   }
 
-  const volumeRatio = stock.volumeRatio || (stock.average_volume_30d ? stock.volume / stock.average_volume_30d : 0);
-  const highProximity = stock.highProximity || (stock.high_52w ? stock.price / stock.high_52w : 0);
+  // volumeRatio/highProximity are computed once in strategies.js#enrichStock and carried on
+  // every stock through the pipeline (see indiOverlayService for the same pattern).
+  const volumeRatio = stock.volumeRatio;
+  const highProximity = stock.highProximity;
 
   if (volumeRatio >= 1.8) {
     maxPct += 4;
@@ -146,24 +150,6 @@ function buildRecommendationLabel(opportunityScore, opportunityRank, midUpside) 
   }
 
   return 'מעקב';
-}
-
-function average(values) {
-  const filtered = values.filter((value) => Number.isFinite(value));
-  if (!filtered.length) {
-    return 0;
-  }
-
-  return filtered.reduce((sum, value) => sum + value, 0) / filtered.length;
-}
-
-function round(value, digits = 1) {
-  const factor = 10 ** digits;
-  return Math.round(Number(value || 0) * factor) / factor;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 module.exports = {

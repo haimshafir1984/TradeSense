@@ -79,17 +79,33 @@ TradeSense/
 │     └─ styles.css
 ├─ server/
 │  ├─ package.json
+│  ├─ test/
+│  │  └─ *.test.js         (node --test, npm test)
 │  └─ src/
 │     ├─ index.js
 │     ├─ app.js
 │     ├─ routes/
-│     │  └─ analyze.js
+│     │  ├─ analyze.js
+│     │  └─ portfolio.js
+│     ├─ config/
+│     │  └─ scoringConfig.js    (weights/thresholds in one place)
 │     ├─ services/
-│     │  ├─ scannerService.js
-│     │  ├─ marketDataService.js
-│     │  └─ strategies.js
+│     │  ├─ scannerService.js         (orchestration)
+│     │  ├─ marketDataService.js      (data layer + provider fallback)
+│     │  ├─ strategies.js             (scoring per strategy)
+│     │  ├─ analysisService.js        (data quality, confidence, confluence, risk)
+│     │  ├─ marketRegimeService.js    (bull/bear/volatile detection + breadth)
+│     │  ├─ opportunityScoringService.js  (opportunityRank / upside estimate)
+│     │  ├─ expertSupportService.js   (per-strategy "style match" badges)
+│     │  ├─ indiOverlayService.js     (short-strategy fit overlay)
+│     │  ├─ explanationService.js     (enriched per-result explanation text)
+│     │  ├─ portfolioService.js       (holdings/watchlist, separate feature)
+│     │  ├─ portfolioStore.js
+│     │  └─ mathUtils.js              (shared clamp/round/average)
 │     └─ data/
 │        └─ universe.js
+├─ docs/
+│  └─ LOGIC_IMPROVEMENTS.md   (known issues + roadmap for the scoring logic)
 ├─ .env
 ├─ .env.example
 ├─ package.json
@@ -235,16 +251,22 @@ TradeSense/
 הקובץ:
 - `server/src/services/scannerService.js`
 
-זהו המודול המרכזי שמבצע orchestration לוגי.
+זהו המודול המרכזי שמבצע orchestration לוגי. ה־pipeline המלא:
 
-הוא אחראי על:
-- normalization בסיסי של ה־request
-- קריאה ל־`getMarketData`
-- הפעלת `applyFilters`
-- הפעלת `scoreStockByStrategy`
-- מיון תוצאות
-- החזרת top 10
-- בניית metadata ל־UI
+1. שליפת נתוני שוק (`getMarketData`) ומדדי ייחוס SPY/QQQ/IWM (`getStockSnapshots`)
+2. הפעלת פילטרים קשיחים שהמשתמש ביקש (`applyFilters`) - **לא** כולל את רמת הסיכון
+3. ניקוד לפי אסטרטגיה (`scoreStockByStrategy`), כולל `relativeStrength` אמיתי מול תשואת SPY
+4. קנס רציף לפי רמת הסיכון (`applyRiskFitPenalty`) - טאפר חלק, לא חיתוך בינארי
+5. מיון וחיתוך ל־10 מועמדים מקסימום
+6. סף איכות מינימלי (`QUALITY_SCORE_THRESHOLD`) - מועמד חלש לא מוצג כהמלצה גם אם הוא בין העשירייה
+7. לכל תוצאה שעוברת את הסף: שכבות overlay נוספות -
+   `confluence` (הסכמה בין אסטרטגיות, מנורמל ל־percentile בתוך ה־universe הנסרק),
+   `expertSupport`, `riskOverlay`, `opportunity` (`opportunityRank`/`estimatedUpside`/`expectedReturnPct`),
+   `indiFit` (לאסטרטגיות קצרות בלבד), הסבר מועשר
+8. `marketRegime` מחושב פעם אחת לכל הסריקה, משלב גם קריאת breadth על כל ה־universe (לא רק 3 ה־ETF)
+9. בניית `meta`/`analysis`/`summary` ללקוח
+
+מפת פירוט הבעיות הידועות בלוגיקה הזו נמצאת ב־[`docs/LOGIC_IMPROVEMENTS.md`](docs/LOGIC_IMPROVEMENTS.md).
 
 ## שכבת הנתונים
 
@@ -356,11 +378,13 @@ TradeSense/
 
 ### מה קורה לפני הניקוד
 
-לפני חישוב score, המערכת מבצעת enrichment של ה־stock ומוסיפה מדדים נגזרים:
+לפני חישוב score, המערכת מבצעת enrichment פעם אחת (`enrichStock`) ומוסיפה מדדים נגזרים, שנשמרים על ה־stock ומשמשים גם את שכבות ה־overlay (כדי שלא יחושבו כפול):
 - `volumeRatio`
 - `highProximity`
 - `pullbackFromHigh`
-- `relativeStrength`
+- `relativeStrength` - תשואת המניה ב־~63 ימי מסחר (`return_3m`) פחות תשואת ה־SPY לאותו חלון, מנורמל. זו הצלבה אמיתית מול השוק, לא מדד פנימי בלבד.
+
+המשקלים של כל אסטרטגיה מוגדרים במרוכז ב־`server/src/config/scoringConfig.js`.
 
 ### Micha Stocks
 
@@ -421,18 +445,18 @@ TradeSense/
 - `maxPrice`
 - `volatility`
 - `unusualVolume`
-- `institutionalBuying`
-- `insiderBuying`
+
+> הוסרו פילטרי `institutionalBuying`/`insiderBuying` - הם סיננו לפי נתוני "קנייה מוסדית"/"קניית פנים" שהיו למעשה תמיד ערכים אקראיים מדומים, גם במצב live. ראו סעיף 2.1 ב-`docs/LOGIC_IMPROVEMENTS.md`.
 
 ### רמות סיכון
 
-בנוסף לפילטרים, יש גם שער סיכון:
+בנוסף לפילטרים, יש גם פרופיל סיכון:
 
 - `low`
 - `medium`
 - `high`
 
-לפי רמת הסיכון, המערכת מפעילה תנאי קשיח על תנודתיות ושווי שוק.
+בניגוד לפילטרים למעלה, רמת הסיכון **אינה** חיתוך בינארי. היא מפעילה קנס רציף (`riskFitPenalty`, 0.15–1.0) על ציון המניה לפי מרחק מהטווח האידאלי של תנודתיות/שווי שוק - מניה שלא מתאימה עדיין יכולה להופיע, בדירוג נמוך יותר, אם האות הבסיסי חזק מספיק.
 
 ## מבנה הבקשה ל-API
 
@@ -459,9 +483,7 @@ Content-Type: application/json
     "minPrice": "",
     "maxPrice": "",
     "volatility": "any",
-    "unusualVolume": false,
-    "institutionalBuying": false,
-    "insiderBuying": false
+    "unusualVolume": false
   }
 }
 ```
@@ -478,7 +500,15 @@ Content-Type: application/json
       "companyName": "Apple",
       "matchScore": 84,
       "strategyName": "השקעה לטווח ארוך - Micha Stocks",
-      "explanation": "נמצאת במגמת עלייה מעל ממוצע 200 יום"
+      "explanation": "נמצאת במגמת עלייה מעל ממוצע 200 יום",
+      "opportunityRank": 78,
+      "estimatedUpsideRange": "8% - 20%",
+      "expectedReturnPct": 10.9,
+      "riskFitPenalty": 1,
+      "imputedFields": [],
+      "dataSource": "fmp",
+      "confluence": { "level": "medium", "percentileByStrategy": { "micha_stocks": 90 } },
+      "riskOverlay": { "level": "low", "score": 1 }
     }
   ],
   "meta": {
@@ -487,7 +517,8 @@ Content-Type: application/json
     "risk": "medium",
     "source": "fmp_partial",
     "analyzedCount": 8,
-    "returnedCount": 8
+    "returnedCount": 8,
+    "noQualitySetups": false
   }
 }
 ```
@@ -496,7 +527,12 @@ Content-Type: application/json
 
 #### results
 
-מערך של עד 10 מניות.
+מערך של עד 10 מניות שעברו גם את סף האיכות המינימלי (ראו `meta.noQualitySetups`).
+
+- `opportunityRank` - ציון הזדמנות **יחסי** (0–100), לא הסתברות סטטיסטית מכוילת. שם השדה שונה במכוון מ-`successProbability` הישן כדי לא להטעות.
+- `imputedFields` - אילו שדות של המניה הזו הושלמו אוטומטית (seeded) בהיעדר נתון חי, גם כש-`dataSource` נראה live.
+- `riskFitPenalty` - עד כמה המניה מתאימה לפרופיל הסיכון שנבחר (1 = מתאימה במלואה).
+- `confluence.percentileByStrategy` - ציון כל אסטרטגיה כ-percentile בתוך ה-universe הנסרק, בר-השוואה בין אסטרטגיות (בניגוד לציון הגולמי).
 
 #### meta.exchange
 
@@ -520,7 +556,11 @@ Content-Type: application/json
 
 #### meta.returnedCount
 
-כמה תוצאות הוחזרו בפועל.
+כמה תוצאות הוחזרו בפועל (אחרי סף האיכות).
+
+#### meta.noQualitySetups
+
+`true` כאשר היו מועמדים לאחר סינון, אך אף אחד מהם לא עבר את סף הציון המינימלי - כלומר "אין כרגע סטאפים איכותיים", בניגוד ל"אין תוצאות כי הפילטרים היו צרים מדי".
 
 ## משתני סביבה
 
@@ -685,16 +725,13 @@ GET /api/health
 - sessions
 - audit logs
 
-### 3. אין caching
+### 3. Caching
 
-כל סריקה עשויה לבצע קריאות חיצוניות מחדש.
+יש caching בזיכרון (לא persistent, נמחק בכל restart) בשלוש רמות: תוצאות בקשת HTTP גולמיות (10 דק'), snapshot שוק מלא לבורסה (5 דק'), snapshot מניה בודדת (5 דק'). זה מפחית קריאות חוזרות בטווח קצר בלבד.
 
-### 4. אין test suite בפרויקט
+### 4. Test suite
 
-נכון לעכשיו אין בסביבת הקוד שנבדקה:
-- unit tests
-- integration tests
-- e2e tests
+יש `server/test/` עם בדיקות דרך Node's built-in `node:test` (`npm test` מתוך `server/`). הבדיקות מכסות בעיקר את שכבת ה-scoring/scanning ולא כוללות UI/e2e.
 
 ### 5. partial data אפשרי
 
@@ -702,7 +739,7 @@ GET /api/health
 
 ### 6. fallbacks פנימיים
 
-גם כאשר מקור הנתונים הוא חי, חלק מהשדות עשויים להיות מחושבים מתוך fallback פנימי אם endpoint מסוים חסום או חסר.
+גם כאשר מקור הנתונים הוא חי, חלק מהשדות עשויים להיות מחושבים מתוך fallback פנימי (seeded) אם endpoint מסוים חסום או חסר. כל מניה כזו מסומנת ב-`imputedFields` בתשובת ה-API, ומשפיעה על `confidenceScore` ועל שער הסיכון - אבל השדה עדיין מוצג בטבלה כאילו הוא נתון רגיל, כך שכרגע אין חיווי חזותי ב-UI עצמו לכך שהוא מחושב.
 
 ### 7. אין authentication
 
@@ -723,13 +760,12 @@ GET /api/health
 
 ## סיכום
 
-TradeSense כיום היא מערכת דו־שכבתית פשוטה וברורה:
+TradeSense כיום היא מערכת דו־שכבתית:
 - React בצד הלקוח
 - Express בצד השרת
 
-הליבה העסקית נמצאת בשלושה מודולים:
-- `scannerService.js`
-- `marketDataService.js`
-- `strategies.js`
+הליבה העסקית מחולקת ל-8 שירותים (ראו [מבנה הפרויקט](#מבנה-הפרויקט)): שכבת נתונים (`marketDataService.js`), ניקוד (`strategies.js`), ואורקסטרציה (`scannerService.js`) שמפעילה סדרת שכבות overlay - איכות/ביטחון נתונים, מצב שוק, הסכמה בין אסטרטגיות, "תמיכת מומחים", סיכון, והזדמנות - שכל אחת מהן מיושמת בקובץ נפרד. יש גם שכבת portfolio נפרדת (holdings/watchlist).
+
+מסמך [`docs/LOGIC_IMPROVEMENTS.md`](docs/LOGIC_IMPROVEMENTS.md) מתעד ממצאים ידועים ותוכנית שיפור מסודרת ללוגיקת ההמלצות; חלק ניכר מהסעיפים שם כבר יושמו.
 
 זהו המבנה הנוכחי של המערכת בפועל, על בסיס הקוד הקיים בריפו.

@@ -1,5 +1,6 @@
 const { getStockSnapshots } = require('./marketDataService');
 const { readPortfolio, writePortfolio } = require('./portfolioStore');
+const { round } = require('./mathUtils');
 
 async function getPortfolio() {
   const portfolio = await readPortfolio();
@@ -204,10 +205,6 @@ function normalizeTicker(value) {
 function toPositiveNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function round(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 function createId(prefix) {

@@ -1,3 +1,5 @@
+const { clamp } = require('./mathUtils');
+
 const ACTIVE_STRATEGIES = new Set(['mark_minervini', 'ross_cameron']);
 
 function assessIndiFit({ stock, strategy, opportunity, riskOverlay, marketRegime }) {
@@ -96,10 +98,6 @@ function buildNote(label, reasons) {
   }
 
   return reasons.slice(0, 2).join(' | ');
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 module.exports = {

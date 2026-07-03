@@ -1,4 +1,5 @@
 const { STOCK_UNIVERSE, getTickerContext } = require('../data/universe');
+const { clamp, average } = require('./mathUtils');
 
 const REQUEST_CACHE = new Map();
 const MARKET_DATA_CACHE = new Map();
@@ -47,6 +48,7 @@ async function getMarketData(exchange) {
   if (mode === 'finnhub' && process.env.FINNHUB_API_KEY) {
     const result = await getFinnhubData(exchange, entries);
     if (result) {
+      writeCache(MARKET_DATA_CACHE, cacheKey, result, MARKET_DATA_CACHE_TTL_MS);
       return result;
     }
   } else if (mode === 'finnhub' && !process.env.FINNHUB_API_KEY) {
@@ -190,6 +192,11 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
   const ma200 = trackedValue(imputedFields, 'MA200', [average(closes.slice(0, 200))], () =>
     price * seededNumber(`${ticker}-ma200`, 0.84, 1.1));
   const previousMa50 = average(closes.slice(5, 55)) || ma50;
+  // `volatility` is the standard deviation of daily returns over the last ~20 trading days,
+  // expressed as a fraction (0.03 = 3% typical daily move) - NOT annualized, NOT ATR%. Every
+  // threshold that reads it (matchesVolatility, risk-fit taper, riskOverlay) assumes this same
+  // definition; if a future change swaps in ATR% or an annualized figure, all of those need
+  // re-tuning together. See docs/LOGIC_IMPROVEMENTS.md section 4.
   const returns = closes.slice(0, 20).map((value, index) => {
     const nextValue = closes[index + 1];
     return nextValue ? (value - nextValue) / nextValue : 0;
@@ -533,16 +540,6 @@ function standardDeviation(values) {
   return Math.sqrt(variance);
 }
 
-function average(values) {
-  const filtered = values.filter((value) => Number.isFinite(value));
-
-  if (!filtered.length) {
-    return 0;
-  }
-
-  return filtered.reduce((total, value) => total + value, 0) / filtered.length;
-}
-
 function seededNumber(seed, min, max) {
   let hash = 0;
 
@@ -595,10 +592,6 @@ function computeReturnPct(closes, price) {
 function computeReturnPctFromEnd(closes, price, windowDays) {
   const anchor = closes[closes.length - 1 - windowDays];
   return Number.isFinite(anchor) && anchor > 0 ? ((price - anchor) / anchor) * 100 : NaN;
-}
-
-function clamp(value) {
-  return Math.max(0, Math.min(1, value));
 }
 
 module.exports = {

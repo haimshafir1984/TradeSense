@@ -1,4 +1,6 @@
 const { scoreStockByStrategy } = require('./strategies');
+const { clamp, round } = require('./mathUtils');
+const { CONFLUENCE_THRESHOLDS } = require('../config/scoringConfig');
 
 const REQUIRED_FIELDS = [
   'price',
@@ -199,19 +201,19 @@ function assessCrossStrategyConfluence({ stock, selectedStrategy, marketContext 
 
   const selectedPercentile = percentileByStrategy[selectedStrategy] || 0;
   const supportingStrategies = STRATEGY_KEYS.filter(
-    (strategyKey) => strategyKey !== selectedStrategy && percentileByStrategy[strategyKey] >= 60
+    (strategyKey) => strategyKey !== selectedStrategy && percentileByStrategy[strategyKey] >= CONFLUENCE_THRESHOLDS.supportingPercentile
   );
   const strongAgreementCount = STRATEGY_KEYS.filter(
-    (strategyKey) => percentileByStrategy[strategyKey] >= 70
+    (strategyKey) => percentileByStrategy[strategyKey] >= CONFLUENCE_THRESHOLDS.strongAgreementPercentile
   ).length;
 
   let level = 'low';
   const notes = [];
 
-  if (selectedPercentile >= 75 && strongAgreementCount >= 2) {
+  if (selectedPercentile >= CONFLUENCE_THRESHOLDS.highSelectedPercentile && strongAgreementCount >= 2) {
     level = 'high';
     notes.push('קיימת תמיכה ממספר סגנונות מסחר');
-  } else if (selectedPercentile >= 65 && supportingStrategies.length >= 1) {
+  } else if (selectedPercentile >= CONFLUENCE_THRESHOLDS.mediumSelectedPercentile && supportingStrategies.length >= 1) {
     level = 'medium';
     notes.push('קיימת תמיכה חלקית מאסטרטגיה נוספת');
   } else {
@@ -359,14 +361,6 @@ function mapConfidenceLevel(score) {
   }
 
   return 'נמוכה';
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function round(value) {
-  return Math.round(value * 100) / 100;
 }
 
 module.exports = {

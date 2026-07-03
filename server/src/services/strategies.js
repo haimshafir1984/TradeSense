@@ -1,3 +1,6 @@
+const { clamp, round, average } = require('./mathUtils');
+const { STRATEGY_WEIGHTS } = require('../config/scoringConfig');
+
 const STRATEGY_LABELS = {
   micha_stocks: 'השקעה לטווח ארוך - Micha Stocks',
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
@@ -46,7 +49,8 @@ function scoreMichaStrategy(stock) {
   const pullback = scoreHighProximity(stock.pullbackFromHigh, 15);
   const volume = normalize(stock.volumeRatio, 1, 2.4);
 
-  const score = trend * 0.35 + growth * 0.25 + pullback * 0.2 + volume * 0.2;
+  const w = STRATEGY_WEIGHTS.micha_stocks;
+  const score = trend * w.trend + growth * w.growth + pullback * w.pullback + volume * w.volume;
 
   return {
     ...stock,
@@ -78,7 +82,8 @@ function scoreMinerviniStrategy(stock) {
     Number(stock.consolidation_score || 0)
   ]);
 
-  const score = momentum * 0.3 + trend * 0.25 + volume * 0.2 + breakout * 0.25;
+  const wMinervini = STRATEGY_WEIGHTS.mark_minervini;
+  const score = momentum * wMinervini.momentum + trend * wMinervini.trend + volume * wMinervini.volume + breakout * wMinervini.breakout;
 
   return {
     ...stock,
@@ -94,7 +99,8 @@ function scoreRossStrategy(stock) {
   const breakout = normalize(stock.price_near_daily_high, 0.92, 1);
   const floatScore = scoreFloatProxy(stock.market_cap);
 
-  const score = momentum * 0.4 + volume * 0.3 + breakout * 0.2 + floatScore * 0.1;
+  const wRoss = STRATEGY_WEIGHTS.ross_cameron;
+  const score = momentum * wRoss.momentum + volume * wRoss.volume + breakout * wRoss.breakout + floatScore * wRoss.float;
 
   return {
     ...stock,
@@ -200,19 +206,6 @@ function normalize(value, min, max) {
   }
 
   return clamp((value - min) / (max - min));
-}
-
-function clamp(value) {
-  return Math.max(0, Math.min(1, value));
-}
-
-function average(values) {
-  return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
-function round(value, digits = 1) {
-  const factor = 10 ** digits;
-  return Math.round(Number(value || 0) * factor) / factor;
 }
 
 module.exports = {

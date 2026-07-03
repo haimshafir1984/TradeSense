@@ -1,5 +1,6 @@
 const { getMarketData, getStockSnapshots } = require('./marketDataService');
 const { scoreStockByStrategy } = require('./strategies');
+const { clamp, round } = require('./mathUtils');
 const {
   assessDataQuality,
   validateResults,
@@ -27,11 +28,7 @@ const {
   summarizeOpportunity
 } = require('./opportunityScoringService');
 const { assessIndiFit } = require('./indiOverlayService');
-
-// Below this (risk-adjusted) score, a stock is considered too weak a match to present as a
-// recommendation, even if it's among the top 10 of a weak batch. Matches validateResults' own
-// "low average" warning line for consistency.
-const QUALITY_SCORE_THRESHOLD = 0.35;
+const { QUALITY_SCORE_THRESHOLD, RISK_FIT_THRESHOLDS } = require('../config/scoringConfig');
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -263,16 +260,18 @@ function computeRiskFitPenalty(stock, risk) {
   let penalty = 1;
 
   if (risk === 'low') {
-    penalty *= smoothCeiling(stock.volatility, 0.03, 0.07);
-    penalty *= smoothFloor(stock.market_cap, 5000000000, 1000000000);
+    const t = RISK_FIT_THRESHOLDS.low;
+    penalty *= smoothCeiling(stock.volatility, t.volatilityIdeal, t.volatilityHard);
+    penalty *= smoothFloor(stock.market_cap, t.marketCapIdeal, t.marketCapHard);
     if (hasCriticalImputedData) {
-      penalty *= 0.6;
+      penalty *= t.imputedCriticalPenalty;
     }
   } else if (risk === 'medium') {
-    penalty *= smoothCeiling(stock.volatility, 0.055, 0.09);
+    const t = RISK_FIT_THRESHOLDS.medium;
+    penalty *= smoothCeiling(stock.volatility, t.volatilityIdeal, t.volatilityHard);
   }
 
-  return clampUnit(penalty, 0.15, 1);
+  return clamp(penalty, RISK_FIT_THRESHOLDS.minPenalty, 1);
 }
 
 // 1.0 up to idealMax, tapering smoothly down to 0.2 at hardMax, instead of a hard cutoff.
@@ -295,10 +294,6 @@ function smoothFloor(value, idealMin, hardMin) {
     return 0.2;
   }
   return 1 - 0.8 * ((idealMin - value) / (idealMin - hardMin));
-}
-
-function clampUnit(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function matchesMarketCap(marketCap, selected) {
@@ -344,11 +339,6 @@ function matchesVolatility(volatility, selected) {
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function round(value, digits) {
-  const factor = 10 ** digits;
-  return Math.round(Number(value || 0) * factor) / factor;
 }
 
 module.exports = {
