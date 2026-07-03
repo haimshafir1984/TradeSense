@@ -188,7 +188,10 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
       ? ((price - previousClose) / previousClose) * 100
       : 0;
   const sector = profile?.sector || fallbackSector;
-  const dividendYield = positiveOrDefault(profile?.lastDiv, seededNumber(`${ticker}-div`, 0, 4.2));
+  const dividendPerShare = Number(profile?.lastDiv);
+  const dividendYield = Number.isFinite(dividendPerShare) && dividendPerShare > 0 && price > 0
+    ? (dividendPerShare / price) * 100
+    : 0;
   const hasCoreLiveData = Boolean(quote || profile);
   const hasHistory = historyItems.length >= 30;
   const dataSource = hasCoreLiveData && hasHistory ? 'fmp' : 'fmp_partial';
@@ -320,7 +323,7 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     volume,
     average_volume_30d: averageVolume30d,
     market_cap: marketCapMillions * 1000000,
-    dividend_yield: positiveOrDefault(metrics?.metric?.dividendYieldIndicatedAnnual, seededNumber(`${ticker}-div`, 0, 4.2)),
+    dividend_yield: positiveOrDefault(metrics?.metric?.dividendYieldIndicatedAnnual, 0),
     MA50: ma50,
     MA200: ma200,
     high_52w: high52,
