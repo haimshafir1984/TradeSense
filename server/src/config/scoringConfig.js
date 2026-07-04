@@ -5,10 +5,16 @@
 // scoring functions.
 
 // Top-level weights each strategy applies to its own sub-factors. These must each sum to 1.
+// swing_momentum is the exception: its score is max(breakout, episodicPivot) rather than a single
+// blend (see scoreSwingMomentumStrategy), so its two sub-groups each sum to 1 independently.
 const STRATEGY_WEIGHTS = {
   micha_stocks: { trend: 0.35, growth: 0.25, pullback: 0.2, volume: 0.2 },
   mark_minervini: { momentum: 0.3, trend: 0.25, volume: 0.2, breakout: 0.25 },
-  ross_cameron: { momentum: 0.4, volume: 0.3, breakout: 0.2, float: 0.1 }
+  ross_cameron: { momentum: 0.4, volume: 0.3, breakout: 0.2, float: 0.1 },
+  swing_momentum: {
+    breakout: { consolidation: 0.25, highProximity: 0.25, volume: 0.2, relativeStrength: 0.2, trend: 0.1 },
+    episodicPivot: { move: 0.6, volume: 0.4 }
+  }
 };
 
 // Percentile-within-universe thresholds used by assessCrossStrategyConfluence (see 3.6).

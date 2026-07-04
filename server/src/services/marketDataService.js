@@ -257,6 +257,11 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     [Number.isFinite(Number(growth?.growthRevenue)) ? Number(growth.growthRevenue) * 100 : NaN],
     () => 0
   );
+  // Average Daily Range % and gap % - the core signals for swing/episodic-pivot momentum styles
+  // (see strategies.js#scoreSwingMomentumStrategy). See docs/LOGIC_IMPROVEMENTS.md.
+  const adrPct = trackedValue(imputedFields, 'adr_pct', [computeAvgDailyRangePct(historyItems.slice(0, 20))], () =>
+    seededNumber(`${ticker}-adr`, 1.5, 6));
+  const gapPct = trackedSignedValue(imputedFields, 'gap_pct', [computeGapPct(historyItems)], () => 0);
   const dailyChange = Number.isFinite(quote?.changesPercentage)
     ? Number(quote.changesPercentage)
     : price && previousClose
@@ -293,6 +298,8 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     volatility,
     return_3m: return3m,
     revenue_growth_pct: revenueGrowthPct,
+    adr_pct: adrPct,
+    gap_pct: gapPct,
     price_near_daily_high: dayHigh ? price / dayHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(closes.slice(0, 20), high52, low52),
@@ -399,6 +406,13 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     [Number(metrics?.metric?.revenueGrowthTTMYoy)],
     () => 0
   );
+  const rawCandleHighs = candles && candles.s === 'ok' && Array.isArray(candles.h) ? candles.h : [];
+  const rawCandleLows = candles && candles.s === 'ok' && Array.isArray(candles.l) ? candles.l : [];
+  const rawCandleOpens = candles && candles.s === 'ok' && Array.isArray(candles.o) ? candles.o : [];
+  const rawCandleCloses = candles && candles.s === 'ok' && Array.isArray(candles.c) ? candles.c : [];
+  const adrPct = trackedValue(imputedFields, 'adr_pct', [computeAvgDailyRangePctFromArrays(rawCandleHighs, rawCandleLows, 20)], () =>
+    seededNumber(`${ticker}-adr`, 1.5, 6));
+  const gapPct = trackedSignedValue(imputedFields, 'gap_pct', [computeGapPctFromArrays(rawCandleOpens, rawCandleCloses)], () => 0);
   const dailyChange = Number.isFinite(quote?.dp)
     ? Number(quote.dp)
     : price && previousClose
@@ -430,6 +444,8 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     volatility,
     return_3m: return3m,
     revenue_growth_pct: revenueGrowthPct,
+    adr_pct: adrPct,
+    gap_pct: gapPct,
     price_near_daily_high: dailyHigh ? price / dailyHigh : 0.9,
     ma50_slope: previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0,
     consolidation_score: scoreConsolidation(candleCloses.slice(-20), high52, low52),
@@ -518,6 +534,7 @@ function normalizeFmpHistoryItem(item) {
   const close = Number(item.close);
   const high = Number(item.high);
   const low = Number(item.low);
+  const open = Number(item.open);
   const volume = Number(item.volume);
 
   if (!Number.isFinite(close)) {
@@ -528,8 +545,50 @@ function normalizeFmpHistoryItem(item) {
     close,
     high: Number.isFinite(high) ? high : close,
     low: Number.isFinite(low) ? low : close,
+    open: Number.isFinite(open) ? open : close,
     volume: Number.isFinite(volume) ? volume : 0
   };
+}
+
+// Average Daily Range % over the given (most-recent-first) history slice - the core "does this
+// stock actually move" gate for swing/momentum styles (see scoreSwingMomentumStrategy).
+function computeAvgDailyRangePct(historyItems) {
+  const ranges = historyItems
+    .filter((item) => Number.isFinite(item.high) && Number.isFinite(item.low) && item.low > 0)
+    .map((item) => ((item.high - item.low) / item.low) * 100);
+  return ranges.length ? average(ranges) : NaN;
+}
+
+// historyItems is most-recent-first (FMP): [0] is the latest session, [1] is the one before it.
+function computeGapPct(historyItems) {
+  const latestOpen = Number(historyItems[0]?.open);
+  const previousClose = Number(historyItems[1]?.close);
+  return Number.isFinite(latestOpen) && Number.isFinite(previousClose) && previousClose > 0
+    ? ((latestOpen - previousClose) / previousClose) * 100
+    : NaN;
+}
+
+// Same as computeAvgDailyRangePct, but for raw oldest-to-newest candle arrays (Finnhub).
+function computeAvgDailyRangePctFromArrays(highs, lows, count) {
+  const n = Math.min(count, highs.length, lows.length);
+  const ranges = [];
+  for (let index = highs.length - n; index < highs.length; index += 1) {
+    const high = Number(highs[index]);
+    const low = Number(lows[index]);
+    if (Number.isFinite(high) && Number.isFinite(low) && low > 0) {
+      ranges.push(((high - low) / low) * 100);
+    }
+  }
+  return ranges.length ? average(ranges) : NaN;
+}
+
+// opens/closes are oldest-to-newest (Finnhub): the last entries are the latest session.
+function computeGapPctFromArrays(opens, closes) {
+  const latestOpen = Number(opens[opens.length - 1]);
+  const previousClose = Number(closes[closes.length - 2]);
+  return Number.isFinite(latestOpen) && Number.isFinite(previousClose) && previousClose > 0
+    ? ((latestOpen - previousClose) / previousClose) * 100
+    : NaN;
 }
 
 function firstArrayItem(value) {
@@ -565,6 +624,8 @@ function createDemoStock(exchange, ticker, companyName, sector) {
     volatility: seededNumber(`${exchange}-${ticker}-volatility`, 0.012, 0.08),
     return_3m: ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0,
     revenue_growth_pct: seededNumber(`${exchange}-${ticker}-revgrowth`, -8, 25),
+    adr_pct: seededNumber(`${exchange}-${ticker}-adr`, 1, 8),
+    gap_pct: seededNumber(`${exchange}-${ticker}-gap`, -3, 12),
     price_near_daily_high: seededNumber(`${exchange}-${ticker}-dailyhigh`, 0.84, 1),
     ma50_slope: seededNumber(`${exchange}-${ticker}-slope`, -0.04, 0.09),
     consolidation_score: seededNumber(`${exchange}-${ticker}-consolidation`, 0.25, 0.97),

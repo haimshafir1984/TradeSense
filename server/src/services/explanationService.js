@@ -39,6 +39,15 @@ function buildWhyItFits(stock, strategy, deterministicExplanation, confluence, e
     if (stock.average_volume_30d && stock.volume / stock.average_volume_30d > 2) {
       reasons.push('עם נפח מסחר חריג ביחס לממוצע');
     }
+  } else if (strategy === 'swing_momentum') {
+    if (stock.swingSetup === 'breakout') {
+      reasons.push('פריצה מקונסולידציה צמודה עם נפח חריג');
+    } else if (stock.swingSetup === 'episodic_pivot') {
+      reasons.push('גאפ על קטליזטור עם נפח מסחר חריג (פיבוט אפיזודי)');
+    }
+    if (Number(stock.relativeStrength || 0) >= 0.65) {
+      reasons.push('וחוזק יחסי גבוה מול מדד הייחוס');
+    }
   }
 
   if (confluence?.level === 'high') {
@@ -89,6 +98,10 @@ function buildFitHorizon(strategy) {
 
   if (strategy === 'mark_minervini') {
     return 'מתאים יותר למסחר לטווח קצר או swing';
+  }
+
+  if (strategy === 'swing_momentum') {
+    return 'החזקת Swing קצרה-בינונית (ימים עד שבועות) - דורש ניהול סיכון הדוק סביב פריצה או גאפ, מבוסס נתוני סוף יום';
   }
 
   return 'מומנטום קצר טווח מבוסס נתוני סוף יום (לא מסחר יומי בזמן אמת) - דורש מעקב צמוד ואימות מחיר לפני כניסה';

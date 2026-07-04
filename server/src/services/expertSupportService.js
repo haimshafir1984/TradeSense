@@ -1,7 +1,8 @@
 const STRATEGY_DISPLAY_LABELS = {
   micha_stocks: "השקעה לטווח ארוך - William O'Neil",
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
-  ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Linda Bradford Raschke'
+  ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Linda Bradford Raschke',
+  swing_momentum: 'פריצות מומנטום (Swing)'
 };
 
 const PRIMARY_EXPERTS = {
@@ -19,6 +20,12 @@ const PRIMARY_EXPERTS = {
     id: 'linda_raschke',
     name: 'Linda Bradford Raschke',
     shortName: 'Linda Raschke'
+  },
+  // Style-based, no real trader name attached - see docs/LOGIC_IMPROVEMENTS.md.
+  swing_momentum: {
+    id: 'swing_momentum_style',
+    name: 'סגנון פריצות מומנטום (Swing)',
+    shortName: 'Swing Momentum'
   }
 };
 

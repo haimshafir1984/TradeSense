@@ -4,7 +4,8 @@ const { STRATEGY_WEIGHTS } = require('../config/scoringConfig');
 const STRATEGY_LABELS = {
   micha_stocks: 'השקעה לטווח ארוך - Micha Stocks',
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
-  ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Ross Cameron'
+  ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Ross Cameron',
+  swing_momentum: 'פריצות מומנטום (Swing)'
 };
 
 function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
@@ -16,6 +17,10 @@ function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
 
   if (strategyKey === 'ross_cameron') {
     return scoreRossStrategy(enrichedStock);
+  }
+
+  if (strategyKey === 'swing_momentum') {
+    return scoreSwingMomentumStrategy(enrichedStock);
   }
 
   return scoreMichaStrategy(enrichedStock);
@@ -114,6 +119,42 @@ function scoreRossStrategy(stock) {
   };
 }
 
+// Swing-momentum style (breakout / episodic-pivot), scored EOD - no real trader names, only
+// generic style descriptions. Two independent sub-setups; the stock's score is whichever fits
+// better, not a blend of both (see docs/LOGIC_IMPROVEMENTS.md).
+function scoreSwingMomentumStrategy(stock) {
+  const w = STRATEGY_WEIGHTS.swing_momentum;
+
+  const breakoutTrend = stock.MA50 > stock.MA200 && stock.price > stock.MA50 ? 1 : 0;
+  const breakoutScore =
+    Number(stock.consolidation_score || 0) * w.breakout.consolidation +
+    normalize(stock.highProximity, 0.85, 1) * w.breakout.highProximity +
+    normalize(stock.volumeRatio, 1.5, 3) * w.breakout.volume +
+    stock.relativeStrength * w.breakout.relativeStrength +
+    breakoutTrend * w.breakout.trend;
+
+  const gapSignal = Math.max(Number(stock.gap_pct || 0), Number(stock.daily_change || 0));
+  const episodicPivotScore =
+    normalize(gapSignal, 8, 20) * w.episodicPivot.move +
+    normalize(stock.volumeRatio, 2.5, 5) * w.episodicPivot.volume;
+
+  const isBreakoutSetup = breakoutScore >= episodicPivotScore;
+  const setupScore = Math.max(breakoutScore, episodicPivotScore);
+
+  // Core eligibility filter for this style: needs a genuinely wide daily range (ADR) and to be
+  // above the long-term trend. A "dormant" stock (low ADR) is zeroed out rather than allowed to
+  // rank on the other sub-factors alone.
+  const eligible = Number(stock.adr_pct || 0) >= 3.5 && stock.price > stock.MA200;
+  const score = eligible ? setupScore : 0;
+
+  return {
+    ...stock,
+    swingSetup: isBreakoutSetup ? 'breakout' : 'episodic_pivot',
+    score: clamp(score),
+    explanation: createSwingMomentumExplanation(isBreakoutSetup, eligible)
+  };
+}
+
 function createMichaExplanation(stock) {
   const parts = [];
 
@@ -172,6 +213,18 @@ function createRossExplanation(stock) {
   }
 
   return joinExplanation(parts, 'מניה עם מומנטום קצר טווח (מבוסס נתוני סוף יום)');
+}
+
+function createSwingMomentumExplanation(isBreakoutSetup, eligible) {
+  if (!eligible) {
+    return 'המניה אינה עומדת בסף התנודתיות היומית (ADR) הנדרש לסגנון, או אינה נסחרת מעל ממוצע 200 יום';
+  }
+
+  if (isBreakoutSetup) {
+    return 'פריצה מקונסולידציה צמודה עם נפח מסחר חריג וחוזק יחסי גבוה מעל ממוצעים עולים';
+  }
+
+  return 'גאפ על קטליזטור עם נפח מסחר חריג - פיבוט אפיזודי המצריך אימות מיידי';
 }
 
 function joinExplanation(parts, fallback) {

@@ -11,6 +11,7 @@ const { round } = require('./mathUtils');
 // Horizons are calendar days, not trading days, as a simple approximation - see EVALUATION_HORIZON_DAYS.
 const EVALUATION_HORIZON_DAYS = {
   ross_cameron: 5,
+  swing_momentum: 10,
   mark_minervini: 20,
   micha_stocks: 60
 };

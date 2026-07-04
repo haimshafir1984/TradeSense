@@ -80,6 +80,9 @@ function estimateUpside({ stock, strategy, marketRegime, riskOverlay }) {
   } else if (strategy === 'ross_cameron') {
     minPct = 3;
     maxPct = 14;
+  } else if (strategy === 'swing_momentum') {
+    minPct = 6;
+    maxPct = 20;
   }
 
   // volumeRatio/highProximity are computed once in strategies.js#enrichStock and carried on

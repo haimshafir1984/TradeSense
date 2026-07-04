@@ -34,6 +34,13 @@ const investmentMethodOptions = [
     shortLabel: 'Linda Raschke',
     description:
       'שיטה המתמקדת ב-price action, מומנטום קצר טווח ונפח חריג. מבוססת על נתוני סוף יום ולא על מסחר בזמן אמת - אינה תחליף למסך מסחר יומי חי.'
+  },
+  {
+    value: 'swing_momentum',
+    label: 'פריצות מומנטום (Swing)',
+    shortLabel: 'Swing Momentum',
+    description:
+      'שיטת Swing המאתרת פריצות ממקדים צמודים או גאפים על קטליזטור עם נפח מסחר חריג, בתנאי שיש טווח תנודה יומי (ADR) משמעותי והמניה מעל ממוצע 200 יום. מבוססת על נתוני סוף יום.'
   }
 ];
 
