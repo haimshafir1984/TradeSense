@@ -4,6 +4,7 @@ const analyzeRouter = require('./routes/analyze');
 const portfolioRouter = require('./routes/portfolio');
 const scanHistoryRouter = require('./routes/scanHistory');
 const strategyLeagueRouter = require('./routes/strategyLeague');
+const watchlistRouter = require('./routes/watchlist');
 
 const app = express();
 
@@ -22,5 +23,6 @@ app.use('/api/analyze', analyzeRouter);
 app.use('/api/portfolio', portfolioRouter);
 app.use('/api/scan-history', scanHistoryRouter);
 app.use('/api/strategy-league', strategyLeagueRouter);
+app.use('/api/watchlist', watchlistRouter);
 
 module.exports = app;

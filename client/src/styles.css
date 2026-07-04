@@ -656,6 +656,16 @@ th {
   font-size: 0.92rem;
 }
 
+.watchlist-disclaimer {
+  margin: 0.1rem 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 14px;
+  background: rgba(222, 161, 81, 0.14);
+  color: #8c5b0a;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .metric-pill {
   display: inline-flex;
   align-items: center;

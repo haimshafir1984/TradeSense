@@ -108,6 +108,11 @@ function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
   const [strategyLeague, setStrategyLeague] = useState(null);
+  const [showTomorrowWatchlist, setShowTomorrowWatchlist] = useState(false);
+  const [tomorrowWatchlist, setTomorrowWatchlist] = useState([]);
+  const [tomorrowWatchlistLoading, setTomorrowWatchlistLoading] = useState(false);
+  const [tomorrowWatchlistError, setTomorrowWatchlistError] = useState('');
+  const [hasLoadedTomorrowWatchlist, setHasLoadedTomorrowWatchlist] = useState(false);
 
   const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
 
@@ -207,6 +212,38 @@ function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLoadTomorrowWatchlist = async () => {
+    setTomorrowWatchlistLoading(true);
+    setTomorrowWatchlistError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/watchlist/tomorrow?exchange=${form.exchange}`);
+
+      if (!response.ok) {
+        throw new Error('טעינת רשימת המעקב נכשלה. נסה שוב.');
+      }
+
+      const data = await response.json();
+      setTomorrowWatchlist(data.watchlist ?? []);
+    } catch (requestError) {
+      setTomorrowWatchlist([]);
+      setTomorrowWatchlistError(requestError.message);
+    } finally {
+      setTomorrowWatchlistLoading(false);
+      setHasLoadedTomorrowWatchlist(true);
+    }
+  };
+
+  const handleToggleTomorrowWatchlist = () => {
+    setShowTomorrowWatchlist((current) => {
+      const next = !current;
+      if (next && !hasLoadedTomorrowWatchlist && !tomorrowWatchlistLoading) {
+        handleLoadTomorrowWatchlist();
+      }
+      return next;
+    });
   };
 
   const emptyStateMessage = isLoading
@@ -480,6 +517,79 @@ function App() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="card watchlist-card">
+          <div className="section-head">
+            <div>
+              <h2>רשימת מעקב למחר</h2>
+              <p>מועמדים ל-Gap &amp; Go ליום המסחר הבא, מבוססים על סריקת סוף היום הנוכחי.</p>
+            </div>
+            <button type="button" className="ghost-button" onClick={handleToggleTomorrowWatchlist}>
+              {showTomorrowWatchlist ? 'הסתר רשימת מעקב' : 'הצג רשימת מעקב למחר'}
+            </button>
+          </div>
+
+          {showTomorrowWatchlist ? (
+            <>
+              <p className="watchlist-disclaimer">
+                מבוסס נתוני סוף יום - לאימות מול מחירי פתיחה בזמן אמת לפני כל החלטה.
+              </p>
+
+              {tomorrowWatchlistError ? <p className="error-box">{tomorrowWatchlistError}</p> : null}
+
+              <div className="results-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>סימול</th>
+                      <th>שם חברה</th>
+                      <th>מחיר</th>
+                      <th>שינוי יומי</th>
+                      <th>יחס נפח</th>
+                      <th>ADR%</th>
+                      <th>דוח בקרוב</th>
+                      <th>סיבה</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tomorrowWatchlistLoading ? (
+                      <tr>
+                        <td colSpan={8} className="empty-state">
+                          טוען רשימת מעקב...
+                        </td>
+                      </tr>
+                    ) : tomorrowWatchlist.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="empty-state">
+                          לא נמצאו כרגע מועמדים שעומדים בקריטריונים.
+                        </td>
+                      </tr>
+                    ) : (
+                      tomorrowWatchlist.map((item) => (
+                        <tr key={item.ticker}>
+                          <td>{item.ticker}</td>
+                          <td>{item.companyName}</td>
+                          <td>{numberFormatter.format(item.price)}</td>
+                          <td className="value-tone positive">{item.daily_change}%</td>
+                          <td>{item.volumeRatio}x</td>
+                          <td>{item.adr_pct}%</td>
+                          <td>
+                            {item.hasEarningsSoon ? (
+                              <span className="metric-pill medium">קטליזטור/סיכון: דוח בקרוב</span>
+                            ) : (
+                              <span className="cell-subtext">אין דוח קרוב ידוע</span>
+                            )}
+                          </td>
+                          <td>{item.reason}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
         </section>
 
         <PortfolioSection apiBaseUrl={API_BASE_URL} />
