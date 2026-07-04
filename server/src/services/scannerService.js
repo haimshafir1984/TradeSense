@@ -2,6 +2,7 @@ const { getMarketData, getStockSnapshots } = require('./marketDataService');
 const { scoreStockByStrategy } = require('./strategies');
 const { clamp, round } = require('./mathUtils');
 const {
+  STRATEGY_KEYS,
   assessDataQuality,
   validateResults,
   computeConfidence,
@@ -171,7 +172,11 @@ async function analyzeMarket(request = {}) {
   // anything (see evaluateOutcomes/buildHitRateReport in scanHistoryService.js). Best-effort: a
   // storage failure shouldn't fail the scan response itself.
   try {
-    await recordScan({ exchange, strategy, risk, results, spyPriceAtScan: spyBenchmark?.price });
+    // Also score every other strategy against the same filtered universe so the strategy league
+    // (docs/LOGIC_IMPROVEMENTS.md - Strategy League) can measure how each strategy would have
+    // done, not just the one the user happened to pick.
+    const strategyTopPicks = buildStrategyTopPicks(filteredStocks, marketContext, risk);
+    await recordScan({ exchange, strategy, risk, results, spyPriceAtScan: spyBenchmark?.price, strategyTopPicks });
   } catch (error) {
     console.warn('[analyze] Failed to record scan history', error.message);
   }
@@ -204,6 +209,23 @@ async function analyzeMarket(request = {}) {
       groups
     }
   };
+}
+
+const STRATEGY_LEAGUE_TOP_N = 5;
+
+function buildStrategyTopPicks(filteredStocks, marketContext, risk) {
+  const topPicks = {};
+
+  for (const strategyKey of STRATEGY_KEYS) {
+    topPicks[strategyKey] = filteredStocks
+      .map((stock) => scoreStockByStrategy(strategyKey, stock, marketContext))
+      .map((stock) => applyRiskFitPenalty(stock, risk))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, STRATEGY_LEAGUE_TOP_N)
+      .map((stock) => ({ ticker: stock.ticker, price: round(stock.price, 2), score: round(stock.score, 4) }));
+  }
+
+  return topPicks;
 }
 
 function applyFilters(stock, filters) {

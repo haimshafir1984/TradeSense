@@ -100,8 +100,34 @@ function App() {
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
+  const [strategyLeague, setStrategyLeague] = useState(null);
 
   const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`${API_BASE_URL}/api/strategy-league`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) {
+          setStrategyLeague(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStrategyLeague(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const leadingStrategyLabel = strategyLeague?.leadingStrategy
+    ? investmentMethodOptions.find((option) => option.value === strategyLeague.leadingStrategy)?.shortLabel
+    : null;
 
   useEffect(() => {
     if (!openBrokerMenu) {
@@ -236,6 +262,10 @@ function App() {
                 </select>
               </Field>
             </div>
+
+            {leadingStrategyLabel ? (
+              <p className="strategy-league-badge">מובילה ב-90 הימים: {leadingStrategyLabel}</p>
+            ) : null}
 
             <div className="strategy-info-list">
               {investmentMethodOptions.map((option) => (

@@ -23,12 +23,46 @@ const OPPORTUNITY_RANK_BUCKETS = [
   { label: '80-100', min: 80, max: 100 }
 ];
 
-async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan }) {
+// Strategy league window/threshold: see docs/LOGIC_IMPROVEMENTS.md - Strategy League.
+const LEAGUE_WINDOW_DAYS = 90;
+const LEAGUE_MIN_SAMPLES_TO_LEAD = 10;
+
+async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan, strategyTopPicks = {} }) {
   if (!Number.isFinite(spyPriceAtScan) || spyPriceAtScan <= 0 || !results.length) {
     return null;
   }
 
   const scans = await readScanHistory();
+
+  // The selected strategy's own results (as shown to the user), tagged with `selected: true`.
+  const selectedResults = results.map((result) => ({
+    strategy,
+    ticker: result.ticker,
+    priceAtScan: result.price,
+    opportunityRank: result.opportunityRank,
+    matchScore: result.matchScore,
+    score: Number.isFinite(result.matchScore) ? round(result.matchScore / 100, 4) : null,
+    selected: true,
+    outcome: null
+  }));
+
+  // Top-5 picks from every other strategy, scored against the same universe, so the strategy
+  // league can measure how each strategy would have done - not just the one the user picked.
+  const otherResults = Object.entries(strategyTopPicks)
+    .filter(([strategyKey]) => strategyKey !== strategy)
+    .flatMap(([strategyKey, picks]) =>
+      (picks || []).map((pick) => ({
+        strategy: strategyKey,
+        ticker: pick.ticker,
+        priceAtScan: pick.price,
+        opportunityRank: null,
+        matchScore: null,
+        score: pick.score,
+        selected: false,
+        outcome: null
+      }))
+    );
+
   const entry = {
     id: `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     scannedAt: new Date().toISOString(),
@@ -36,13 +70,7 @@ async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtSc
     strategy,
     risk,
     benchmark: { ticker: 'SPY', priceAtScan: spyPriceAtScan },
-    results: results.map((result) => ({
-      ticker: result.ticker,
-      priceAtScan: result.price,
-      opportunityRank: result.opportunityRank,
-      matchScore: result.matchScore,
-      outcome: null
-    }))
+    results: [...selectedResults, ...otherResults]
   };
 
   scans.push(entry);
@@ -60,14 +88,18 @@ async function evaluateOutcomes({ now = new Date() } = {}) {
   const spyPriceCache = { value: null };
 
   for (const scan of scans) {
-    const horizonDays = getHorizonDays(scan.strategy);
     const ageDays = (now.getTime() - new Date(scan.scannedAt).getTime()) / (24 * 60 * 60 * 1000);
 
-    if (ageDays < horizonDays) {
-      continue;
-    }
+    // Each result carries its own strategy (it may differ from the scan's selected strategy for
+    // the "other strategies" league picks), so it becomes eligible on its own horizon.
+    const pendingResults = scan.results.filter((result) => {
+      if (result.outcome) {
+        return false;
+      }
+      const horizonDays = getHorizonDays(result.strategy || scan.strategy);
+      return ageDays >= horizonDays;
+    });
 
-    const pendingResults = scan.results.filter((result) => !result.outcome);
     if (!pendingResults.length) {
       continue;
     }
@@ -96,7 +128,7 @@ async function evaluateOutcomes({ now = new Date() } = {}) {
 
       result.outcome = {
         evaluatedAt: now.toISOString(),
-        horizonDays,
+        horizonDays: getHorizonDays(result.strategy || scan.strategy),
         stockReturnPct: round(stockReturnPct, 2),
         benchmarkReturnPct: round(benchmarkReturnPct, 2),
         excessReturnPct: round(excessReturnPct, 2),
@@ -132,6 +164,36 @@ function summarize(entries) {
   };
 }
 
+// The league only compares evaluated (outcome-known) entries scanned within the trailing window,
+// so a strategy can't "lead" on stale results from months ago. A strategy is only declared the
+// leader once it has enough samples to not be a fluke; below that, leadingStrategy stays null.
+function buildLeague(evaluatedEntries) {
+  const cutoffMs = Date.now() - LEAGUE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const recentEntries = evaluatedEntries.filter((entry) => new Date(entry.scannedAt).getTime() >= cutoffMs);
+
+  const byStrategy = {};
+  for (const strategyKey of Object.keys(EVALUATION_HORIZON_DAYS)) {
+    byStrategy[strategyKey] = summarize(recentEntries.filter((entry) => entry.strategy === strategyKey));
+  }
+
+  let leadingStrategy = null;
+  let bestExcess = -Infinity;
+
+  for (const [strategyKey, stats] of Object.entries(byStrategy)) {
+    if (stats.count >= LEAGUE_MIN_SAMPLES_TO_LEAD && stats.avgExcessReturnPct > bestExcess) {
+      bestExcess = stats.avgExcessReturnPct;
+      leadingStrategy = strategyKey;
+    }
+  }
+
+  return {
+    windowDays: LEAGUE_WINDOW_DAYS,
+    minSamplesToLead: LEAGUE_MIN_SAMPLES_TO_LEAD,
+    byStrategy,
+    leadingStrategy
+  };
+}
+
 async function buildHitRateReport() {
   const scans = await readScanHistory();
   const evaluated = [];
@@ -140,7 +202,7 @@ async function buildHitRateReport() {
   for (const scan of scans) {
     for (const result of scan.results) {
       if (result.outcome) {
-        evaluated.push({ strategy: scan.strategy, ...result });
+        evaluated.push({ strategy: result.strategy || scan.strategy, scannedAt: scan.scannedAt, ...result });
       } else {
         pendingCount += 1;
       }
@@ -163,13 +225,21 @@ async function buildHitRateReport() {
     overall: summarize(evaluated),
     byStrategy,
     byOpportunityRankBucket,
+    league: buildLeague(evaluated),
     evaluatedCount: evaluated.length,
     pendingCount
   };
 }
 
+async function getStrategyLeague() {
+  await evaluateOutcomes();
+  const report = await buildHitRateReport();
+  return report.league;
+}
+
 module.exports = {
   recordScan,
   evaluateOutcomes,
-  buildHitRateReport
+  buildHitRateReport,
+  getStrategyLeague
 };

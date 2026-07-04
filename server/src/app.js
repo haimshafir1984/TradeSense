@@ -3,6 +3,7 @@ const cors = require('cors');
 const analyzeRouter = require('./routes/analyze');
 const portfolioRouter = require('./routes/portfolio');
 const scanHistoryRouter = require('./routes/scanHistory');
+const strategyLeagueRouter = require('./routes/strategyLeague');
 
 const app = express();
 
@@ -20,5 +21,6 @@ app.get('/api/health', (_request, response) => {
 app.use('/api/analyze', analyzeRouter);
 app.use('/api/portfolio', portfolioRouter);
 app.use('/api/scan-history', scanHistoryRouter);
+app.use('/api/strategy-league', strategyLeagueRouter);
 
 module.exports = app;

@@ -364,6 +364,7 @@ function mapConfidenceLevel(score) {
 }
 
 module.exports = {
+  STRATEGY_KEYS,
   assessDataQuality,
   validateResults,
   computeConfidence,
