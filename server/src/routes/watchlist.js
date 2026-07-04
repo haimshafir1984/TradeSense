@@ -1,13 +1,16 @@
 const express = require('express');
-const { buildTomorrowWatchlist } = require('../services/watchlistService');
+const { getTomorrowWatchlist } = require('../services/watchlistService');
 
 const router = express.Router();
 
+// Serves the cached watchlist (built automatically each evening by watchlistScheduler.js) so this
+// is instant on the common path. Pass ?refresh=true to force a recompute on demand.
 router.get('/tomorrow', async (request, response) => {
   try {
     const exchange = request.query.exchange || 'NASDAQ';
-    const watchlist = await buildTomorrowWatchlist({ exchange });
-    response.json({ exchange, watchlist });
+    const forceRefresh = request.query.refresh === 'true';
+    const { generatedAt, watchlist } = await getTomorrowWatchlist({ exchange, forceRefresh });
+    response.json({ exchange, generatedAt, watchlist });
   } catch (error) {
     console.error('Tomorrow watchlist request failed', error);
     response.status(500).json({

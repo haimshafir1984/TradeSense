@@ -108,11 +108,11 @@ function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
   const [strategyLeague, setStrategyLeague] = useState(null);
-  const [showTomorrowWatchlist, setShowTomorrowWatchlist] = useState(false);
+  const [showTomorrowWatchlist, setShowTomorrowWatchlist] = useState(true);
   const [tomorrowWatchlist, setTomorrowWatchlist] = useState([]);
+  const [tomorrowWatchlistGeneratedAt, setTomorrowWatchlistGeneratedAt] = useState(null);
   const [tomorrowWatchlistLoading, setTomorrowWatchlistLoading] = useState(false);
   const [tomorrowWatchlistError, setTomorrowWatchlistError] = useState('');
-  const [hasLoadedTomorrowWatchlist, setHasLoadedTomorrowWatchlist] = useState(false);
 
   const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
 
@@ -214,12 +214,13 @@ function App() {
     }
   };
 
-  const handleLoadTomorrowWatchlist = async () => {
+  const handleLoadTomorrowWatchlist = async (forceRefresh = false) => {
     setTomorrowWatchlistLoading(true);
     setTomorrowWatchlistError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/watchlist/tomorrow?exchange=${form.exchange}`);
+      const refreshParam = forceRefresh ? '&refresh=true' : '';
+      const response = await fetch(`${API_BASE_URL}/api/watchlist/tomorrow?exchange=${form.exchange}${refreshParam}`);
 
       if (!response.ok) {
         throw new Error('טעינת רשימת המעקב נכשלה. נסה שוב.');
@@ -227,24 +228,23 @@ function App() {
 
       const data = await response.json();
       setTomorrowWatchlist(data.watchlist ?? []);
+      setTomorrowWatchlistGeneratedAt(data.generatedAt ?? null);
     } catch (requestError) {
       setTomorrowWatchlist([]);
+      setTomorrowWatchlistGeneratedAt(null);
       setTomorrowWatchlistError(requestError.message);
     } finally {
       setTomorrowWatchlistLoading(false);
-      setHasLoadedTomorrowWatchlist(true);
     }
   };
 
-  const handleToggleTomorrowWatchlist = () => {
-    setShowTomorrowWatchlist((current) => {
-      const next = !current;
-      if (next && !hasLoadedTomorrowWatchlist && !tomorrowWatchlistLoading) {
-        handleLoadTomorrowWatchlist();
-      }
-      return next;
-    });
-  };
+  // Loaded automatically on mount and whenever the exchange changes - the server already computed
+  // this the evening before (see watchlistScheduler.js), so it's ready without the user having to
+  // ask for it.
+  useEffect(() => {
+    handleLoadTomorrowWatchlist();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.exchange]);
 
   const emptyStateMessage = isLoading
     ? 'סורק את השוק...'
@@ -524,11 +524,24 @@ function App() {
           <div className="section-head">
             <div>
               <h2>רשימת מעקב למחר</h2>
-              <p>מועמדים ל-Gap &amp; Go ליום המסחר הבא, מבוססים על סריקת סוף היום הנוכחי.</p>
+              <p>
+                מועמדים ל-Gap &amp; Go ליום המסחר הבא. מחושבת אוטומטית מדי ערב - מוכנה כשאתה נכנס למערכת.
+                {tomorrowWatchlistGeneratedAt ? ` עודכן לאחרונה: ${formatGeneratedAt(tomorrowWatchlistGeneratedAt)}.` : ''}
+              </p>
             </div>
-            <button type="button" className="ghost-button" onClick={handleToggleTomorrowWatchlist}>
-              {showTomorrowWatchlist ? 'הסתר רשימת מעקב' : 'הצג רשימת מעקב למחר'}
-            </button>
+            <div className="watchlist-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => handleLoadTomorrowWatchlist(true)}
+                disabled={tomorrowWatchlistLoading}
+              >
+                {tomorrowWatchlistLoading ? 'מרענן...' : 'רענן עכשיו'}
+              </button>
+              <button type="button" className="ghost-button" onClick={() => setShowTomorrowWatchlist((current) => !current)}>
+                {showTomorrowWatchlist ? 'הסתר' : 'הצג'}
+              </button>
+            </div>
           </div>
 
           {showTomorrowWatchlist ? (
@@ -716,6 +729,14 @@ function Checkbox({ label, checked, onChange }) {
       <span>{label}</span>
     </label>
   );
+}
+
+function formatGeneratedAt(isoString) {
+  try {
+    return new Date(isoString).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
 }
 
 function sourceClassName(source) {

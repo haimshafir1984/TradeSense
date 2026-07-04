@@ -2,6 +2,7 @@
 // monkey-patch the export without needing to reload this module (same pattern as
 // scanHistoryService.js).
 const marketDataService = require('./marketDataService');
+const watchlistStore = require('./watchlistStore');
 const { clamp, round } = require('./mathUtils');
 
 // Turns the EOD-only limitation into an advantage: instead of trying (and failing) to compete
@@ -11,6 +12,12 @@ const MAX_WATCHLIST_SIZE = 10;
 const MARKET_CAP_CEILING = 10000000000;
 const MIN_ADR_PCT = 4;
 const MIN_VOLUME_RATIO = 1.5;
+
+// A cached watchlist stays valid this long before a request is forced to recompute it, even if
+// the nightly scheduler (watchlistScheduler.js) never got to run - e.g. the server wasn't running
+// overnight. This keeps GET /api/watchlist/tomorrow instant on the common path (already computed
+// by the scheduler or an earlier request today) without ever serving something wildly stale.
+const CACHE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 
 // ~3 trading days, approximated with calendar days to absorb a weekend in between (same
 // calendar-day approximation used for EVALUATION_HORIZON_DAYS in scanHistoryService.js).
@@ -32,6 +39,28 @@ async function buildTomorrowWatchlist({ exchange = 'NASDAQ' } = {}) {
       hasEarningsSoon: apiKey ? await checkEarningsSoon(candidate.ticker, apiKey) : false
     }))
   );
+}
+
+// Read-through cache in front of buildTomorrowWatchlist, keyed by exchange. This is what lets the
+// nightly scheduler (watchlistScheduler.js) do the (slower, earnings-lookup-heavy) computation
+// once in the evening, so opening the app later just serves the already-computed result instantly
+// instead of recomputing on every page load.
+async function getTomorrowWatchlist({ exchange = 'NASDAQ', forceRefresh = false } = {}) {
+  const cache = await watchlistStore.readWatchlistCache();
+  const cached = cache[exchange];
+  const isFresh = cached && Date.now() - new Date(cached.generatedAt).getTime() < CACHE_FRESHNESS_MS;
+
+  if (isFresh && !forceRefresh) {
+    return cached;
+  }
+
+  const watchlist = await buildTomorrowWatchlist({ exchange });
+  const entry = { generatedAt: new Date().toISOString(), watchlist };
+
+  cache[exchange] = entry;
+  await watchlistStore.writeWatchlistCache(cache);
+
+  return entry;
 }
 
 function enrichCandidate(stock) {
@@ -115,5 +144,6 @@ function normalize(value, min, max) {
 }
 
 module.exports = {
-  buildTomorrowWatchlist
+  buildTomorrowWatchlist,
+  getTomorrowWatchlist
 };

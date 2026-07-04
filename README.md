@@ -105,7 +105,9 @@ TradeSense/
 │     │  ├─ explanationService.js     (enriched per-result explanation text)
 │     │  ├─ scanHistoryService.js     (persist scans, measure outcomes vs SPY, strategy league)
 │     │  ├─ scanHistoryStore.js
-│     │  ├─ watchlistService.js       (next-session gap-and-go candidates)
+│     │  ├─ watchlistService.js       (next-session gap-and-go candidates, cached per exchange)
+│     │  ├─ watchlistStore.js         (cache file, one entry per exchange)
+│     │  ├─ watchlistScheduler.js     (runs the scan automatically each evening)
 │     │  ├─ portfolioService.js       (holdings/watchlist, separate feature)
 │     │  ├─ portfolioStore.js
 │     │  └─ mathUtils.js              (shared clamp/round/average)
@@ -618,6 +620,14 @@ Content-Type: application/json
 
 **חשוב:** התוצאות מבוססות נתוני סוף יום בלבד - יש לאמת מול מחירי פתיחה בזמן אמת לפני כל החלטה. ה-UI מציג דיסקליימר מפורש בפאנל הזה.
 
+#### חישוב אוטומטי בכל ערב (caching + scheduler)
+
+התוצאה נשמרת ב-cache פר-בורסה (`server/src/data/watchlistCache.json`, לא ב-git). `watchlistScheduler.js` בודק כל 15 דקות אם השעה עברה את `WATCHLIST_SCHEDULE_HOUR` (ברירת מחדל: 22:00, שעון השרת) עבור אותו יום, ואם כן - מריץ חישוב מחדש עבור הבורסות ב-`WATCHLIST_SCHEDULE_EXCHANGES` (ברירת מחדל: `NASDAQ,NYSE`). כך כשנכנסים למערכת בבוקר/בערב, `GET /api/watchlist/tomorrow` פשוט מגיש תוצאה שכבר מוכנה - בלי המתנה.
+
+תוסף `?refresh=true` לכתובת כדי לאלץ חישוב מחדש מיידי (זה מה שכפתור "רענן עכשיו" ב-UI עושה). אם ה-cache ישן מ-12 שעות, הוא מתעדכן ממילא אוטומטית בבקשה הבאה, גם אם ה-scheduler לא הספיק לרוץ (למשל אם השרת לא רץ בערב).
+
+**מגבלה חשובה:** האוטומציה הזו פועלת רק כל עוד תהליך ה-server פעיל בזמן השעה המתוזמנת. בהרצה מקומית (`npm run dev`) המחשב צריך להיות דלוק והשרת פעיל ב-22:00 כדי שהריענון יקרה בפועל; אם רוצים "כל ערב באמת" בלי תלות במחשב האישי, צריך לפרוס את השרת לסביבה שרצה 24/7 (למשל שרת ענן קטן).
+
 ## משתני סביבה
 
 המערכת טוענת `.env` מתוך שורש הפרויקט.
@@ -681,6 +691,19 @@ FMP_API_KEY=your_fmp_key_here
 
 ```env
 FINNHUB_API_KEY=your_finnhub_key_here
+```
+
+#### WATCHLIST_SCHEDULE_HOUR
+
+השעה (0–23, שעון השרת) שבה "רשימת המעקב למחר" מתעדכנת אוטומטית בכל ערב. ברירת מחדל: `22`.
+
+#### WATCHLIST_SCHEDULE_EXCHANGES
+
+רשימת בורסות (מופרדות בפסיק) שמתעדכנות אוטומטית. ברירת מחדל: `NASDAQ,NYSE`.
+
+```env
+WATCHLIST_SCHEDULE_HOUR=22
+WATCHLIST_SCHEDULE_EXCHANGES=NASDAQ,NYSE
 ```
 
 ### דוגמת .env מומלצת ל-FMP

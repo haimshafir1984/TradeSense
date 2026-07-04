@@ -5,6 +5,7 @@ const rootEnvPath = path.resolve(__dirname, '../../.env');
 dotenv.config({ path: rootEnvPath });
 
 const app = require('./app');
+const { startWatchlistScheduler } = require('./services/watchlistScheduler');
 
 const port = Number(process.env.PORT || 4000);
 
@@ -13,4 +14,5 @@ console.log(`[startup] DATA_MODE=${process.env.DATA_MODE || 'undefined'} FINNHUB
 
 app.listen(port, () => {
   console.log(`TradeSense API listening on port ${port}`);
+  startWatchlistScheduler();
 });
