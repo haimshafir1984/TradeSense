@@ -24,6 +24,7 @@ TradeSense היא מערכת סריקת מניות עם ממשק משתמש ב־
 - [פילטרים](#פילטרים)
 - [מבנה הבקשה ל-API](#מבנה-הבקשה-ל-api)
 - [מבנה התשובה מה-API](#מבנה-התשובה-מה-api)
+- [Endpoints נוספים](#endpoints-נוספים)
 - [משתני סביבה](#משתני-סביבה)
 - [הרצה מקומית](#הרצה-מקומית)
 - [לוגים ודיבוג](#לוגים-ודיבוג)
@@ -86,19 +87,25 @@ TradeSense/
 │     ├─ app.js
 │     ├─ routes/
 │     │  ├─ analyze.js
-│     │  └─ portfolio.js
+│     │  ├─ portfolio.js
+│     │  ├─ scanHistory.js         (GET /api/scan-history/outcomes)
+│     │  ├─ strategyLeague.js      (GET /api/strategy-league)
+│     │  └─ watchlist.js           (GET /api/watchlist/tomorrow)
 │     ├─ config/
-│     │  └─ scoringConfig.js    (weights/thresholds in one place)
+│     │  └─ scoringConfig.js    (weights/thresholds/regime-recommendation map in one place)
 │     ├─ services/
 │     │  ├─ scannerService.js         (orchestration)
 │     │  ├─ marketDataService.js      (data layer + provider fallback)
 │     │  ├─ strategies.js             (scoring per strategy)
 │     │  ├─ analysisService.js        (data quality, confidence, confluence, risk)
-│     │  ├─ marketRegimeService.js    (bull/bear/volatile detection + breadth)
+│     │  ├─ marketRegimeService.js    (bull/bear/volatile detection + breadth + recommended strategy)
 │     │  ├─ opportunityScoringService.js  (opportunityRank / upside estimate)
 │     │  ├─ expertSupportService.js   (per-strategy "style match" badges)
 │     │  ├─ indiOverlayService.js     (short-strategy fit overlay)
 │     │  ├─ explanationService.js     (enriched per-result explanation text)
+│     │  ├─ scanHistoryService.js     (persist scans, measure outcomes vs SPY, strategy league)
+│     │  ├─ scanHistoryStore.js
+│     │  ├─ watchlistService.js       (next-session gap-and-go candidates)
 │     │  ├─ portfolioService.js       (holdings/watchlist, separate feature)
 │     │  ├─ portfolioStore.js
 │     │  └─ mathUtils.js              (shared clamp/round/average)
@@ -184,12 +191,14 @@ TradeSense/
 המסך כולל:
 - בחירת בורסה
 - בחירת רמת סיכון
-- בחירת שיטת השקעה
+- בחירת שיטת השקעה (כולל `swing_momentum`)
 - תצוגת tooltip לכל שיטת השקעה
+- badge "מובילה ב-90 הימים" ליד בורר האסטרטגיה (מ-`GET /api/strategy-league`)
 - פילטרים מתקדמים
 - כפתור סריקה
 - טבלת תוצאות
-- חיווי מקור נתונים
+- חיווי מקור נתונים ומצב שוק, כולל הערת המלצת אסטרטגיה מותנית-regime (או מבוססת ליגה, אם קיימת)
+- פאנל "רשימת מעקב למחר" (gap-and-go, `GET /api/watchlist/tomorrow`) עם דיסקליימר EOD מפורש
 - הודעות מצב ריק / טעינה / שגיאה
 
 ### State בלקוח
@@ -234,6 +243,10 @@ TradeSense/
 - `express.json()`
 - `GET /api/health`
 - `POST /api/analyze`
+- `POST /api/portfolio/*`
+- `GET /api/scan-history/outcomes`
+- `GET /api/strategy-league`
+- `GET /api/watchlist/tomorrow`
 
 ### Route מרכזי
 
@@ -372,6 +385,7 @@ TradeSense/
 - `micha_stocks`
 - `mark_minervini`
 - `ross_cameron`
+- `swing_momentum`
 
 ### מה קורה לפני הניקוד
 
@@ -412,6 +426,18 @@ TradeSense/
 - unusual volume
 - breakout behavior
 - float proxy לפי market cap
+
+### Swing Momentum
+
+אסטרטגיית swing מבוססת סגנון (ללא שם סוחר אמיתי חדש - ראו `docs/LOGIC_IMPROVEMENTS.md`).
+
+הציון הוא המקסימום בין שני תתי-סטאפ עצמאיים:
+- **Breakout** - קונסולידציה צמודה (`consolidation_score`) שנפרצת קרוב לשיא (`highProximity>=0.9`), עם נפח חריג וחוזק יחסי גבוה, מעל ממוצעים עולים.
+- **Episodic Pivot** - גאפ גדול או תנועה יומית חדה (`gap_pct`/`daily_change`) עם נפח חריג ביותר - מהלך מונע קטליזטור, לא פריצה טכנית.
+
+פילטר כשירות (מכפיל 0 אם לא עומד בו): `adr_pct>=3.5` (טווח תנודה יומי ממוצע ב-20 הימים האחרונים) ומחיר מעל `MA200`. מניה "רדומה" (ADR נמוך) לא תדורג לפי שאר הגורמים - היא נפסלת.
+
+`adr_pct` ו-`gap_pct` מחושבים ב-`marketDataService.js` מתוך היסטוריית המחירים (וגם עבור נתוני דמו).
 
 ### הסבר קצר לכל תוצאה
 
@@ -558,6 +584,39 @@ Content-Type: application/json
 #### meta.noQualitySetups
 
 `true` כאשר היו מועמדים לאחר סינון, אך אף אחד מהם לא עבר את סף הציון המינימלי - כלומר "אין כרגע סטאפים איכותיים", בניגוד ל"אין תוצאות כי הפילטרים היו צרים מדי".
+
+#### analysis.marketRegime.recommendedStrategy
+
+מפתח ותווית של האסטרטגיה המומלצת בתנאי השוק הנוכחיים, פלוס `source`:
+- `regime` - נקבע לפי `REGIME_RECOMMENDED_STRATEGY` ב-`scoringConfig.js` (בשוק דובי - `null`, "עדיף להמתין").
+- `league` - כאשר לליגת האסטרטגיות (ראו למטה) יש מובילה מדדת עם מספיק דגימות, היא גוברת על ברירת המחדל לפי מצב השוק.
+
+## Endpoints נוספים
+
+### GET /api/scan-history/outcomes
+
+מריץ הערכת תוצאות לכל הסריקות שעברו את אופק הזמן שלהן (מול מדד SPY), ומחזיר דו"ח hit-rate כללי, פר אסטרטגיה ופר `opportunityRank` bucket. לוגיקת ההערכה וההיסטוריה עצמה נמצאות ב-`scanHistoryService.js`/`scanHistoryStore.js`.
+
+### GET /api/strategy-league
+
+מחזיר "ליגת אסטרטגיות" - טבלת hit-rate ותשואה עודפת ממוצעת מול SPY, פר אסטרטגיה, על סמך 90 הימים האחרונים בלבד. כל סריקה שומרת לא רק את תוצאות האסטרטגיה שנבחרה אלא גם Top-5 מכל אסטרטגיה אחרת (מנוקד על אותו universe), כך שאפשר למדוד איך כל אסטרטגיה הייתה מתפקדת - לא רק זו שנבחרה בפועל. אסטרטגיה מוכרזת "מובילה" (`leadingStrategy`) רק מעל סף מינימלי של דגימות (10); מתחת לכך השדה `null`.
+
+```json
+{
+  "windowDays": 90,
+  "minSamplesToLead": 10,
+  "byStrategy": {
+    "micha_stocks": { "count": 12, "hits": 7, "hitRatePct": 58.3, "avgExcessReturnPct": 1.4 }
+  },
+  "leadingStrategy": "swing_momentum"
+}
+```
+
+### GET /api/watchlist/tomorrow?exchange=NASDAQ
+
+מחזיר עד 10 מועמדים ל-gap-and-go ליום המסחר הבא, מחושבים מסריקת סוף היום הנוכחי: שווי שוק מתחת ל-10 מיליארד, `adr_pct>=4`, יחס נפח `>=1.5`, ועלייה יומית חיובית. מדורגים לפי שילוב של עלייה יומית/נפח/קרבה לשיא, ומועשרים (כשיש `FMP_API_KEY`) בסימון `hasEarningsSoon` - דוח כספים בשלושת ימי המסחר הקרובים (קטליזטור אפשרי, אך גם סיכון). מיושם ב-`watchlistService.js`.
+
+**חשוב:** התוצאות מבוססות נתוני סוף יום בלבד - יש לאמת מול מחירי פתיחה בזמן אמת לפני כל החלטה. ה-UI מציג דיסקליימר מפורש בפאנל הזה.
 
 ## משתני סביבה
 
