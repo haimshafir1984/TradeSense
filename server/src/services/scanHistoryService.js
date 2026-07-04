@@ -238,9 +238,18 @@ async function getStrategyLeague() {
   return report.league;
 }
 
+// Cheaper than getStrategyLeague: reads the league table from already-evaluated history without
+// triggering a fresh evaluateOutcomes pass (which fetches current prices for every pending
+// result). Used on the hot analyzeMarket path, where that cost isn't worth paying on every scan.
+async function getLeagueSnapshot() {
+  const report = await buildHitRateReport();
+  return report.league;
+}
+
 module.exports = {
   recordScan,
   evaluateOutcomes,
   buildHitRateReport,
-  getStrategyLeague
+  getStrategyLeague,
+  getLeagueSnapshot
 };

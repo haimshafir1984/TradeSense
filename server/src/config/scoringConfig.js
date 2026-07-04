@@ -28,6 +28,17 @@ const CONFLUENCE_THRESHOLDS = {
 // Below this (risk-adjusted) score a stock isn't shown as a recommendation (see 3.8).
 const QUALITY_SCORE_THRESHOLD = 0.35;
 
+// Default strategy recommendation per market regime, used only when the strategy league
+// (scanHistoryService.js) doesn't yet have a measured leader - see marketRegimeService.js
+// resolveRecommendedStrategy and docs/LOGIC_IMPROVEMENTS.md. bearish -> null means "sit out",
+// not "pick something anyway".
+const REGIME_RECOMMENDED_STRATEGY = {
+  bullish: 'swing_momentum',
+  sideways: 'micha_stocks',
+  volatile: 'ross_cameron',
+  bearish: null
+};
+
 // Ideal/hard bounds for the continuous risk-fit penalty taper (see 3.5).
 const RISK_FIT_THRESHOLDS = {
   low: {
@@ -48,5 +59,6 @@ module.exports = {
   STRATEGY_WEIGHTS,
   CONFLUENCE_THRESHOLDS,
   QUALITY_SCORE_THRESHOLD,
-  RISK_FIT_THRESHOLDS
+  RISK_FIT_THRESHOLDS,
+  REGIME_RECOMMENDED_STRATEGY
 };

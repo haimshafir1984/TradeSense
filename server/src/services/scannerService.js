@@ -30,7 +30,7 @@ const {
 } = require('./opportunityScoringService');
 const { assessIndiFit } = require('./indiOverlayService');
 const { QUALITY_SCORE_THRESHOLD, RISK_FIT_THRESHOLDS } = require('../config/scoringConfig');
-const { recordScan } = require('./scanHistoryService');
+const { recordScan, getLeagueSnapshot } = require('./scanHistoryService');
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -71,10 +71,20 @@ async function analyzeMarket(request = {}) {
     results: scoredStocks,
     source
   });
+  // Best-effort: a strategy league with a measured leader should override the regime-based
+  // default recommendation, but the league snapshot isn't essential to serving the scan itself.
+  let leagueSnapshot = null;
+  try {
+    leagueSnapshot = await getLeagueSnapshot();
+  } catch (error) {
+    console.warn('[analyze] Failed to load strategy league snapshot', error.message);
+  }
+
   const marketRegime = assessMarketRegime({
     snapshots: benchmarkSnapshots,
     selectedStrategy: strategy,
-    universeStocks: stocks
+    universeStocks: stocks,
+    league: leagueSnapshot
   });
   const adjustedConfidenceScore = computeRegimeAdjustedConfidence(confidenceScore, marketRegime);
   const results = qualityStocks.map((stock) => {

@@ -1,4 +1,6 @@
 const { average, round } = require('./mathUtils');
+const { STRATEGY_DISPLAY_LABELS } = require('./expertSupportService');
+const { REGIME_RECOMMENDED_STRATEGY } = require('../config/scoringConfig');
 
 const MARKET_BENCHMARKS = ['SPY', 'QQQ', 'IWM'];
 
@@ -22,7 +24,7 @@ function computeMarketBreadth(universeStocks = []) {
   };
 }
 
-function assessMarketRegime({ snapshots = [], selectedStrategy, universeStocks = [] }) {
+function assessMarketRegime({ snapshots = [], selectedStrategy, universeStocks = [], league = null }) {
   const validSnapshots = snapshots.filter(Boolean);
 
   if (!validSnapshots.length) {
@@ -36,6 +38,7 @@ function assessMarketRegime({ snapshots = [], selectedStrategy, universeStocks =
         label: 'בינונית',
         note: 'אין מספיק נתונים כדי לקבוע התאמה ברורה בין מצב השוק לאסטרטגיה.'
       },
+      recommendedStrategy: resolveRecommendedStrategy('unknown', league),
       warnings: ['מצב השוק לא זוהה']
     };
   }
@@ -105,8 +108,26 @@ function assessMarketRegime({ snapshots = [], selectedStrategy, universeStocks =
       breadth
     },
     strategyFit,
+    recommendedStrategy: resolveRecommendedStrategy(regime, league),
     warnings
   };
+}
+
+// A regime-based default ("in a bullish market, breakouts tend to work") is a reasonable prior,
+// but a strategy league with a measured leader (see scanHistoryService.js) is real evidence from
+// this system's own track record, so it wins whenever one is available. See
+// docs/LOGIC_IMPROVEMENTS.md - Regime-conditional recommendation.
+function resolveRecommendedStrategy(regime, league) {
+  const leagueLeader = league?.leadingStrategy || null;
+  const key = leagueLeader || REGIME_RECOMMENDED_STRATEGY[regime] || null;
+  const source = leagueLeader ? 'league' : 'regime';
+  const label = key
+    ? STRATEGY_DISPLAY_LABELS[key] || key
+    : regime === 'bearish'
+      ? 'עדיף להמתין'
+      : 'אין המלצה ברורה כרגע';
+
+  return { key, label, source };
 }
 
 function computeRegimeAdjustedConfidence(baseConfidence, marketRegime) {

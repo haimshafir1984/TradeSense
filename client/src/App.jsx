@@ -449,6 +449,7 @@ function App() {
               {analysis?.marketRegime?.strategyFit?.note ? (
                 <p className="market-regime-note">{analysis.marketRegime.strategyFit.note}</p>
               ) : null}
+              <RegimeRecommendationNote marketRegime={analysis?.marketRegime} selectedStrategy={meta?.strategy} />
             </div>
           ) : null}
 
@@ -595,6 +596,40 @@ function App() {
         <PortfolioSection apiBaseUrl={API_BASE_URL} />
       </main>
     </div>
+  );
+}
+
+function RegimeRecommendationNote({ marketRegime, selectedStrategy }) {
+  if (!marketRegime) {
+    return null;
+  }
+
+  const recommendation = marketRegime.recommendedStrategy;
+  const notes = [];
+
+  if (recommendation?.key && recommendation.key !== selectedStrategy) {
+    const sourceLabel = recommendation.source === 'league' ? 'מבוסס ביצועים נמדדים' : 'מבוסס מצב שוק';
+    notes.push(
+      `בתנאי השוק הנוכחיים (${marketRegime.label}) לוגיקת ${recommendation.label} מתאימה יותר (${sourceLabel}).`
+    );
+  }
+
+  if (marketRegime.regime === 'bearish') {
+    notes.push('השוק חלש, שקול להקטין חשיפה.');
+  }
+
+  if (!notes.length) {
+    return null;
+  }
+
+  return (
+    <>
+      {notes.map((note) => (
+        <p key={note} className="market-regime-note">
+          {note}
+        </p>
+      ))}
+    </>
   );
 }
 
