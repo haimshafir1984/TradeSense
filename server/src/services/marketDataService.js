@@ -28,7 +28,11 @@ function getProviderSymbol(exchange, ticker) {
 // actively-traded, liquid slice of the exchange instead; on any failure it returns null and the
 // caller falls back to the static list. See docs/LOGIC_IMPROVEMENTS.md 5.3.
 const FMP_SCREENER_EXCHANGES = new Set(['NASDAQ', 'NYSE']);
-const DYNAMIC_UNIVERSE_SIZE = 20;
+// Bigger universe = better odds of finding gap-and-go / short-horizon candidates (see
+// watchlistService.js), at the cost of ~4 extra FMP calls per added symbol per scan (quote,
+// profile, history, growth) - watch FMP rate limits if raising this further. Configurable via env
+// since the right tradeoff depends on the API plan in use.
+const DYNAMIC_UNIVERSE_SIZE = Number(process.env.FMP_UNIVERSE_SIZE) || 40;
 
 async function getDynamicUniverse(exchange, apiKey) {
   if (!FMP_SCREENER_EXCHANGES.has(exchange)) {

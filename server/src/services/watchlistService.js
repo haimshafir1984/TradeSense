@@ -10,8 +10,11 @@ const { clamp, round } = require('./mathUtils');
 // session's open. See docs/LOGIC_IMPROVEMENTS.md - Watchlist for Tomorrow.
 const MAX_WATCHLIST_SIZE = 10;
 const MARKET_CAP_CEILING = 10000000000;
-const MIN_ADR_PCT = 4;
-const MIN_VOLUME_RATIO = 1.5;
+// Loosened from the original 4% / 1.5x - combined with a small scanned universe, the stricter
+// thresholds meant "no candidates" most days even on live data. Still selective enough to filter
+// out genuinely quiet stocks, just less all-or-nothing.
+const MIN_ADR_PCT = 3;
+const MIN_VOLUME_RATIO = 1.2;
 
 // A cached watchlist stays valid this long before a request is forced to recompute it, even if
 // the nightly scheduler (watchlistScheduler.js) never got to run - e.g. the server wasn't running
