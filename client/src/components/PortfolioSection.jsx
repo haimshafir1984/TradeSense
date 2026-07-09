@@ -18,9 +18,11 @@ const numberFormatter = new Intl.NumberFormat('he-IL', {
   maximumFractionDigits: 2
 });
 
+// All holdings/watchlist tickers here are US-listed (NASDAQ/NYSE), priced in USD by the market
+// data provider - so the currency formatter must be USD, not ILS, regardless of the user's locale.
 const currencyFormatter = new Intl.NumberFormat('he-IL', {
   style: 'currency',
-  currency: 'ILS',
+  currency: 'USD',
   maximumFractionDigits: 2
 });
 
