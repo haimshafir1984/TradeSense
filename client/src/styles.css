@@ -177,6 +177,65 @@ select {
   margin-bottom: 1.5rem;
 }
 
+.scan-settings {
+  padding: 1.5rem;
+}
+
+/* Scan tab: two-column layout from 960px up, settings column sticky under the top bar. */
+.scan-layout {
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 960px) {
+  .scan-layout {
+    grid-template-columns: minmax(280px, 320px) 1fr;
+    align-items: start;
+  }
+
+  .scan-settings {
+    position: sticky;
+    top: calc(56px + 1rem);
+  }
+}
+
+/* The scan settings column is narrow (~300px) regardless of viewport width,
+   so its internal grids always stack in a single column. */
+.scan-settings .grid-primary,
+.scan-settings .grid-secondary,
+.scan-settings .toggle-grid,
+.scan-settings .strategy-info-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--text);
+  list-style: none;
+}
+
+.advanced-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-panel summary::before {
+  content: '\25B8';
+  display: inline-block;
+  margin-inline-end: 0.5rem;
+  transition: transform 120ms ease;
+}
+
+.advanced-panel[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced-panel-hint {
+  margin: 0.6rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .results-card {
   padding: 1.5rem;
 }

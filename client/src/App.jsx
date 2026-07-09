@@ -418,9 +418,9 @@ function App() {
         ) : null}
 
         {activeTab === 'scan' ? (
-        <>
-        <section className="card form-card">
-          <div className="section-head">
+        <div className="scan-layout">
+        <aside className="card scan-settings">
+          <div className="section-head compact">
             <h2>הגדרות סריקה</h2>
             <p>בחר רמת סיכון ושיטת השקעה, ולאחר מכן צמצם עם פילטרים מתקדמים.</p>
           </div>
@@ -460,11 +460,9 @@ function App() {
               ))}
             </div>
 
-            <div className="advanced-panel">
-              <div className="section-head compact">
-                <h3>פילטרים מתקדמים</h3>
-                <p>כל הפילטרים חלים לפני חישוב ניקוד האסטרטגיה.</p>
-              </div>
+            <details className="advanced-panel">
+              <summary>פילטרים מתקדמים</summary>
+              <p className="advanced-panel-hint">כל הפילטרים חלים לפני חישוב ניקוד האסטרטגיה.</p>
 
               <div className="grid grid-secondary">
                 <Field label="סקטור">
@@ -544,7 +542,7 @@ function App() {
                 <Checkbox label="דיבידנד בלבד" checked={form.filters.dividendOnly} onChange={(checked) => handleFilterChange('dividendOnly', checked)} />
                 <Checkbox label="נפח חריג" checked={form.filters.unusualVolume} onChange={(checked) => handleFilterChange('unusualVolume', checked)} />
               </div>
-            </div>
+            </details>
 
             <button className="submit-button" type="submit" disabled={isLoading}>
               {isLoading ? 'סורק את השוק...' : 'סרוק שוק'}
@@ -552,7 +550,7 @@ function App() {
 
             {error ? <p className="error-box">{error}</p> : null}
           </form>
-        </section>
+        </aside>
 
         <section className="card results-card">
           <div className="section-head">
@@ -651,7 +649,7 @@ function App() {
             </table>
           </div>
         </section>
-        </>
+        </div>
         ) : null}
 
         {activeTab === 'portfolio' ? <PortfolioSection apiBaseUrl={API_BASE_URL} /> : null}
