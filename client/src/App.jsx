@@ -115,6 +115,11 @@ function App() {
   const [tomorrowWatchlistDataSource, setTomorrowWatchlistDataSource] = useState(null);
   const [tomorrowWatchlistLoading, setTomorrowWatchlistLoading] = useState(false);
   const [tomorrowWatchlistError, setTomorrowWatchlistError] = useState('');
+  // Map-like object keyed by ticker: { [ticker]: { actualOpenPrice, gapAccuracyPct, ... } }.
+  const [tomorrowWatchlistOutcomes, setTomorrowWatchlistOutcomes] = useState({});
+  const [actualOpenInputs, setActualOpenInputs] = useState({});
+  const [outcomeBusyTicker, setOutcomeBusyTicker] = useState(null);
+  const [outcomeError, setOutcomeError] = useState('');
 
   const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
 
@@ -232,13 +237,78 @@ function App() {
       setTomorrowWatchlist(data.watchlist ?? []);
       setTomorrowWatchlistGeneratedAt(data.generatedAt ?? null);
       setTomorrowWatchlistDataSource(data.dataSource ?? null);
+      await loadTomorrowWatchlistOutcomes(data.generatedAt ?? null);
     } catch (requestError) {
       setTomorrowWatchlist([]);
       setTomorrowWatchlistGeneratedAt(null);
       setTomorrowWatchlistDataSource(null);
+      setTomorrowWatchlistOutcomes({});
       setTomorrowWatchlistError(requestError.message);
     } finally {
       setTomorrowWatchlistLoading(false);
+    }
+  };
+
+  // Fetches logged actual-open outcomes for the trading date the current watchlist refers to
+  // (generatedAt, truncated to YYYY-MM-DD), and merges them into state keyed by ticker.
+  const loadTomorrowWatchlistOutcomes = async (generatedAt) => {
+    if (!generatedAt) {
+      setTomorrowWatchlistOutcomes({});
+      return;
+    }
+
+    const date = generatedAt.slice(0, 10);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/watchlist/outcomes?date=${date}`);
+
+      if (!response.ok) {
+        setTomorrowWatchlistOutcomes({});
+        return;
+      }
+
+      const data = await response.json();
+      setTomorrowWatchlistOutcomes(data.outcomes ?? {});
+    } catch (requestError) {
+      setTomorrowWatchlistOutcomes({});
+    }
+  };
+
+  const handleLogActualOpen = async (item) => {
+    const date = (tomorrowWatchlistGeneratedAt || '').slice(0, 10);
+    const rawValue = actualOpenInputs[item.ticker];
+    const actualOpenPrice = Number(rawValue);
+
+    if (!date || !rawValue || !Number.isFinite(actualOpenPrice) || actualOpenPrice <= 0) {
+      setOutcomeError('יש להזין מחיר פתיחה בפועל חיובי.');
+      return;
+    }
+
+    setOutcomeBusyTicker(item.ticker);
+    setOutcomeError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/watchlist/outcomes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date,
+          ticker: item.ticker,
+          actualOpenPrice,
+          modelClosePrice: item.price
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'שמירת מחיר הפתיחה בפועל נכשלה.');
+      }
+
+      setTomorrowWatchlistOutcomes((current) => ({ ...current, [item.ticker]: data }));
+    } catch (requestError) {
+      setOutcomeError(requestError.message);
+    } finally {
+      setOutcomeBusyTicker(null);
     }
   };
 
@@ -361,6 +431,7 @@ function App() {
               </p>
 
               {tomorrowWatchlistError ? <p className="error-box">{tomorrowWatchlistError}</p> : null}
+              {outcomeError ? <p className="error-box">{outcomeError}</p> : null}
 
               <div className="results-wrapper">
                 <table>
@@ -374,18 +445,19 @@ function App() {
                       <th>ADR%</th>
                       <th>דוח בקרוב</th>
                       <th>סיבה</th>
+                      <th>מחיר פתיחה בפועל</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tomorrowWatchlistLoading ? (
                       <tr>
-                        <td colSpan={8} className="empty-state">
+                        <td colSpan={9} className="empty-state">
                           טוען רשימת מעקב...
                         </td>
                       </tr>
                     ) : tomorrowWatchlist.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="empty-state">
+                        <td colSpan={9} className="empty-state">
                           לא נמצאו כרגע מועמדים שעומדים בקריטריונים.
                         </td>
                       </tr>
@@ -406,6 +478,17 @@ function App() {
                             )}
                           </td>
                           <td>{item.reason}</td>
+                          <td>
+                            <ActualOpenCell
+                              outcome={tomorrowWatchlistOutcomes[item.ticker]}
+                              inputValue={actualOpenInputs[item.ticker] ?? ''}
+                              busy={outcomeBusyTicker === item.ticker}
+                              onChange={(value) =>
+                                setActualOpenInputs((current) => ({ ...current, [item.ticker]: value }))
+                              }
+                              onSave={() => handleLogActualOpen(item)}
+                            />
+                          </td>
                         </tr>
                       ))
                     )}
@@ -689,6 +772,61 @@ function RegimeRecommendationNote({ marketRegime, selectedStrategy }) {
         </p>
       ))}
     </>
+  );
+}
+
+// Lets the user log the real next-morning opening price for a gap-and-go candidate and see how
+// it compares to the model's close price (gapAccuracyPct). Before logging (or while editing): a
+// small input + save button. After logging: a colored pill (green when the gap matched the
+// direction the watchlist predicted - i.e. a positive gap - red otherwise), with an "edit" option
+// that switches back to the input, pre-filled with the previously logged price.
+function ActualOpenCell({ outcome, inputValue, busy, onChange, onSave }) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  if (outcome && !isEditing) {
+    return (
+      <div className="actual-open-cell">
+        <span className={`metric-pill ${outcome.gapAccuracyPct >= 0 ? 'high' : 'low'}`}>
+          גאפ בפועל: {outcome.gapAccuracyPct > 0 ? '+' : ''}
+          {outcome.gapAccuracyPct}%
+        </span>
+        <button
+          type="button"
+          className="table-action-button"
+          onClick={() => {
+            onChange(String(outcome.actualOpenPrice));
+            setIsEditing(true);
+          }}
+        >
+          ערוך
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="actual-open-cell">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        className="actual-open-input"
+        value={inputValue}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="מחיר פתיחה"
+      />
+      <button
+        type="button"
+        className="table-action-button"
+        onClick={() => {
+          onSave();
+          setIsEditing(false);
+        }}
+        disabled={busy}
+      >
+        {busy ? 'שומר...' : 'שמור'}
+      </button>
+    </div>
   );
 }
 

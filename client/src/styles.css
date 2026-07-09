@@ -503,6 +503,22 @@ select {
   background: rgba(11, 143, 106, 0.06);
 }
 
+.actual-open-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.actual-open-input {
+  width: 6.5rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+}
+
 .value-tone {
   font-weight: 700;
 }
