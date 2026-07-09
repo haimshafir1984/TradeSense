@@ -3,18 +3,20 @@
 // scanHistoryService.js).
 const marketDataService = require('./marketDataService');
 const watchlistStore = require('./watchlistStore');
-const { clamp, round } = require('./mathUtils');
-
-// Turns the EOD-only limitation into an advantage: instead of trying (and failing) to compete
-// with real-time day-trading tools, an evening scan surfaces gap-and-go candidates for the next
-// session's open. See docs/LOGIC_IMPROVEMENTS.md - Watchlist for Tomorrow.
-const MAX_WATCHLIST_SIZE = 10;
-const MARKET_CAP_CEILING = 10000000000;
-// Loosened from the original 4% / 1.5x - combined with a small scanned universe, the stricter
-// thresholds meant "no candidates" most days even on live data. Still selective enough to filter
-// out genuinely quiet stocks, just less all-or-nothing.
-const MIN_ADR_PCT = 3;
-const MIN_VOLUME_RATIO = 1.2;
+// funnelScanService is tried first (wide Alpaca-backed scan); this module only runs its own
+// FMP-universe path as a fallback when funnelScanService returns null (Alpaca not configured, or
+// its stage 1 failed). See docs/SPEC_DATA_FUNNEL.md section 3.3.
+const funnelScanService = require('./funnelScanService');
+const { round } = require('./mathUtils');
+const {
+  MAX_WATCHLIST_SIZE,
+  MARKET_CAP_CEILING,
+  MIN_ADR_PCT,
+  MIN_VOLUME_RATIO,
+  computeRankScore,
+  buildReason,
+  checkEarningsSoon
+} = require('./watchlistScoring');
 
 // A cached watchlist stays valid this long before a request is forced to recompute it, even if
 // the nightly scheduler (watchlistScheduler.js) never got to run - e.g. the server wasn't running
@@ -22,11 +24,18 @@ const MIN_VOLUME_RATIO = 1.2;
 // by the scheduler or an earlier request today) without ever serving something wildly stale.
 const CACHE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 
-// ~3 trading days, approximated with calendar days to absorb a weekend in between (same
-// calendar-day approximation used for EVALUATION_HORIZON_DAYS in scanHistoryService.js).
-const EARNINGS_LOOKAHEAD_CALENDAR_DAYS = 5;
-
+// Turns the EOD-only limitation into an advantage: instead of trying (and failing) to compete
+// with real-time day-trading tools, an evening scan surfaces gap-and-go candidates for the next
+// session's open. See docs/LOGIC_IMPROVEMENTS.md - Watchlist for Tomorrow.
 async function buildTomorrowWatchlist({ exchange = 'NASDAQ' } = {}) {
+  // A returned array (even an empty one) means the funnel actually ran - "no candidates today" is
+  // a legitimate result and short-circuits the old path. null means Alpaca isn't configured or its
+  // stage 1 failed, so we fall through to exactly the same FMP-universe logic as before.
+  const funnelResult = await funnelScanService.scanForGapAndGo({ exchange });
+  if (Array.isArray(funnelResult)) {
+    return funnelResult;
+  }
+
   const { stocks } = await marketDataService.getMarketData(exchange);
 
   const candidates = stocks
@@ -39,7 +48,8 @@ async function buildTomorrowWatchlist({ exchange = 'NASDAQ' } = {}) {
   return Promise.all(
     candidates.map(async (candidate) => ({
       ...candidate,
-      hasEarningsSoon: apiKey ? await checkEarningsSoon(candidate.ticker, apiKey) : false
+      hasEarningsSoon: apiKey ? await checkEarningsSoon(candidate.ticker, apiKey) : false,
+      dataSource: 'fmp-universe'
     }))
   );
 }
@@ -71,13 +81,7 @@ function enrichCandidate(stock) {
   const highProximity = stock.high_52w ? stock.price / stock.high_52w : 0;
   const adrPct = Number(stock.adr_pct || 0);
   const dailyChange = Number(stock.daily_change || 0);
-
-  // Simple weighted blend of the three things that matter for a gap-and-go candidate: how much it
-  // already moved, how unusual the volume is, and how close it is to breaking out.
-  const rankScore =
-    normalize(dailyChange, 0, 15) * 0.4 +
-    normalize(volumeRatio, 1.5, 5) * 0.35 +
-    normalize(highProximity, 0.85, 1) * 0.25;
+  const rankScore = computeRankScore({ dailyChange, volumeRatio, highProximity });
 
   return {
     ticker: stock.ticker,
@@ -100,50 +104,6 @@ function matchesGapAndGoProfile(candidate) {
     candidate.volumeRatio >= MIN_VOLUME_RATIO &&
     candidate.daily_change > 0
   );
-}
-
-function buildReason(dailyChange, volumeRatio, adrPct, highProximity) {
-  const parts = [
-    `עלייה יומית של ${round(dailyChange, 1)}%`,
-    `נפח מסחר פי ${round(volumeRatio, 1)} מהממוצע`,
-    `טווח תנודה יומי (ADR) של ${round(adrPct, 1)}%`
-  ];
-
-  if (highProximity >= 0.95) {
-    parts.push('קרבה לשיא השנתי');
-  }
-
-  return parts.join(', ');
-}
-
-async function checkEarningsSoon(ticker, apiKey) {
-  try {
-    const from = new Date();
-    const to = new Date();
-    to.setDate(to.getDate() + EARNINGS_LOOKAHEAD_CALENDAR_DAYS);
-    const fromDate = from.toISOString().slice(0, 10);
-    const toDate = to.toISOString().slice(0, 10);
-    const url = `https://financialmodelingprep.com/stable/earnings-calendar?symbol=${ticker}&from=${fromDate}&to=${toDate}&apikey=${apiKey}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      return false;
-    }
-
-    const data = await response.json();
-    return Array.isArray(data) && data.length > 0;
-  } catch (error) {
-    console.warn(`[watchlist] Earnings calendar lookup failed for ${ticker}: ${error.message}`);
-    return false;
-  }
-}
-
-function normalize(value, min, max) {
-  if (max <= min) {
-    return 0;
-  }
-
-  return clamp((value - min) / (max - min));
 }
 
 module.exports = {

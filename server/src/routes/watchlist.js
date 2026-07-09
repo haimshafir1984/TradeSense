@@ -10,7 +10,8 @@ router.get('/tomorrow', async (request, response) => {
     const exchange = request.query.exchange || 'NASDAQ';
     const forceRefresh = request.query.refresh === 'true';
     const { generatedAt, watchlist } = await getTomorrowWatchlist({ exchange, forceRefresh });
-    response.json({ exchange, generatedAt, watchlist });
+    const dataSource = watchlist.length ? watchlist[0].dataSource : 'none';
+    response.json({ exchange, generatedAt, watchlist, dataSource });
   } catch (error) {
     console.error('Tomorrow watchlist request failed', error);
     response.status(500).json({

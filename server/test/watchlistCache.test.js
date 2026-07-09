@@ -5,10 +5,17 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 function freshWatchlistService(scratchPath) {
+  // Without Alpaca keys, funnelScanService.scanForGapAndGo (called first by buildTomorrowWatchlist)
+  // must return null so these tests keep exercising the pre-funnel FMP-universe path exactly as
+  // before - see docs/SPEC_DATA_FUNNEL.md section 4.
+  delete process.env.ALPACA_API_KEY_ID;
+  delete process.env.ALPACA_API_SECRET_KEY;
+
   process.env.WATCHLIST_STORE_FILE_PATH = scratchPath;
   delete require.cache[require.resolve('../src/services/watchlistStore')];
   delete require.cache[require.resolve('../src/services/watchlistService')];
   delete require.cache[require.resolve('../src/services/marketDataService')];
+  delete require.cache[require.resolve('../src/services/funnelScanService')];
   return {
     watchlistService: require('../src/services/watchlistService'),
     marketDataService: require('../src/services/marketDataService')

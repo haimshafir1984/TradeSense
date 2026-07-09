@@ -2,6 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function freshScheduler() {
+  delete process.env.ALPACA_API_KEY_ID;
+  delete process.env.ALPACA_API_SECRET_KEY;
+
   delete require.cache[require.resolve('../src/services/watchlistScheduler')];
   delete require.cache[require.resolve('../src/services/watchlistService')];
   return {

@@ -111,6 +111,7 @@ function App() {
   const [showTomorrowWatchlist, setShowTomorrowWatchlist] = useState(true);
   const [tomorrowWatchlist, setTomorrowWatchlist] = useState([]);
   const [tomorrowWatchlistGeneratedAt, setTomorrowWatchlistGeneratedAt] = useState(null);
+  const [tomorrowWatchlistDataSource, setTomorrowWatchlistDataSource] = useState(null);
   const [tomorrowWatchlistLoading, setTomorrowWatchlistLoading] = useState(false);
   const [tomorrowWatchlistError, setTomorrowWatchlistError] = useState('');
 
@@ -229,9 +230,11 @@ function App() {
       const data = await response.json();
       setTomorrowWatchlist(data.watchlist ?? []);
       setTomorrowWatchlistGeneratedAt(data.generatedAt ?? null);
+      setTomorrowWatchlistDataSource(data.dataSource ?? null);
     } catch (requestError) {
       setTomorrowWatchlist([]);
       setTomorrowWatchlistGeneratedAt(null);
+      setTomorrowWatchlistDataSource(null);
       setTomorrowWatchlistError(requestError.message);
     } finally {
       setTomorrowWatchlistLoading(false);
@@ -527,6 +530,15 @@ function App() {
               <p>
                 מועמדים ל-Gap &amp; Go ליום המסחר הבא. מחושבת אוטומטית מדי ערב - מוכנה כשאתה נכנס למערכת.
                 {tomorrowWatchlistGeneratedAt ? ` עודכן לאחרונה: ${formatGeneratedAt(tomorrowWatchlistGeneratedAt)}.` : ''}
+                {tomorrowWatchlistDataSource === 'alpaca+fmp' ? (
+                  <span className="metric-pill high" style={{ marginRight: '0.5rem' }}>
+                    מקור: סריקת שוק רחבה
+                  </span>
+                ) : tomorrowWatchlistDataSource ? (
+                  <span className="metric-pill medium" style={{ marginRight: '0.5rem' }}>
+                    מקור: מדגם מצומצם
+                  </span>
+                ) : null}
               </p>
             </div>
             <div className="watchlist-actions">

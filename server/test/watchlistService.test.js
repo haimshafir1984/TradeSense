@@ -2,8 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function freshWatchlistService() {
+  // Without Alpaca keys, funnelScanService.scanForGapAndGo (called first by buildTomorrowWatchlist)
+  // must return null so these tests keep exercising the pre-funnel FMP-universe path exactly as
+  // before - see docs/SPEC_DATA_FUNNEL.md section 4.
+  delete process.env.ALPACA_API_KEY_ID;
+  delete process.env.ALPACA_API_SECRET_KEY;
+
   delete require.cache[require.resolve('../src/services/watchlistService')];
   delete require.cache[require.resolve('../src/services/marketDataService')];
+  delete require.cache[require.resolve('../src/services/funnelScanService')];
   return {
     watchlistService: require('../src/services/watchlistService'),
     marketDataService: require('../src/services/marketDataService')
@@ -49,6 +56,9 @@ test('buildTomorrowWatchlist filters to the gap-and-go profile and ranks by mome
   assert.equal(watchlist[0].ticker, 'WINNER');
   assert.ok(watchlist[0].reason.length > 0);
   assert.equal(watchlist[0].hasEarningsSoon, false);
+  // No Alpaca keys in the test env -> funnelScanService.scanForGapAndGo returns null and this is
+  // the old FMP-universe path, now tagged accordingly (docs/SPEC_DATA_FUNNEL.md section 3.3).
+  assert.equal(watchlist[0].dataSource, 'fmp-universe');
 });
 
 test('buildTomorrowWatchlist caps results at 10 and ranks strongest candidates first', async () => {
