@@ -65,7 +65,10 @@ async function checkEarningsSoon(ticker, apiKey) {
     }
 
     const data = await response.json();
-    return Array.isArray(data) && data.length > 0;
+    // FMP's free tier ignores the `symbol` query parameter and returns the whole general
+    // calendar, so an unfiltered length check flags *every* stock as "earnings soon". Only count
+    // entries that actually belong to this ticker.
+    return Array.isArray(data) && data.some((entry) => entry?.symbol === ticker);
   } catch (error) {
     console.warn(`[watchlist] Earnings calendar lookup failed for ${ticker}: ${error.message}`);
     return false;

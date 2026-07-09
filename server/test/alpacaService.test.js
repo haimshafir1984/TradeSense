@@ -119,6 +119,30 @@ test('getActiveAssets returns an empty array without throwing on HTTP error', as
   assert.deepEqual(assets, []);
 });
 
+test('getActiveAssets targets the paper-api host for paper keys (PK prefix) and the live host otherwise', async () => {
+  const originalFetch = global.fetch;
+  const requestedHosts = [];
+  global.fetch = async (url) => {
+    requestedHosts.push(new URL(url).host);
+    return jsonResponse([]);
+  };
+
+  process.env.ALPACA_API_KEY_ID = 'PKtestpaper';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  delete process.env.ALPACA_TRADING_BASE_URL;
+  let alpacaService = freshAlpacaService();
+  await alpacaService.getActiveAssets({ exchange: 'NASDAQ' });
+
+  process.env.ALPACA_API_KEY_ID = 'AKtestlive';
+  alpacaService = freshAlpacaService();
+  await alpacaService.getActiveAssets({ exchange: 'NASDAQ' });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.deepEqual(requestedHosts, ['paper-api.alpaca.markets', 'api.alpaca.markets']);
+});
+
 test('getActiveAssets filters to tradable, exact-exchange, plain-symbol equities', async () => {
   process.env.ALPACA_API_KEY_ID = 'key';
   process.env.ALPACA_API_SECRET_KEY = 'secret';

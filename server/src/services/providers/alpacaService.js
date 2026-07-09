@@ -9,7 +9,19 @@
 // universe path.
 
 const DATA_BASE_URL = process.env.ALPACA_DATA_BASE_URL || 'https://data.alpaca.markets';
-const TRADING_BASE_URL = process.env.ALPACA_TRADING_BASE_URL || 'https://api.alpaca.markets';
+
+// Free Alpaca accounts issue *paper* keys (prefixed "PK"), which authenticate against
+// paper-api.alpaca.markets but get a 401 from the live api.alpaca.markets host. The market-data
+// host accepts both key types, so only the assets/trading host needs to switch. Resolved per-call
+// (not at module load) so tests and late-loaded .env values are picked up.
+function tradingBaseUrl() {
+  if (process.env.ALPACA_TRADING_BASE_URL) {
+    return process.env.ALPACA_TRADING_BASE_URL;
+  }
+
+  const keyId = process.env.ALPACA_API_KEY_ID || '';
+  return keyId.startsWith('PK') ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+}
 
 // Only an exact match on these two exchanges - Alpaca also returns ARCA/BATS/OTC/etc, which we
 // deliberately do NOT fold into NYSE (see spec 3.1).
@@ -83,7 +95,7 @@ async function getActiveAssets({ exchange } = {}) {
     return [];
   }
 
-  const url = `${TRADING_BASE_URL}/v2/assets?status=active&asset_class=us_equity`;
+  const url = `${tradingBaseUrl()}/v2/assets?status=active&asset_class=us_equity`;
   const data = await fetchAlpaca(url, `getActiveAssets:${exchange}`);
 
   if (!Array.isArray(data)) {
