@@ -295,7 +295,12 @@ function App() {
           date,
           ticker: item.ticker,
           actualOpenPrice,
-          modelClosePrice: item.price
+          modelClosePrice: item.price,
+          dailyChange: item.daily_change,
+          volumeRatio: item.volumeRatio,
+          adrPct: item.adr_pct,
+          highProximity: item.highProximity,
+          rankScore: item.rankScore
         })
       });
       const data = await response.json();
@@ -445,19 +450,20 @@ function App() {
                       <th>ADR%</th>
                       <th>דוח בקרוב</th>
                       <th>סיבה</th>
+                      <th>סיכוי לפריצה</th>
                       <th>מחיר פתיחה בפועל</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tomorrowWatchlistLoading ? (
                       <tr>
-                        <td colSpan={9} className="empty-state">
+                        <td colSpan={10} className="empty-state">
                           טוען רשימת מעקב...
                         </td>
                       </tr>
                     ) : tomorrowWatchlist.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="empty-state">
+                        <td colSpan={10} className="empty-state">
                           לא נמצאו כרגע מועמדים שעומדים בקריטריונים.
                         </td>
                       </tr>
@@ -478,6 +484,9 @@ function App() {
                             )}
                           </td>
                           <td>{item.reason}</td>
+                          <td>
+                            <BreakoutLikelihoodCell likelihood={item.breakoutLikelihood} />
+                          </td>
                           <td>
                             <ActualOpenCell
                               outcome={tomorrowWatchlistOutcomes[item.ticker]}
@@ -772,6 +781,29 @@ function RegimeRecommendationNote({ marketRegime, selectedStrategy }) {
         </p>
       ))}
     </>
+  );
+}
+
+// Shows what happened historically to logged candidates that scored similarly to this one
+// (watchlistLearningService.js, computed server-side from watchlistOutcomes.json). Below the
+// minimum sample size it says so explicitly rather than showing a percentage that would look
+// scientific but rest on a handful of data points.
+function BreakoutLikelihoodCell({ likelihood }) {
+  if (!likelihood || likelihood.positiveGapRatePct === null) {
+    const sampleSize = likelihood?.sampleSize ?? 0;
+    const minSampleSize = likelihood?.minSampleSize ?? 5;
+    return (
+      <span className="cell-subtext">
+        אין עדיין מספיק נתונים ({sampleSize}/{minSampleSize} תצפיות)
+      </span>
+    );
+  }
+
+  return (
+    <span className={`metric-pill ${likelihood.positiveGapRatePct >= 50 ? 'high' : 'low'}`}>
+      {likelihood.positiveGapRatePct}% גאפ חיובי (ממוצע {likelihood.avgGapPct > 0 ? '+' : ''}
+      {likelihood.avgGapPct}%, {likelihood.sampleSize} תצפיות דומות)
+    </span>
   );
 }
 

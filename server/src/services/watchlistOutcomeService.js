@@ -8,7 +8,24 @@ const { round } = require('./mathUtils');
 // modelClosePrice is passed in by the caller (the client already has it as `price` on the
 // watchlist row being logged against) rather than re-derived here from the watchlist cache, to
 // avoid a fragile cross-store date/ticker lookup for a value the caller already has in hand.
-async function logActualOpen({ date, ticker, actualOpenPrice, modelClosePrice } = {}) {
+//
+// The candidate's scoring fields (dailyChange, volumeRatio, adrPct, highProximity, rankScore) are
+// captured the same way - snapshotted from the watchlist row at log time - so that once enough
+// outcomes accumulate, watchlistLearningService.js can look up "what happened historically to
+// candidates that looked like this one" without needing a fragile join back to a since-overwritten
+// watchlist cache. All are optional: older records (or callers that don't pass them) simply don't
+// participate in the learning lookup (see MIN_SAMPLE_SIZE handling there).
+async function logActualOpen({
+  date,
+  ticker,
+  actualOpenPrice,
+  modelClosePrice,
+  dailyChange,
+  volumeRatio,
+  adrPct,
+  highProximity,
+  rankScore
+} = {}) {
   const normalizedDate = String(date || '').trim();
   const normalizedTicker = String(ticker || '').trim().toUpperCase();
   const openPrice = toPositiveNumber(actualOpenPrice);
@@ -44,6 +61,11 @@ async function logActualOpen({ date, ticker, actualOpenPrice, modelClosePrice } 
     modelClosePrice: closePrice,
     actualOpenPrice: openPrice,
     gapAccuracyPct,
+    dailyChangeAtLog: toFiniteOrNull(dailyChange),
+    volumeRatioAtLog: toFiniteOrNull(volumeRatio),
+    adrPctAtLog: toFiniteOrNull(adrPct),
+    highProximityAtLog: toFiniteOrNull(highProximity),
+    rankScoreAtLog: toFiniteOrNull(rankScore),
     loggedAt: new Date().toISOString()
   };
 
@@ -68,6 +90,11 @@ async function getOutcomesForDate(date) {
 function toPositiveNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function toFiniteOrNull(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function createId() {

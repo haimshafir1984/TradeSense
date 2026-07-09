@@ -1,5 +1,6 @@
 const express = require('express');
 const { getTomorrowWatchlist } = require('../services/watchlistService');
+const { attachBreakoutLikelihood } = require('../services/watchlistLearningService');
 
 const router = express.Router();
 
@@ -10,8 +11,11 @@ router.get('/tomorrow', async (request, response) => {
     const exchange = request.query.exchange || 'NASDAQ';
     const forceRefresh = request.query.refresh === 'true';
     const { generatedAt, watchlist } = await getTomorrowWatchlist({ exchange, forceRefresh });
-    const dataSource = watchlist.length ? watchlist[0].dataSource : 'none';
-    response.json({ exchange, generatedAt, watchlist, dataSource });
+    // Enriched at read time (not cached alongside the watchlist itself) so the likelihood always
+    // reflects the latest logged outcomes, even if the cached watchlist hasn't been recomputed.
+    const watchlistWithLikelihood = await attachBreakoutLikelihood(watchlist);
+    const dataSource = watchlistWithLikelihood.length ? watchlistWithLikelihood[0].dataSource : 'none';
+    response.json({ exchange, generatedAt, watchlist: watchlistWithLikelihood, dataSource });
   } catch (error) {
     console.error('Tomorrow watchlist request failed', error);
     response.status(500).json({

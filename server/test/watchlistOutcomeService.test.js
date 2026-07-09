@@ -100,6 +100,50 @@ test('getOutcomesForDate only returns records for the requested date', async () 
   assert.ok(outcomesForJul10.has('MSFT'));
 });
 
+test('logActualOpen stores the candidate scoring fields snapshotted at log time', async () => {
+  const scratchPath = path.join(os.tmpdir(), `watchlist-outcome-features-${Date.now()}.json`);
+  const { logActualOpen } = freshWatchlistOutcomeService(scratchPath);
+
+  const record = await logActualOpen({
+    date: '2026-07-09',
+    ticker: 'PENG',
+    actualOpenPrice: 82,
+    modelClosePrice: 78.75,
+    dailyChange: 25.59,
+    volumeRatio: 3.1,
+    adrPct: 11.72,
+    highProximity: 0.97,
+    rankScore: 0.62
+  });
+
+  fs.unlinkSync(scratchPath);
+  delete process.env.WATCHLIST_OUTCOME_STORE_FILE_PATH;
+
+  assert.equal(record.dailyChangeAtLog, 25.59);
+  assert.equal(record.volumeRatioAtLog, 3.1);
+  assert.equal(record.adrPctAtLog, 11.72);
+  assert.equal(record.highProximityAtLog, 0.97);
+  assert.equal(record.rankScoreAtLog, 0.62);
+});
+
+test('logActualOpen stores null for scoring fields that are missing, instead of throwing', async () => {
+  const scratchPath = path.join(os.tmpdir(), `watchlist-outcome-features-missing-${Date.now()}.json`);
+  const { logActualOpen } = freshWatchlistOutcomeService(scratchPath);
+
+  const record = await logActualOpen({
+    date: '2026-07-09',
+    ticker: 'PENG',
+    actualOpenPrice: 82,
+    modelClosePrice: 78.75
+  });
+
+  fs.unlinkSync(scratchPath);
+  delete process.env.WATCHLIST_OUTCOME_STORE_FILE_PATH;
+
+  assert.equal(record.rankScoreAtLog, null);
+  assert.equal(record.dailyChangeAtLog, null);
+});
+
 test('logActualOpen rejects a missing or non-positive actualOpenPrice with a clear error', async () => {
   const scratchPath = path.join(os.tmpdir(), `watchlist-outcome-validation-${Date.now()}.json`);
   const { logActualOpen } = freshWatchlistOutcomeService(scratchPath);
