@@ -5,3 +5,4 @@ dist
 npm-debug.log*
 server/src/data/scanHistory.json
 server/src/data/watchlistCache.json
+server/src/data/watchlistOutcomes.json

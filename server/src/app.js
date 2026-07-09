@@ -5,6 +5,7 @@ const portfolioRouter = require('./routes/portfolio');
 const scanHistoryRouter = require('./routes/scanHistory');
 const strategyLeagueRouter = require('./routes/strategyLeague');
 const watchlistRouter = require('./routes/watchlist');
+const watchlistOutcomesRouter = require('./routes/watchlistOutcomes');
 
 const app = express();
 
@@ -23,6 +24,12 @@ app.use('/api/analyze', analyzeRouter);
 app.use('/api/portfolio', portfolioRouter);
 app.use('/api/scan-history', scanHistoryRouter);
 app.use('/api/strategy-league', strategyLeagueRouter);
+// Mounted before the general /api/watchlist router: both are separate routers with their own
+// full paths (/api/watchlist/outcomes vs /api/watchlist), so Express would route them correctly
+// either way here since routes/watchlist.js only defines GET /tomorrow (no conflict) - but
+// registering the more specific path first keeps intent obvious, per
+// docs/SPEC_MANUAL_TESTING_TOOLS.md section 3.2.
+app.use('/api/watchlist/outcomes', watchlistOutcomesRouter);
 app.use('/api/watchlist', watchlistRouter);
 
 module.exports = app;
