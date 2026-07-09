@@ -94,6 +94,7 @@ const numberFormatter = new Intl.NumberFormat('he-IL', {
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 function App() {
+  const [activeTab, setActiveTab] = useState('watchlist');
   const [form, setForm] = useState({
     exchange: 'NASDAQ',
     risk: 'medium',
@@ -259,36 +260,173 @@ function App() {
 
   return (
     <div className="page-shell">
-      <div className="aurora aurora-left" />
-      <div className="aurora aurora-right" />
+      <header className="topbar">
+        <div className="topbar-inner">
+          <span className="topbar-brand">TradeSense</span>
+
+          <nav className="topbar-tabs" role="tablist" aria-label="ניווט ראשי">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'watchlist'}
+              className={`topbar-tab ${activeTab === 'watchlist' ? 'active' : ''}`}
+              onClick={() => setActiveTab('watchlist')}
+            >
+              רשימת מעקב למחר
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'scan'}
+              className={`topbar-tab ${activeTab === 'scan' ? 'active' : ''}`}
+              onClick={() => setActiveTab('scan')}
+            >
+              סריקת שוק
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'portfolio'}
+              className={`topbar-tab ${activeTab === 'portfolio' ? 'active' : ''}`}
+              onClick={() => setActiveTab('portfolio')}
+            >
+              התיק שלי
+            </button>
+          </nav>
+
+          <div className="topbar-right">
+            {analysis?.marketRegime ? (
+              <span className={`source-badge regime ${regimeClassName(analysis.marketRegime.regime)}`}>
+                מצב שוק: {analysis.marketRegime.label}
+              </span>
+            ) : null}
+            {leadingStrategyLabel ? (
+              <span className="strategy-league-badge">מובילה ב-90 הימים: {leadingStrategyLabel}</span>
+            ) : null}
+            <select
+              className="topbar-exchange"
+              value={form.exchange}
+              onChange={(event) => handleFieldChange('exchange', event.target.value)}
+              aria-label="בורסה"
+            >
+              {exchangeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </header>
 
       <main className="layout">
-        <section className="hero">
-          <p className="eyebrow">בורסה חכמה לסינון מניות</p>
-          <h1>TradeSense</h1>
-          <p className="hero-copy">
-            מנוע סריקה שמדרג מניות לפי שיטת השקעה, רמת סיכון ופילטרים מתקדמים על בסיס נתוני שוק אמיתיים.
-          </p>
-        </section>
+        {activeTab === 'watchlist' ? (
+        <section className="card watchlist-card">
+          <div className="section-head">
+            <div>
+              <h2>רשימת מעקב למחר</h2>
+              <p>
+                מועמדים ל-Gap &amp; Go ליום המסחר הבא. מחושבת אוטומטית מדי ערב - מוכנה כשאתה נכנס למערכת.
+                {tomorrowWatchlistGeneratedAt ? ` עודכן לאחרונה: ${formatGeneratedAt(tomorrowWatchlistGeneratedAt)}.` : ''}
+                {tomorrowWatchlistDataSource === 'alpaca+fmp' ? (
+                  <span className="metric-pill high" style={{ marginRight: '0.5rem' }}>
+                    מקור: סריקת שוק רחבה
+                  </span>
+                ) : tomorrowWatchlistDataSource ? (
+                  <span className="metric-pill medium" style={{ marginRight: '0.5rem' }}>
+                    מקור: מדגם מצומצם
+                  </span>
+                ) : null}
+              </p>
+            </div>
+            <div className="watchlist-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => handleLoadTomorrowWatchlist(true)}
+                disabled={tomorrowWatchlistLoading}
+              >
+                {tomorrowWatchlistLoading ? 'מרענן...' : 'רענן עכשיו'}
+              </button>
+              <button type="button" className="ghost-button" onClick={() => setShowTomorrowWatchlist((current) => !current)}>
+                {showTomorrowWatchlist ? 'הסתר' : 'הצג'}
+              </button>
+            </div>
+          </div>
 
+          {showTomorrowWatchlist ? (
+            <>
+              <p className="watchlist-disclaimer">
+                מבוסס נתוני סוף יום - לאימות מול מחירי פתיחה בזמן אמת לפני כל החלטה.
+              </p>
+
+              {tomorrowWatchlistError ? <p className="error-box">{tomorrowWatchlistError}</p> : null}
+
+              <div className="results-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>סימול</th>
+                      <th>שם חברה</th>
+                      <th>מחיר</th>
+                      <th>שינוי יומי</th>
+                      <th>יחס נפח</th>
+                      <th>ADR%</th>
+                      <th>דוח בקרוב</th>
+                      <th>סיבה</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tomorrowWatchlistLoading ? (
+                      <tr>
+                        <td colSpan={8} className="empty-state">
+                          טוען רשימת מעקב...
+                        </td>
+                      </tr>
+                    ) : tomorrowWatchlist.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="empty-state">
+                          לא נמצאו כרגע מועמדים שעומדים בקריטריונים.
+                        </td>
+                      </tr>
+                    ) : (
+                      tomorrowWatchlist.map((item) => (
+                        <tr key={item.ticker}>
+                          <td>{item.ticker}</td>
+                          <td>{item.companyName}</td>
+                          <td>{numberFormatter.format(item.price)}</td>
+                          <td className="value-tone positive">{item.daily_change}%</td>
+                          <td>{item.volumeRatio}x</td>
+                          <td>{item.adr_pct}%</td>
+                          <td>
+                            {item.hasEarningsSoon ? (
+                              <span className="metric-pill medium">קטליזטור/סיכון: דוח בקרוב</span>
+                            ) : (
+                              <span className="cell-subtext">אין דוח קרוב ידוע</span>
+                            )}
+                          </td>
+                          <td>{item.reason}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+        </section>
+        ) : null}
+
+        {activeTab === 'scan' ? (
+        <>
         <section className="card form-card">
           <div className="section-head">
             <h2>הגדרות סריקה</h2>
-            <p>בחר שוק, רמת סיכון ושיטת השקעה, ולאחר מכן צמצם עם פילטרים מתקדמים.</p>
+            <p>בחר רמת סיכון ושיטת השקעה, ולאחר מכן צמצם עם פילטרים מתקדמים.</p>
           </div>
 
           <form className="scanner-form" onSubmit={handleSubmit}>
             <div className="grid grid-primary">
-              <Field label="בורסה">
-                <select value={form.exchange} onChange={(event) => handleFieldChange('exchange', event.target.value)}>
-                  {exchangeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
               <Field label="רמת סיכון">
                 <select value={form.risk} onChange={(event) => handleFieldChange('risk', event.target.value)}>
                   {riskOptions.map((option) => (
@@ -309,10 +447,6 @@ function App() {
                 </select>
               </Field>
             </div>
-
-            {leadingStrategyLabel ? (
-              <p className="strategy-league-badge">מובילה ב-90 הימים: {leadingStrategyLabel}</p>
-            ) : null}
 
             <div className="strategy-info-list">
               {investmentMethodOptions.map((option) => (
@@ -434,14 +568,9 @@ function App() {
             <div className="result-meta-bar">
               <span className={`source-badge ${sourceClassName(meta.source)}`}>מקור נתונים: {sourceLabel(meta.source)}</span>
               {analysis?.marketRegime ? (
-                <>
-                  <span className={`source-badge regime ${regimeClassName(analysis.marketRegime.regime)}`}>
-                    מצב שוק: {analysis.marketRegime.label}
-                  </span>
-                  <span className={`source-badge fit ${fitClassName(analysis.marketRegime.strategyFit?.level)}`}>
-                    התאמת אסטרטגיה: {analysis.marketRegime.strategyFit?.label || 'בינונית'}
-                  </span>
-                </>
+                <span className={`source-badge fit ${fitClassName(analysis.marketRegime.strategyFit?.level)}`}>
+                  התאמת אסטרטגיה: {analysis.marketRegime.strategyFit?.label || 'בינונית'}
+                </span>
               ) : null}
               {analysis?.summary?.averageOpportunityRank ? (
                 <>
@@ -522,103 +651,10 @@ function App() {
             </table>
           </div>
         </section>
+        </>
+        ) : null}
 
-        <section className="card watchlist-card">
-          <div className="section-head">
-            <div>
-              <h2>רשימת מעקב למחר</h2>
-              <p>
-                מועמדים ל-Gap &amp; Go ליום המסחר הבא. מחושבת אוטומטית מדי ערב - מוכנה כשאתה נכנס למערכת.
-                {tomorrowWatchlistGeneratedAt ? ` עודכן לאחרונה: ${formatGeneratedAt(tomorrowWatchlistGeneratedAt)}.` : ''}
-                {tomorrowWatchlistDataSource === 'alpaca+fmp' ? (
-                  <span className="metric-pill high" style={{ marginRight: '0.5rem' }}>
-                    מקור: סריקת שוק רחבה
-                  </span>
-                ) : tomorrowWatchlistDataSource ? (
-                  <span className="metric-pill medium" style={{ marginRight: '0.5rem' }}>
-                    מקור: מדגם מצומצם
-                  </span>
-                ) : null}
-              </p>
-            </div>
-            <div className="watchlist-actions">
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => handleLoadTomorrowWatchlist(true)}
-                disabled={tomorrowWatchlistLoading}
-              >
-                {tomorrowWatchlistLoading ? 'מרענן...' : 'רענן עכשיו'}
-              </button>
-              <button type="button" className="ghost-button" onClick={() => setShowTomorrowWatchlist((current) => !current)}>
-                {showTomorrowWatchlist ? 'הסתר' : 'הצג'}
-              </button>
-            </div>
-          </div>
-
-          {showTomorrowWatchlist ? (
-            <>
-              <p className="watchlist-disclaimer">
-                מבוסס נתוני סוף יום - לאימות מול מחירי פתיחה בזמן אמת לפני כל החלטה.
-              </p>
-
-              {tomorrowWatchlistError ? <p className="error-box">{tomorrowWatchlistError}</p> : null}
-
-              <div className="results-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>סימול</th>
-                      <th>שם חברה</th>
-                      <th>מחיר</th>
-                      <th>שינוי יומי</th>
-                      <th>יחס נפח</th>
-                      <th>ADR%</th>
-                      <th>דוח בקרוב</th>
-                      <th>סיבה</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tomorrowWatchlistLoading ? (
-                      <tr>
-                        <td colSpan={8} className="empty-state">
-                          טוען רשימת מעקב...
-                        </td>
-                      </tr>
-                    ) : tomorrowWatchlist.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="empty-state">
-                          לא נמצאו כרגע מועמדים שעומדים בקריטריונים.
-                        </td>
-                      </tr>
-                    ) : (
-                      tomorrowWatchlist.map((item) => (
-                        <tr key={item.ticker}>
-                          <td>{item.ticker}</td>
-                          <td>{item.companyName}</td>
-                          <td>{numberFormatter.format(item.price)}</td>
-                          <td className="value-tone positive">{item.daily_change}%</td>
-                          <td>{item.volumeRatio}x</td>
-                          <td>{item.adr_pct}%</td>
-                          <td>
-                            {item.hasEarningsSoon ? (
-                              <span className="metric-pill medium">קטליזטור/סיכון: דוח בקרוב</span>
-                            ) : (
-                              <span className="cell-subtext">אין דוח קרוב ידוע</span>
-                            )}
-                          </td>
-                          <td>{item.reason}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : null}
-        </section>
-
-        <PortfolioSection apiBaseUrl={API_BASE_URL} />
+        {activeTab === 'portfolio' ? <PortfolioSection apiBaseUrl={API_BASE_URL} /> : null}
       </main>
     </div>
   );
