@@ -1,7 +1,9 @@
 const fs = require('fs/promises');
 const path = require('path');
 
-const portfolioPath = path.resolve(__dirname, '../data/portfolio.json');
+// Overridable so tests can point this at a scratch file instead of the real runtime data file
+// (same pattern as watchlistStore.js/scanHistoryStore.js).
+const portfolioPath = process.env.PORTFOLIO_STORE_FILE_PATH || path.resolve(__dirname, '../data/portfolio.json');
 
 async function readPortfolio() {
   try {

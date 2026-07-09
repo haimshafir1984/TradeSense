@@ -290,6 +290,7 @@ function PortfolioSection({ apiBaseUrl }) {
                 <th>שווי נוכחי</th>
                 <th>רווח / הפסד</th>
                 <th>שינוי מאז קנייה</th>
+                <th>תשואה מול SPY</th>
                 <th>שינוי יומי</th>
                 <th>הערה</th>
                 <th>פעולה</th>
@@ -298,7 +299,7 @@ function PortfolioSection({ apiBaseUrl }) {
             <tbody>
               {portfolio.holdings.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="empty-state">
+                  <td colSpan="12" className="empty-state">
                     עדיין לא נוספו אחזקות. הוסף את הקנייה הראשונה שלך כדי להתחיל לעקוב.
                   </td>
                 </tr>
@@ -325,6 +326,13 @@ function PortfolioSection({ apiBaseUrl }) {
                     </td>
                     <td>
                       <ValueTone value={holding.changeFromBuyPricePct}>{formatPercent(holding.changeFromBuyPricePct)}</ValueTone>
+                    </td>
+                    <td>
+                      {holding.excessReturnPct === null || holding.excessReturnPct === undefined ? (
+                        '-'
+                      ) : (
+                        <ValueTone value={holding.excessReturnPct}>{formatPercent(holding.excessReturnPct)}</ValueTone>
+                      )}
                     </td>
                     <td>
                       <ValueTone value={holding.dailyChange}>{formatPercent(holding.dailyChange)}</ValueTone>

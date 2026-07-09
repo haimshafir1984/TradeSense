@@ -1,17 +1,21 @@
-const { getStockSnapshots } = require('./marketDataService');
+// Called as marketDataService.getStockSnapshot(s)(...) rather than destructured, so tests can
+// monkey-patch the export without needing to reload this module - same pattern as scanHistoryService.js.
+const marketDataService = require('./marketDataService');
 const { readPortfolio, writePortfolio } = require('./portfolioStore');
 const { round } = require('./mathUtils');
 
 async function getPortfolio() {
   const portfolio = await readPortfolio();
   const symbols = uniqueTickers([
+    'SPY',
     ...portfolio.holdings.map((holding) => holding.ticker),
     ...portfolio.watchlist.map((item) => item.ticker)
   ]);
-  const snapshots = symbols.length ? await getStockSnapshots(symbols) : [];
+  const snapshots = symbols.length ? await marketDataService.getStockSnapshots(symbols) : [];
   const snapshotMap = new Map(snapshots.map((snapshot) => [snapshot.ticker, snapshot]));
+  const spySnapshot = snapshotMap.get('SPY');
 
-  const holdings = portfolio.holdings.map((holding) => enrichHolding(holding, snapshotMap.get(holding.ticker)));
+  const holdings = portfolio.holdings.map((holding) => enrichHolding(holding, snapshotMap.get(holding.ticker), spySnapshot));
   const watchlist = portfolio.watchlist.map((item) => enrichWatchlistItem(item, snapshotMap.get(item.ticker)));
   const summary = buildPortfolioSummary(holdings, watchlist);
 
@@ -47,6 +51,19 @@ async function addHolding(payload = {}) {
   }
 
   const portfolio = await readPortfolio();
+
+  // Snapshot SPY's current price at purchase time so excess-return-vs-SPY can be computed later
+  // (same pattern as scanHistoryService.js's spyPriceAtScan). Best-effort: if it fails, the holding
+  // just won't get the comparison (spyPriceAtPurchase stays null), same as pre-existing holdings.
+  let spyPriceAtPurchase = null;
+  try {
+    const spySnapshot = await marketDataService.getStockSnapshot('SPY');
+    const spyPrice = Number(spySnapshot?.price);
+    spyPriceAtPurchase = Number.isFinite(spyPrice) && spyPrice > 0 ? spyPrice : null;
+  } catch (error) {
+    spyPriceAtPurchase = null;
+  }
+
   const newHolding = {
     id: createId('holding'),
     ticker,
@@ -55,6 +72,7 @@ async function addHolding(payload = {}) {
     investedAmount,
     purchaseDate,
     note,
+    spyPriceAtPurchase,
     createdAt: new Date().toISOString()
   };
 
@@ -106,7 +124,7 @@ async function removeWatchlistItem(id) {
   return getPortfolio();
 }
 
-function enrichHolding(holding, snapshot) {
+function enrichHolding(holding, snapshot, spySnapshot) {
   const investedAmount = toPositiveNumber(holding.investedAmount) || holding.quantity * holding.averageBuyPrice;
   const currentPrice = snapshot?.price || 0;
   const currentValue = currentPrice * holding.quantity;
@@ -115,6 +133,18 @@ function enrichHolding(holding, snapshot) {
   const changeFromBuyPricePct = holding.averageBuyPrice
     ? ((currentPrice - holding.averageBuyPrice) / holding.averageBuyPrice) * 100
     : 0;
+
+  // Only holdings added after this feature shipped carry spyPriceAtPurchase - older ones simply
+  // get null here (not 0), which the client renders as "-" instead of a misleading 0%.
+  let spyReturnPct = null;
+  let excessReturnPct = null;
+  const spyPriceAtPurchase = Number(holding.spyPriceAtPurchase);
+  const currentSpyPrice = Number(spySnapshot?.price);
+
+  if (Number.isFinite(spyPriceAtPurchase) && spyPriceAtPurchase > 0 && Number.isFinite(currentSpyPrice) && currentSpyPrice > 0) {
+    spyReturnPct = ((currentSpyPrice - spyPriceAtPurchase) / spyPriceAtPurchase) * 100;
+    excessReturnPct = changeFromBuyPricePct - spyReturnPct;
+  }
 
   return {
     ...holding,
@@ -127,6 +157,8 @@ function enrichHolding(holding, snapshot) {
     gainLossValue: round(gainLossValue),
     gainLossPct: round(gainLossPct),
     changeFromBuyPricePct: round(changeFromBuyPricePct),
+    spyReturnPct: spyReturnPct === null ? null : round(spyReturnPct),
+    excessReturnPct: excessReturnPct === null ? null : round(excessReturnPct),
     status: gainLossValue > 0 ? 'profit' : gainLossValue < 0 ? 'loss' : 'flat'
   };
 }
