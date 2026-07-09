@@ -20,6 +20,7 @@ TradeSense היא מערכת סריקת מניות עם ממשק משתמש ב־
 - [Frontend](#frontend)
 - [Backend](#backend)
 - [שכבת הנתונים](#שכבת-הנתונים)
+- [ארכיטקטורת משפך לנתונים](#ארכיטקטורת-משפך-לנתונים)
 - [אסטרטגיות וניקוד](#אסטרטגיות-וניקוד)
 - [פילטרים](#פילטרים)
 - [מבנה הבקשה ל-API](#מבנה-הבקשה-ל-api)
@@ -375,6 +376,47 @@ TradeSense/
 - לשמור על זמינות המערכת
 - לאפשר דיבוג ופיתוח גם בלי ספק חיצוני
 
+## ארכיטקטורת משפך לנתונים
+
+"רשימת המעקב למחר" (gap-and-go, ראו סעיף Endpoints נוספים) דורשת סינון על אלפי מניות כדי למצוא מועמדים אמיתיים - לא משיכה יקרה של ~40 סימולים פר-מניה (4 קריאות FMP לכל אחד), שמצליחה לשרוף כמעט את כל תקציב ה-free tier היומי (~250 קריאות) בסריקה קרה אחת. הפתרון: ארכיטקטורת **משפך (funnel)** תלת-שלבית, שמושכת נתוני יום של אלפי מניות בבת אחת מ-Alpaca (חינמי, batch) ומצמצמת בהדרגה עד ל-10-20 פינליסטים בלבד לפני שהיא בכלל פונה ל-FMP.
+
+```
+שלב 1 — רחב וזול:   נתוני יום של אלפי מניות US בבת אחת (Alpaca, batch)
+                      ↓ סינון גס מקומי (מחיר, נפח דולרי, שינוי יומי)
+שלב 2 — בינוני:      היסטוריית 90 יום לכמה מאות ששרדו (Alpaca, batch)
+                      ↓ ADR/volumeRatio/highProximity מקומי + הסינון המלא הקיים
+שלב 3 — צר ויקר:     העשרת FMP (market cap, earnings) ל-10-20 פינליסטים בלבד
+```
+
+### טבלת הספקים ותפקידם
+
+| ספק | תפקיד ב-funnel | קובץ |
+|---|---|---|
+| Alpaca | שלבים 1-2: universe רחב + היסטוריה, זול/חינמי | `server/src/services/providers/alpacaService.js` |
+| FMP | שלב 3 בלבד: market cap + earnings calendar, לפינליסטים בלבד | `watchlistScoring.js` (`checkEarningsSoon`) + `funnelScanService.js` |
+
+FMP **לא מוחלף** - הוא ממשיך לשרת גם את שאר המערכת (`marketDataService.js`) בדיוק כמו היום; ה-funnel הוא תוסף שמופעל אך ורק עבור "רשימת המעקב למחר".
+
+### Fallback מלא כשאין מפתחות Alpaca
+
+`funnelScanService.scanForGapAndGo` מחזירה `null` אם `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` לא מוגדרים בסביבה, או אם שלב 1 נכשל (universe/bars ריקים). `watchlistService.buildTomorrowWatchlist` מפרש `null` כסימן ליפול בדיוק למסלול הישן - universe של FMP + אותם הספים הקיימים - כך שללא מפתחות Alpaca ההתנהגות זהה ביט-לביט להיום. מערך ריק שמוחזר מה-funnel כן מתקבל כתוצאה לגיטימית ("אין היום מועמדים אמיתיים").
+
+כל שגיאת HTTP או exception מול Alpaca נבלעת בשקט (`console.warn`) ומטופלת כ"נכשל" - שום ספק בודד לא יכול לגרום לשגיאה כלפי המשתמש.
+
+### משתני הסביבה של ה-funnel
+
+```env
+ALPACA_API_KEY_ID=
+ALPACA_API_SECRET_KEY=
+FUNNEL_MIN_PRICE=1
+FUNNEL_MAX_PRICE=500
+FUNNEL_MIN_DOLLAR_VOLUME=5000000
+FUNNEL_STAGE2_SIZE=300
+FUNNEL_FINALISTS=20
+```
+
+כל הספים נקראים עם ברירות מחדל בקוד; משתני הסביבה הם דריסה בלבד. פירוט מלא בסעיף [משתני סביבה](#משתני-סביבה).
+
 ## אסטרטגיות וניקוד
 
 ### מודול אסטרטגיות
@@ -616,7 +658,13 @@ Content-Type: application/json
 
 ### GET /api/watchlist/tomorrow?exchange=NASDAQ
 
-מחזיר עד 10 מועמדים ל-gap-and-go ליום המסחר הבא, מחושבים מסריקת סוף היום הנוכחי: שווי שוק מתחת ל-10 מיליארד, `adr_pct>=3`, יחס נפח `>=1.2`, ועלייה יומית חיובית. מדורגים לפי שילוב של עלייה יומית/נפח/קרבה לשיא, ומועשרים (כשיש `FMP_API_KEY`) בסימון `hasEarningsSoon` - דוח כספים בשלושת ימי המסחר הקרובים (קטליזטור אפשרי, אך גם סיכון). מיושם ב-`watchlistService.js`.
+מחזיר עד 10 מועמדים ל-gap-and-go ליום המסחר הבא, מחושבים מסריקת סוף היום הנוכחי: שווי שוק מתחת ל-10 מיליארד, `adr_pct>=3`, יחס נפח `>=1.2`, ועלייה יומית חיובית. מדורגים לפי שילוב של עלייה יומית/נפח/קרבה לשיא, ומועשרים (כשיש `FMP_API_KEY`) בסימון `hasEarningsSoon` - דוח כספים בשלושת ימי המסחר הקרובים (קטליזטור אפשרי, אך גם סיכון).
+
+**המקור בפועל תלוי אם מוגדרים מפתחות Alpaca** (ראו [ארכיטקטורת משפך לנתונים](#ארכיטקטורת-משפך-לנתונים)):
+- **עם מפתחות** - `funnelScanService.js` סורק universe רחב דרך Alpaca ומחזיר תוצאה עם `dataSource: 'alpaca+fmp'`.
+- **בלי מפתחות** (או אם ה-funnel נכשל) - נופל בדיוק למסלול הישן דרך `watchlistService.js`/`marketDataService.js`, עם `dataSource: 'fmp-universe'`.
+
+התשובה כוללת שדה `dataSource` ברמת ה-root (מהפריט הראשון ברשימה, או `'none'` אם הרשימה ריקה), וה-UI מציג לפיו chip קטן ("מקור: סריקת שוק רחבה" / "מקור: מדגם מצומצם") ליד חותמת הזמן בפאנל.
 
 **חשוב:** התוצאות מבוססות נתוני סוף יום בלבד - יש לאמת מול מחירי פתיחה בזמן אמת לפני כל החלטה. ה-UI מציג דיסקליימר מפורש בפאנל הזה.
 
@@ -712,6 +760,39 @@ FMP_UNIVERSE_SIZE=40
 ```env
 WATCHLIST_SCHEDULE_HOUR=22
 WATCHLIST_SCHEDULE_EXCHANGES=NASDAQ,NYSE
+```
+
+#### ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY
+
+מפתחות API עבור Alpaca Market Data (v2), משמשים אך ורק את [ארכיטקטורת משפך הנתונים](#ארכיטקטורת-משפך-לנתונים) של "רשימת המעקב למחר". אם לא מוגדרים - "רשימת המעקב למחר" ממשיכה לעבוד בדיוק כמו היום, דרך `marketDataService`/FMP.
+
+```env
+ALPACA_API_KEY_ID=your_alpaca_key_id_here
+ALPACA_API_SECRET_KEY=your_alpaca_secret_key_here
+```
+
+#### FUNNEL_MIN_PRICE / FUNNEL_MAX_PRICE
+
+טווח המחיר (סגירה אחרונה) שסינון השלב הגס (שלב 1 ב-funnel) מקבל. ברירת מחדל: `1`–`500`.
+
+#### FUNNEL_MIN_DOLLAR_VOLUME
+
+סף נפח מסחר דולרי מינימלי (מחיר × נפח) לסינון הגס בשלב 1. ברירת מחדל: `5000000`.
+
+#### FUNNEL_STAGE2_SIZE
+
+כמה שורדי-שלב-1 (מקסימום) עוברים לשלב 2 (משיכת היסטוריה מלאה וחישוב ADR/volumeRatio/highProximity). ברירת מחדל: `300`.
+
+#### FUNNEL_FINALISTS
+
+כמה פינליסטים (מקסימום) עוברים לשלב 3 (העשרת FMP - market cap + earnings). ברירת מחדל: `20`.
+
+```env
+FUNNEL_MIN_PRICE=1
+FUNNEL_MAX_PRICE=500
+FUNNEL_MIN_DOLLAR_VOLUME=5000000
+FUNNEL_STAGE2_SIZE=300
+FUNNEL_FINALISTS=20
 ```
 
 ### דוגמת .env מומלצת ל-FMP

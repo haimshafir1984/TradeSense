@@ -188,6 +188,8 @@
 
 **יושם:** universe דינמי דרך FMP screener (`stable/company-screener`) עבור NASDAQ/NYSE, עם נפילה לרשימה הסטטית. עדיין לא: universe דינמי פר-אסטרטגיה (למשל top-gainers ל-ross_cameron/swing_momentum), ו-TASE/Finnhub עדיין תמיד סטטיים.
 
+**עדכון:** עבור "רשימת המעקב למחר" (gap-and-go) הבעיה קיבלה מענה מלא - לא רק universe דינמי אלא סינון בפועל על **אלפי** מניות, דרך ארכיטקטורת המשפך שמתוארת בסעיף 7.5. שאר המערכת (`analyzeMarket` והאסטרטגיות) עדיין משתמשת ב-universe הדינמי/סטטי הקיים דרך FMP - זה לא שונה.
+
 ---
 
 ## 7. תוספות שיושמו (Strategy League, Swing Momentum, Watchlist, Regime Recommendation)
@@ -214,6 +216,16 @@
 ### 7.4 המלצת אסטרטגיה מותנית-Regime, נגברת ע"י ביצועים נמדדים
 
 `analysis.marketRegime` מקבל שדה `recommendedStrategy` (מפתח+תווית+מקור). ברירת המחדל היא מיפוי סטטי לפי מצב שוק (`REGIME_RECOMMENDED_STRATEGY` ב-`scoringConfig.js`: bullish→swing_momentum, sideways→micha_stocks, volatile→ross_cameron, bearish→null/"עדיף להמתין"). כאשר לליגת האסטרטגיות (סעיף 7.1) יש מובילה מדדת (מעל סף הדגימות), היא גוברת על ברירת המחדל — כי זו עדות אמיתית ממדידת ביצועים בפועל, לא priors כלליים. ה-UI מציג הערה כשהאסטרטגיה שנבחרה שונה מהמומלצת, וכולל את המקור ("מבוסס ביצועים נמדדים" מול "מבוסס מצב שוק"); ובמצב bearish — הערה נפרדת להקטין חשיפה.
+
+### 7.5 ארכיטקטורת משפך (Funnel) לנתונים - "רשימת המעקב למחר"
+
+הבעיה שתוארה בסעיף 5.3 (universe קטן ⇒ gap-and-go כמעט תמיד ריק) קיבלה מענה ייעודי עבור "רשימת המעקב למחר": במקום למשוך ~40 סימולים פר-מניה (4 קריאות FMP לכל אחד, שורף כמעט את כל תקציב ה-free tier היומי), מנוע משפך תלת-שלבי מסנן על **אלפי** מניות בעלות זולה. פירוט מלא: `docs/SPEC_DATA_FUNNEL.md` וסעיף "ארכיטקטורת משפך לנתונים" ב-README.
+
+- **שלב 1** (`server/src/services/providers/alpacaService.js` + `funnelScanService.js`): כל הסימולים הפעילים בבורסה דרך Alpaca (`GET /v2/assets`), עם bar יומי אחרון לכל אחד (`GET /v2/stocks/bars`, batch), וסינון גס מקומי (טווח מחיר, נפח דולרי, שינוי יומי גס).
+- **שלב 2**: היסטוריית 90 יום לשורדי שלב 1, וחישוב מקומי של אותם signals הקיימים (adr_pct, volumeRatio, daily_change, highProximity) + סינון על אותם ספים הקיימים ב-`watchlistScoring.js` (משותף עם המסלול הישן, כדי לא לשכפל את ה-thresholds או את נוסחת הדירוג).
+- **שלב 3**: העשרת FMP (profile למשווי שוק, `checkEarningsSoon` לדוח קרוב) לפינליסטים בלבד (עד `FUNNEL_FINALISTS`, ברירת מחדל 20) - לא לכל ה-universe.
+- **Fail-soft מלא:** ללא מפתחות `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`, או כשל בשלב 1, `funnelScanService.scanForGapAndGo` מחזירה `null` ו-`watchlistService.buildTomorrowWatchlist` נופל בדיוק למסלול ה-FMP-universe הקיים - התנהגות זהה ביט-לביט להיום. שגיאת HTTP/exception בודדת מול Alpaca לא זורקת - רק `console.warn` + נפילה לתוצאה ריקה, בהתאם לפונקציה.
+- **UI:** ה-route ו-`App.jsx` חושפים `dataSource` (`'alpaca+fmp'` / `'fmp-universe'` / `'none'`), עם chip קטן בפאנל שמראה למשתמש אם הוא מקבל את המשפך המלא או את המדגם המצומצם הישן.
 
 ---
 
