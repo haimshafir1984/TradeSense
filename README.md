@@ -416,6 +416,8 @@ TradeSense/
 
 FMP **לא מוחלף** - הוא ממשיך לשרת גם את שאר המערכת (`marketDataService.js`) בדיוק כמו היום; ה-funnel הוא תוסף שמופעל אך ורק עבור "רשימת המעקב למחר".
 
+Alpaca משמש כיום **שני** צרכנים נפרדים: `funnelScanService.js` (רשימת המעקב למחר, סעיף זה) ו-`smallCapUniverseService.js` (universe ייעודי לאסטרטגיית `small_cap_breakout` - ראו סעיף [אסטרטגיות וניקוד](#אסטרטגיות-וניקוד)). שני הצרכנים משתמשים באותו `alpacaService.js` (auth/rate-limiting/error-handling משותפים), אך בונים universe שונה כל אחד לפי הצורך שלו.
+
 ### Fallback מלא כשאין מפתחות Alpaca
 
 `funnelScanService.scanForGapAndGo` מחזירה `null` אם `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` לא מוגדרים בסביבה, או אם שלב 1 נכשל (universe/bars ריקים). `watchlistService.buildTomorrowWatchlist` מפרש `null` כסימן ליפול בדיוק למסלול הישן - universe של FMP + אותם הספים הקיימים - כך שללא מפתחות Alpaca ההתנהגות זהה ביט-לביט להיום. מערך ריק שמוחזר מה-funnel כן מתקבל כתוצאה לגיטימית ("אין היום מועמדים אמיתיים").
@@ -456,6 +458,7 @@ FUNNEL_FINALISTS=20
 - `mark_minervini`
 - `ross_cameron`
 - `swing_momentum`
+- `small_cap_breakout`
 
 ### מה קורה לפני הניקוד
 
@@ -508,6 +511,18 @@ FUNNEL_FINALISTS=20
 פילטר כשירות (מכפיל 0 אם לא עומד בו): `adr_pct>=3.5` (טווח תנודה יומי ממוצע ב-20 הימים האחרונים) ומחיר מעל `MA200`. מניה "רדומה" (ADR נמוך) לא תדורג לפי שאר הגורמים - היא נפסלת.
 
 `adr_pct` ו-`gap_pct` מחושבים ב-`marketDataService.js` מתוך היסטוריית המחירים (וגם עבור נתוני דמו).
+
+### Small-Cap Breakout
+
+אסטרטגיית סיכון גבוה מבוססת סגנון (ללא שם סוחר אמיתי - ראו `docs/LOGIC_IMPROVEMENTS.md`), שמטרתה מניות קטנות עם פוטנציאל תזוזה של עשרות אחוזים - פרופיל שלא קיים במאגר הרגיל של המערכת (~40 מניות, נוטה למגה-קאפ).
+
+**universe ייעודי (לא המאגר הרגיל):** `smallCapUniverseService.js` - קריאת screener אחת ל-FMP (מסננת שווי שוק, מחיר, נפח, ומחזירה שווי שוק אמיתי) ואז קריאת bars אחת ל-Alpaca לכל המועמדים יחד. אם Alpaca לא מוגדר, או אחד השלבים נכשל - האסטרטגיה נופלת חזרה למאגר הרגיל, שם פילטר הכשירות שלה יפסול כמעט הכול (הודעת הסבר מוצגת ב-`analysis.dataQuality.issues`).
+
+פילטר כשירות (מכפיל 0 אם לא עומד בו): שווי שוק מתחת ל-2 מיליארד, מחיר מעל 2$, `adr_pct>=5` (`SMALL_CAP_THRESHOLDS` ב-`scoringConfig.js` - אותו קונפיג משמש גם את שאילתת ה-screener, כך ששני ההגדרות לא יכולות להתפצל).
+
+ניקוד: נפח חריג (`volumeRatio`) + מומנטום (מקסימום בין `gap_pct` ל-`daily_change`) + מבנה פריצה (`highProximity` + `consolidation_score`) + חוזק יחסי מול SPY. `adr_pct` עצמו **לא** נכנס לניקוד - הוא כבר משמש בפילטר הכשירות (למניעת ספירה כפולה של אותו סיגנל).
+
+**לא** נכלל ב-`REGIME_RECOMMENDED_STRATEGY` - זו שיטה בסיכון גבוה שנבחרת רק במפורש, לא מומלצת אוטומטית. ב-UI מוצג באנר אזהרה קבוע כשהיא נבחרת.
 
 ### הסבר קצר לכל תוצאה
 
@@ -798,6 +813,14 @@ FINNHUB_API_KEY=your_finnhub_key_here
 
 ```env
 FMP_UNIVERSE_SIZE=40
+```
+
+#### SMALL_CAP_UNIVERSE_SIZE
+
+מספר המועמדים שנשלפים מה-screener הייעודי של אסטרטגיית `small_cap_breakout` (ראו [אסטרטגיות וניקוד](#אסטרטגיות-וניקוד)). ברירת מחדל: `150`. דורש גם `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` - בלעדיהם האסטרטגיה נופלת חזרה למאגר הרגיל.
+
+```env
+SMALL_CAP_UNIVERSE_SIZE=150
 ```
 
 #### WATCHLIST_SCHEDULE_HOUR
