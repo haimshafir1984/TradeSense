@@ -26,6 +26,13 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
+  /* Absolutely-positioned popovers (.tooltip-box, .broker-menu) intentionally render wider than
+     their small trigger element - that's fine, they still land inside the viewport. But even
+     while hidden (opacity/visibility, not display: none) they inflate document scrollWidth past
+     the viewport unless something clips horizontal overflow, which forced a page-wide horizontal
+     scrollbar on narrow screens. This is the standard, safe way to stop that without touching how
+     the popovers themselves render. */
+  overflow-x: hidden;
 }
 
 button,
@@ -265,6 +272,12 @@ select {
 }
 
 .tooltip-box {
+  /* display: none (not just opacity/visibility: hidden) so the hidden tooltip is fully removed
+     from layout - a 260px-wide absolutely-positioned box still counts toward the scrollWidth of
+     every ancestor up to <body> even while invisible, which was inflating the whole page's
+     scrollable width and forcing a horizontal scrollbar on narrow (mobile) screens, since the
+     narrow .strategy-info-item rows it lives in are common on the scan tab's filter sidebar. */
+  display: none;
   position: absolute;
   inset-inline-end: 0;
   bottom: calc(100% + 0.6rem);
@@ -276,17 +289,12 @@ select {
   font-size: 0.88rem;
   line-height: 1.45;
   box-shadow: 0 12px 24px rgba(20, 35, 63, 0.18);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(6px);
-  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
   z-index: 5;
 }
 
 .tooltip-wrap:hover .tooltip-box,
 .tooltip-wrap:focus .tooltip-box {
-  opacity: 1;
-  visibility: visible;
+  display: block;
   transform: translateY(0);
 }
 
@@ -408,6 +416,7 @@ select {
 
 .results-wrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .results-wrapper td {
@@ -663,6 +672,15 @@ th {
   gap: 1.25rem;
 }
 
+/* Grid items default to min-width: auto, which sizes them to their content's min-content width -
+   for the results table that's its full unwrapped width (~1400px), blowing out the whole grid
+   track (and with it the page) regardless of viewport. min-width: 0 lets .results-wrapper's own
+   overflow-x: auto contain the table instead, exactly like it already does on the other tabs
+   (which aren't grid items, so they never had this problem). */
+.scan-layout > * {
+  min-width: 0;
+}
+
 @media (min-width: 960px) {
   .scan-layout {
     grid-template-columns: minmax(280px, 320px) 1fr;
@@ -697,6 +715,23 @@ th {
 @media (max-width: 640px) {
   .topbar-inner {
     padding: 0.6rem 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Below 640px the brand + 3 tabs + exchange selector no longer fit on one line. Wrapping them
+     (the default flex-wrap: wrap) pushed the header to ~200px tall - a quarter of a phone screen
+     gone before any content. A single scrollable row keeps the header compact instead. */
+  .topbar-brand,
+  .topbar-tabs,
+  .topbar-tab,
+  .topbar-right {
+    flex-shrink: 0;
+  }
+
+  .topbar-tabs {
+    flex-wrap: nowrap;
   }
 
   .layout {
@@ -784,6 +819,21 @@ th {
   margin: 0.1rem 0 0;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.data-quality-issues {
+  flex-basis: 100%;
+  margin: 0.3rem 0 0;
+  padding: 0.6rem 0.9rem 0.6rem 1.4rem;
+  border-radius: 10px;
+  background: rgba(222, 161, 81, 0.12);
+  color: #8c5b0a;
+  font-size: 0.88rem;
+  list-style: disc;
+}
+
+.data-quality-issues li + li {
+  margin-top: 0.2rem;
 }
 
 .watchlist-actions {
