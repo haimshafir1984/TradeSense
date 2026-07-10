@@ -719,5 +719,11 @@ function computeReturnPctFromEnd(closes, price, windowDays) {
 module.exports = {
   getMarketData,
   getStockSnapshot,
-  getStockSnapshots
+  getStockSnapshots,
+  // Exported for reuse by smallCapUniverseService.js (its own FMP screener call needs the same
+  // caching/error-handling fetchJson already provides, and its universe scoring needs the same
+  // consolidation-range heuristic every other provider path uses) - see
+  // docs/SPEC_SMALL_CAP_STRATEGY.md section 2.1/2.2.
+  fetchJson,
+  scoreConsolidation
 };

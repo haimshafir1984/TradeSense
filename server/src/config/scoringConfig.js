@@ -39,6 +39,16 @@ const REGIME_RECOMMENDED_STRATEGY = {
   bearish: null
 };
 
+// Eligibility bounds for small_cap_breakout, shared between the strategy's own filter
+// (strategies.js) and the dedicated small-cap universe's FMP screener query
+// (smallCapUniverseService.js) so the two definitions of "small cap" can't drift apart. See
+// docs/SPEC_SMALL_CAP_STRATEGY.md.
+const SMALL_CAP_THRESHOLDS = {
+  marketCapCeiling: 2000000000,
+  minPrice: 2,
+  minAdrPct: 5
+};
+
 // Ideal/hard bounds for the continuous risk-fit penalty taper (see 3.5).
 const RISK_FIT_THRESHOLDS = {
   low: {
@@ -60,5 +70,6 @@ module.exports = {
   CONFLUENCE_THRESHOLDS,
   QUALITY_SCORE_THRESHOLD,
   RISK_FIT_THRESHOLDS,
-  REGIME_RECOMMENDED_STRATEGY
+  REGIME_RECOMMENDED_STRATEGY,
+  SMALL_CAP_THRESHOLDS
 };
