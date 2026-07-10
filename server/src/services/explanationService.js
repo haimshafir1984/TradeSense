@@ -48,6 +48,16 @@ function buildWhyItFits(stock, strategy, deterministicExplanation, confluence, e
     if (Number(stock.relativeStrength || 0) >= 0.65) {
       reasons.push('וחוזק יחסי גבוה מול מדד הייחוס');
     }
+  } else if (strategy === 'small_cap_breakout') {
+    if (stock.average_volume_30d && stock.volume / stock.average_volume_30d >= 2) {
+      reasons.push('נפח מסחר חריג במניה קטנה');
+    }
+    if (Number(stock.highProximity || 0) >= 0.9) {
+      reasons.push('קרובה לפריצה לשיא');
+    }
+    if (Number(stock.relativeStrength || 0) >= 0.65) {
+      reasons.push('וחוזק יחסי גבוה מול מדד הייחוס');
+    }
   }
 
   if (confluence?.level === 'high') {
@@ -102,6 +112,10 @@ function buildFitHorizon(strategy) {
 
   if (strategy === 'swing_momentum') {
     return 'החזקת Swing קצרה-בינונית (ימים עד שבועות) - דורש ניהול סיכון הדוק סביב פריצה או גאפ, מבוסס נתוני סוף יום';
+  }
+
+  if (strategy === 'small_cap_breakout') {
+    return 'מהלכים קצרים ואלימים במניות קטנות (ימים עד שבועות) - סיכון גבוה, מחייב גודל פוזיציה קטן ונקודת יציאה מוגדרת מראש';
   }
 
   return 'מומנטום קצר טווח מבוסס נתוני סוף יום (לא מסחר יומי בזמן אמת) - דורש מעקב צמוד ואימות מחיר לפני כניסה';

@@ -83,6 +83,9 @@ function estimateUpside({ stock, strategy, marketRegime, riskOverlay }) {
   } else if (strategy === 'swing_momentum') {
     minPct = 6;
     maxPct = 20;
+  } else if (strategy === 'small_cap_breakout') {
+    minPct = 10;
+    maxPct = 35;
   }
 
   // volumeRatio/highProximity are computed once in strategies.js#enrichStock and carried on

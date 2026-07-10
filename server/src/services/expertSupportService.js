@@ -2,7 +2,8 @@ const STRATEGY_DISPLAY_LABELS = {
   micha_stocks: "השקעה לטווח ארוך - William O'Neil",
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
   ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Linda Bradford Raschke',
-  swing_momentum: 'פריצות מומנטום (Swing)'
+  swing_momentum: 'פריצות מומנטום (Swing)',
+  small_cap_breakout: 'מניות קטנות נפיצות (Small-Cap)'
 };
 
 const PRIMARY_EXPERTS = {
@@ -26,6 +27,11 @@ const PRIMARY_EXPERTS = {
     id: 'swing_momentum_style',
     name: 'סגנון פריצות מומנטום (Swing)',
     shortName: 'Swing Momentum'
+  },
+  small_cap_breakout: {
+    id: 'small_cap_breakout_style',
+    name: 'סגנון מניות קטנות נפיצות',
+    shortName: 'Small-Cap Breakout'
   }
 };
 

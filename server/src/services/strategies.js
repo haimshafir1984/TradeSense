@@ -1,11 +1,12 @@
 const { clamp, round, average } = require('./mathUtils');
-const { STRATEGY_WEIGHTS } = require('../config/scoringConfig');
+const { STRATEGY_WEIGHTS, SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
 
 const STRATEGY_LABELS = {
   micha_stocks: 'השקעה לטווח ארוך - Micha Stocks',
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
   ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Ross Cameron',
-  swing_momentum: 'פריצות מומנטום (Swing)'
+  swing_momentum: 'פריצות מומנטום (Swing)',
+  small_cap_breakout: 'מניות קטנות נפיצות (Small-Cap)'
 };
 
 function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
@@ -21,6 +22,10 @@ function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
 
   if (strategyKey === 'swing_momentum') {
     return scoreSwingMomentumStrategy(enrichedStock);
+  }
+
+  if (strategyKey === 'small_cap_breakout') {
+    return scoreSmallCapBreakoutStrategy(enrichedStock);
   }
 
   return scoreMichaStrategy(enrichedStock);
@@ -155,6 +160,38 @@ function scoreSwingMomentumStrategy(stock) {
   };
 }
 
+// Small-cap breakout: no real trader name, style description only. Looks for the classic
+// "small stock that can move dozens of percent" profile - volume surge, sharp momentum, breaking
+// toward highs, and holding up relative to the market. Gated by a hard eligibility filter (market
+// cap, price, ADR) so a mega-cap or genuinely dormant stock is zeroed out rather than ranked on
+// the other factors alone. adr_pct itself is deliberately NOT a scoring factor - it already gates
+// eligibility, so scoring it too would double-count the same raw signal (docs/LOGIC_IMPROVEMENTS.md 3.1).
+function scoreSmallCapBreakoutStrategy(stock) {
+  const w = STRATEGY_WEIGHTS.small_cap_breakout;
+
+  const volumeSurge = normalize(stock.volumeRatio, 2, 6);
+  const momentumSignal = Math.max(Number(stock.gap_pct || 0), Number(stock.daily_change || 0));
+  const momentum = normalize(momentumSignal, 4, 20);
+  const breakout = average([normalize(stock.highProximity, 0.85, 1), Number(stock.consolidation_score || 0)]);
+  const relativeStrength = stock.relativeStrength;
+
+  const setupScore = volumeSurge * w.volumeSurge + momentum * w.momentum + breakout * w.breakout + relativeStrength * w.relativeStrength;
+
+  const eligible =
+    Number.isFinite(stock.market_cap) &&
+    stock.market_cap > 0 &&
+    stock.market_cap < SMALL_CAP_THRESHOLDS.marketCapCeiling &&
+    stock.price >= SMALL_CAP_THRESHOLDS.minPrice &&
+    Number(stock.adr_pct || 0) >= SMALL_CAP_THRESHOLDS.minAdrPct;
+  const score = eligible ? setupScore : 0;
+
+  return {
+    ...stock,
+    score: clamp(score),
+    explanation: createSmallCapBreakoutExplanation(stock, volumeSurge, momentum, eligible)
+  };
+}
+
 function createMichaExplanation(stock) {
   const parts = [];
 
@@ -225,6 +262,18 @@ function createSwingMomentumExplanation(isBreakoutSetup, eligible) {
   }
 
   return 'גאפ על קטליזטור עם נפח מסחר חריג - פיבוט אפיזודי המצריך אימות מיידי';
+}
+
+function createSmallCapBreakoutExplanation(stock, volumeSurge, momentum, eligible) {
+  if (!eligible) {
+    return 'אינה עומדת בפרופיל: נדרש שווי שוק קטן מ-2 מיליארד, מחיר מעל 2$, וטווח תנודה יומי (ADR) של 5% לפחות';
+  }
+
+  if (volumeSurge >= momentum) {
+    return `פריצת נפח במניה קטנה: נפח פי ${round(stock.volumeRatio, 1)} מהממוצע עם תנועה חדה`;
+  }
+
+  return 'מומנטום נפיץ: גאפ/תנועה יומית חדה בנפח חריג';
 }
 
 function joinExplanation(parts, fallback) {

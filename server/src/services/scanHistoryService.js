@@ -12,6 +12,7 @@ const { round } = require('./mathUtils');
 const EVALUATION_HORIZON_DAYS = {
   ross_cameron: 5,
   swing_momentum: 10,
+  small_cap_breakout: 10,
   mark_minervini: 20,
   micha_stocks: 60
 };

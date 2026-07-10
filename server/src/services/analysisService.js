@@ -15,7 +15,7 @@ const REQUIRED_FIELDS = [
   'volatility'
 ];
 
-const STRATEGY_KEYS = ['micha_stocks', 'mark_minervini', 'ross_cameron', 'swing_momentum'];
+const STRATEGY_KEYS = ['micha_stocks', 'mark_minervini', 'ross_cameron', 'swing_momentum', 'small_cap_breakout'];
 
 function assessDataQuality({ stocks = [], source = 'demo' }) {
   if (!stocks.length) {

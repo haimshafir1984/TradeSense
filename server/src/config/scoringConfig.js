@@ -14,7 +14,8 @@ const STRATEGY_WEIGHTS = {
   swing_momentum: {
     breakout: { consolidation: 0.25, highProximity: 0.25, volume: 0.2, relativeStrength: 0.2, trend: 0.1 },
     episodicPivot: { move: 0.6, volume: 0.4 }
-  }
+  },
+  small_cap_breakout: { volumeSurge: 0.3, momentum: 0.3, breakout: 0.25, relativeStrength: 0.15 }
 };
 
 // Percentile-within-universe thresholds used by assessCrossStrategyConfluence (see 3.6).
