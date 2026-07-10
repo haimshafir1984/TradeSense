@@ -27,13 +27,19 @@ const CACHE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 // Turns the EOD-only limitation into an advantage: instead of trying (and failing) to compete
 // with real-time day-trading tools, an evening scan surfaces gap-and-go candidates for the next
 // session's open. See docs/LOGIC_IMPROVEMENTS.md - Watchlist for Tomorrow.
+// Returns { watchlist, dataSource } - dataSource is tracked at this level (not inferred from
+// watchlist[0]) specifically so a *legitimate* empty result from the broad Alpaca funnel ("scanned
+// everything, found zero real candidates today") is never confused with the narrow FMP-universe
+// fallback. Before this, an empty funnel result had no items to carry a per-item dataSource, so the
+// caller fell back to labeling it as the narrow sample - misleading the user into thinking the
+// wide scan didn't run at all when it actually did.
 async function buildTomorrowWatchlist({ exchange = 'NASDAQ' } = {}) {
   // A returned array (even an empty one) means the funnel actually ran - "no candidates today" is
   // a legitimate result and short-circuits the old path. null means Alpaca isn't configured or its
   // stage 1 failed, so we fall through to exactly the same FMP-universe logic as before.
   const funnelResult = await funnelScanService.scanForGapAndGo({ exchange });
   if (Array.isArray(funnelResult)) {
-    return funnelResult;
+    return { watchlist: funnelResult, dataSource: 'alpaca+fmp' };
   }
 
   const { stocks } = await marketDataService.getMarketData(exchange);
@@ -45,13 +51,15 @@ async function buildTomorrowWatchlist({ exchange = 'NASDAQ' } = {}) {
     .slice(0, MAX_WATCHLIST_SIZE);
 
   const apiKey = process.env.FMP_API_KEY;
-  return Promise.all(
+  const watchlist = await Promise.all(
     candidates.map(async (candidate) => ({
       ...candidate,
       hasEarningsSoon: apiKey ? await checkEarningsSoon(candidate.ticker, apiKey) : false,
       dataSource: 'fmp-universe'
     }))
   );
+
+  return { watchlist, dataSource: 'fmp-universe' };
 }
 
 // Read-through cache in front of buildTomorrowWatchlist, keyed by exchange. This is what lets the
@@ -67,8 +75,8 @@ async function getTomorrowWatchlist({ exchange = 'NASDAQ', forceRefresh = false 
     return cached;
   }
 
-  const watchlist = await buildTomorrowWatchlist({ exchange });
-  const entry = { generatedAt: new Date().toISOString(), watchlist };
+  const { watchlist, dataSource } = await buildTomorrowWatchlist({ exchange });
+  const entry = { generatedAt: new Date().toISOString(), watchlist, dataSource };
 
   cache[exchange] = entry;
   await watchlistStore.writeWatchlistCache(cache);

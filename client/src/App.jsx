@@ -414,7 +414,7 @@ function App() {
                   <span className="metric-pill high" style={{ marginRight: '0.5rem' }}>
                     מקור: סריקת שוק רחבה
                   </span>
-                ) : tomorrowWatchlistDataSource ? (
+                ) : tomorrowWatchlistDataSource === 'fmp-universe' ? (
                   <span className="metric-pill medium" style={{ marginRight: '0.5rem' }}>
                     מקור: מדגם מצומצם
                   </span>

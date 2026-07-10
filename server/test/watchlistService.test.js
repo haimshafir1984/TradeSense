@@ -13,7 +13,8 @@ function freshWatchlistService() {
   delete require.cache[require.resolve('../src/services/funnelScanService')];
   return {
     watchlistService: require('../src/services/watchlistService'),
-    marketDataService: require('../src/services/marketDataService')
+    marketDataService: require('../src/services/marketDataService'),
+    funnelScanService: require('../src/services/funnelScanService')
   };
 }
 
@@ -48,7 +49,7 @@ test('buildTomorrowWatchlist filters to the gap-and-go profile and ranks by mome
     ]
   });
 
-  const watchlist = await watchlistService.buildTomorrowWatchlist({ exchange: 'NASDAQ' });
+  const { watchlist, dataSource } = await watchlistService.buildTomorrowWatchlist({ exchange: 'NASDAQ' });
 
   marketDataService.getMarketData = originalGetMarketData;
 
@@ -59,6 +60,7 @@ test('buildTomorrowWatchlist filters to the gap-and-go profile and ranks by mome
   // No Alpaca keys in the test env -> funnelScanService.scanForGapAndGo returns null and this is
   // the old FMP-universe path, now tagged accordingly (docs/SPEC_DATA_FUNNEL.md section 3.3).
   assert.equal(watchlist[0].dataSource, 'fmp-universe');
+  assert.equal(dataSource, 'fmp-universe');
 });
 
 test('buildTomorrowWatchlist caps results at 10 and ranks strongest candidates first', async () => {
@@ -76,7 +78,7 @@ test('buildTomorrowWatchlist caps results at 10 and ranks strongest candidates f
 
   marketDataService.getMarketData = async () => ({ source: 'demo', stocks });
 
-  const watchlist = await watchlistService.buildTomorrowWatchlist({ exchange: 'NASDAQ' });
+  const { watchlist } = await watchlistService.buildTomorrowWatchlist({ exchange: 'NASDAQ' });
 
   marketDataService.getMarketData = originalGetMarketData;
 
@@ -100,7 +102,7 @@ test('hasEarningsSoon is set when the FMP earnings calendar mock returns an upco
     json: async () => (String(url).includes('symbol=EARN') ? [{ symbol: 'EARN', date: '2026-07-06' }] : [])
   });
 
-  const watchlist = await watchlistService.buildTomorrowWatchlist({ exchange: 'NASDAQ' });
+  const { watchlist } = await watchlistService.buildTomorrowWatchlist({ exchange: 'NASDAQ' });
 
   marketDataService.getMarketData = originalGetMarketData;
   global.fetch = originalFetch;
@@ -108,4 +110,20 @@ test('hasEarningsSoon is set when the FMP earnings calendar mock returns an upco
 
   assert.equal(watchlist.length, 1);
   assert.equal(watchlist[0].hasEarningsSoon, true);
+});
+
+test('a legitimate empty result from the broad Alpaca funnel is not mislabeled as the narrow FMP fallback', async () => {
+  const { watchlistService, funnelScanService } = freshWatchlistService();
+  const originalScanForGapAndGo = funnelScanService.scanForGapAndGo;
+
+  // The funnel ran the full wide scan and genuinely found zero qualifying candidates today - an
+  // empty array is the funnel's own "no results" signal, distinct from null (funnel unavailable).
+  funnelScanService.scanForGapAndGo = async () => [];
+
+  const { watchlist, dataSource } = await watchlistService.buildTomorrowWatchlist({ exchange: 'NASDAQ' });
+
+  funnelScanService.scanForGapAndGo = originalScanForGapAndGo;
+
+  assert.deepEqual(watchlist, []);
+  assert.equal(dataSource, 'alpaca+fmp');
 });
