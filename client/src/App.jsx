@@ -679,6 +679,13 @@ function App() {
                 <p className="market-regime-note">{analysis.marketRegime.strategyFit.note}</p>
               ) : null}
               <RegimeRecommendationNote marketRegime={analysis?.marketRegime} selectedStrategy={meta?.strategy} />
+              {analysis?.dataQuality?.issues?.length ? (
+                <ul className="data-quality-issues">
+                  {analysis.dataQuality.issues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           ) : null}
 
