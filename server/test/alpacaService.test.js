@@ -15,6 +15,19 @@ function jsonResponse(data, ok = true, status = 200) {
   return { ok, status, json: async () => data };
 }
 
+// getDailyBars now checks Alpaca's /v2/clock before building the bars request (see the
+// isMarketOpen fix below), so any mock exercising getDailyBars needs to answer that call too.
+// Defaults to "market closed" so existing chunking/pagination tests (which only care about the
+// bars request itself) aren't affected by the added end-date capping.
+function withClock(handler, { isOpen = false } = {}) {
+  return async (url, ...rest) => {
+    if (url.includes('/v2/clock')) {
+      return jsonResponse({ is_open: isOpen });
+    }
+    return handler(url, ...rest);
+  };
+}
+
 test('isConfigured is false without keys and true once both are set', () => {
   clearAlpacaEnv();
   const alpacaService = freshAlpacaService();
@@ -35,11 +48,11 @@ test('getDailyBars splits 450 symbols into 3 chunked requests of <=200 symbols e
   const originalFetch = global.fetch;
   const requestedSymbolLists = [];
 
-  global.fetch = async (url) => {
+  global.fetch = withClock(async (url) => {
     const parsed = new URL(url);
     requestedSymbolLists.push(parsed.searchParams.get('symbols').split(','));
     return jsonResponse({ bars: {}, next_page_token: null });
-  };
+  });
 
   const symbols = Array.from({ length: 450 }, (_, index) => `SYM${index}`);
   await alpacaService.getDailyBars({ symbols });
@@ -61,7 +74,7 @@ test('getDailyBars follows next_page_token and merges pages', async () => {
   const originalFetch = global.fetch;
   let callCount = 0;
 
-  global.fetch = async () => {
+  global.fetch = withClock(async () => {
     callCount += 1;
     if (callCount === 1) {
       return jsonResponse({
@@ -73,7 +86,7 @@ test('getDailyBars follows next_page_token and merges pages', async () => {
       bars: { AAA: [{ t: '2026-07-02T00:00:00Z', o: 1.5, h: 2.5, l: 1, c: 2, v: 200 }] },
       next_page_token: null
     });
-  };
+  });
 
   const bars = await alpacaService.getDailyBars({ symbols: ['AAA'] });
 
@@ -141,6 +154,83 @@ test('getActiveAssets targets the paper-api host for paper keys (PK prefix) and 
   clearAlpacaEnv();
 
   assert.deepEqual(requestedHosts, ['paper-api.alpaca.markets', 'api.alpaca.markets']);
+});
+
+test('getDailyBars caps the request to yesterday when the market is open, so a still-forming bar is never used', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  let requestedEnd;
+  global.fetch = withClock(
+    async (url) => {
+      requestedEnd = new URL(url).searchParams.get('end');
+      return jsonResponse({ bars: {}, next_page_token: null });
+    },
+    { isOpen: true }
+  );
+
+  const expectedYesterday = new Date();
+  expectedYesterday.setUTCDate(expectedYesterday.getUTCDate() - 1);
+  const expectedYesterdayString = expectedYesterday.toISOString().slice(0, 10);
+
+  await alpacaService.getDailyBars({ symbols: ['AAA'] });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(requestedEnd, expectedYesterdayString);
+});
+
+test('getDailyBars does not cap the request when the market is closed', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  let requestedEnd = 'not-set';
+  global.fetch = withClock(
+    async (url) => {
+      requestedEnd = new URL(url).searchParams.get('end');
+      return jsonResponse({ bars: {}, next_page_token: null });
+    },
+    { isOpen: false }
+  );
+
+  await alpacaService.getDailyBars({ symbols: ['AAA'] });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(requestedEnd, null);
+});
+
+test('getDailyBars fails safe (caps to yesterday) when the market-clock check itself fails', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  let requestedEnd;
+  global.fetch = async (url) => {
+    if (url.includes('/v2/clock')) {
+      return jsonResponse(null, false, 500);
+    }
+    requestedEnd = new URL(url).searchParams.get('end');
+    return jsonResponse({ bars: {}, next_page_token: null });
+  };
+
+  const expectedYesterday = new Date();
+  expectedYesterday.setUTCDate(expectedYesterday.getUTCDate() - 1);
+  const expectedYesterdayString = expectedYesterday.toISOString().slice(0, 10);
+
+  await alpacaService.getDailyBars({ symbols: ['AAA'] });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(requestedEnd, expectedYesterdayString);
 });
 
 test('getActiveAssets filters to tradable, exact-exchange, plain-symbol equities', async () => {

@@ -48,6 +48,29 @@ function isConfigured() {
   return Boolean(process.env.ALPACA_API_KEY_ID && process.env.ALPACA_API_SECRET_KEY);
 }
 
+// A symbol's "latest" daily bar is still accumulating price/volume throughout the session while
+// the market is open - using it as-is silently corrupts every volume-ratio/ADR/daily-change
+// calculation downstream (funnelScanService.js, smallCapUniverseService.js) whenever the funnel
+// happens to run mid-session (a manual refresh, or a scheduler run before close), since a partial
+// day's volume reads as a fraction of the 30-day average. getDailyBars checks Alpaca's own market
+// clock and, whenever the market is open (or the clock check itself fails - fail-safe direction:
+// better to be a day stale than silently wrong), caps `end` to yesterday so every caller only ever
+// sees fully-closed sessions - consistent with the EOD-only design documented throughout the
+// product. If the scheduler runs after close, today's now-closed session is used as normal.
+async function isMarketOpen() {
+  const data = await fetchAlpaca(`${tradingBaseUrl()}/v2/clock`, 'getClock');
+  if (!data) {
+    return true;
+  }
+  return Boolean(data.is_open);
+}
+
+function yesterdayDateString() {
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  return yesterday.toISOString().slice(0, 10);
+}
+
 function authHeaders() {
   return {
     'APCA-API-KEY-ID': process.env.ALPACA_API_KEY_ID,
@@ -129,6 +152,7 @@ async function getDailyBars({ symbols = [], days = DEFAULT_HISTORY_DAYS } = {}) 
   const start = new Date();
   start.setDate(start.getDate() - days);
   const startDate = start.toISOString().slice(0, 10);
+  const endDate = (await isMarketOpen()) ? yesterdayDateString() : null;
 
   const symbolChunks = chunk(symbols, SYMBOLS_PER_CHUNK);
 
@@ -145,6 +169,10 @@ async function getDailyBars({ symbols = [], days = DEFAULT_HISTORY_DAYS } = {}) 
         feed: 'iex',
         sort: 'asc'
       });
+
+      if (endDate) {
+        params.set('end', endDate);
+      }
 
       if (pageToken) {
         params.set('page_token', pageToken);
