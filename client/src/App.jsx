@@ -41,6 +41,13 @@ const investmentMethodOptions = [
     shortLabel: 'Swing Momentum',
     description:
       'שיטת Swing המאתרת פריצות ממקדים צמודים או גאפים על קטליזטור עם נפח מסחר חריג, בתנאי שיש טווח תנודה יומי (ADR) משמעותי והמניה מעל ממוצע 200 יום. מבוססת על נתוני סוף יום.'
+  },
+  {
+    value: 'small_cap_breakout',
+    label: 'מניות קטנות נפיצות (Small-Cap)',
+    shortLabel: 'Small-Cap Breakout',
+    description:
+      'מאתרת מניות קטנות (שווי שוק מתחת ל-2 מיליארד) עם נפח מסחר חריג ומומנטום חד - פוטנציאל תזוזה של עשרות אחוזים, אך בסיכון גבוה מקביל. דורשת גודל פוזיציה קטן ונקודת יציאה מוגדרת מראש.'
   }
 ];
 
@@ -673,6 +680,12 @@ function App() {
               ) : null}
               <RegimeRecommendationNote marketRegime={analysis?.marketRegime} selectedStrategy={meta?.strategy} />
             </div>
+          ) : null}
+
+          {form.strategy === 'small_cap_breakout' ? (
+            <p className="watchlist-disclaimer">
+              אסטרטגיה בסיכון גבוה: מניות קטנות יכולות לנוע בעשרות אחוזים לשני הכיוונים. מומלץ גודל פוזיציה קטן ונקודת יציאה מוגדרת מראש.
+            </p>
           ) : null}
 
           <div className="results-wrapper">

@@ -2,6 +2,37 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { scoreStockByStrategy } = require('../src/services/strategies');
 
+function jsonResponse(data, ok = true) {
+  return { ok, json: async () => data, text: async () => JSON.stringify(data) };
+}
+
+// Generic FMP responses for the benchmark tickers (SPY/QQQ/IWM) analyzeMarket always fetches -
+// same shape as dynamicUniverse.test.js's stockResponses helper.
+function benchmarkFmpResponses(url) {
+  if (url.includes('/quote')) {
+    return jsonResponse([{ price: 500, previousClose: 495, marketCap: 400000000000 }]);
+  }
+  if (url.includes('/profile')) {
+    return jsonResponse([{ companyName: 'Benchmark', sector: 'ETF', mktCap: 400000000000 }]);
+  }
+  if (url.includes('historical-price-eod')) {
+    const closes = Array.from({ length: 210 }, (_, i) => 500 - i * 0.1);
+    return jsonResponse(closes.map((close) => ({ close, high: close + 1, low: close - 1, open: close, volume: 1000000 })));
+  }
+  return jsonResponse([]);
+}
+
+// 60 bars oldest-to-newest: flat for 59 sessions, then a gap-up/high-volume/wide-range latest
+// session - a clearly-eligible, clearly-scoring small-cap breakout candidate.
+function makeSmallCapBars() {
+  const bars = [];
+  for (let i = 0; i < 59; i += 1) {
+    bars.push({ t: `2026-01-${(i % 28) + 1}T00:00:00Z`, o: 10, h: 10.5, l: 9.5, c: 10, v: 100000 });
+  }
+  bars.push({ t: '2026-03-01T00:00:00Z', o: 10.2, h: 12.5, l: 9.8, c: 12, v: 500000 });
+  return bars;
+}
+
 function baseStock(overrides = {}) {
   return {
     ticker: 'SCAP',
@@ -55,4 +86,59 @@ test('a bigger gap scores higher than a small gap, all else equal', () => {
   const bigGap = scoreStockByStrategy('small_cap_breakout', baseStock({ gap_pct: 15, daily_change: 1 }), { benchmarkReturn3m: 0 });
 
   assert.ok(bigGap.score > smallGap.score);
+});
+
+test('analyzeMarket uses the dedicated small-cap universe end-to-end when Alpaca is configured', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  process.env.FMP_API_KEY = 'fmp-key';
+  delete process.env.FINNHUB_API_KEY;
+
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (url.includes('/company-screener')) {
+      return jsonResponse([{ symbol: 'SCAP1', companyName: 'Small Cap Co', sector: 'Technology', marketCap: 500000000 }]);
+    }
+    return benchmarkFmpResponses(url);
+  };
+
+  delete require.cache[require.resolve('../src/services/marketDataService')];
+  delete require.cache[require.resolve('../src/services/providers/alpacaService')];
+  delete require.cache[require.resolve('../src/services/smallCapUniverseService')];
+  delete require.cache[require.resolve('../src/services/scannerService')];
+
+  const alpacaService = require('../src/services/providers/alpacaService');
+  alpacaService.getDailyBars = async () => new Map([['SCAP1', makeSmallCapBars()]]);
+
+  const { analyzeMarket } = require('../src/services/scannerService');
+  const response = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'small_cap_breakout', risk: 'medium', filters: {} });
+
+  global.fetch = originalFetch;
+  delete process.env.ALPACA_API_KEY_ID;
+  delete process.env.ALPACA_API_SECRET_KEY;
+  delete process.env.FMP_API_KEY;
+
+  assert.equal(response.meta.source, 'alpaca+fmp-screener');
+  assert.ok(response.results.length > 0, 'expected at least one small-cap result');
+  assert.equal(response.results[0].ticker, 'SCAP1');
+});
+
+test('falls back to the regular universe (without throwing) and reports the issue when Alpaca is not configured', async () => {
+  delete process.env.ALPACA_API_KEY_ID;
+  delete process.env.ALPACA_API_SECRET_KEY;
+  delete process.env.FMP_API_KEY;
+  delete process.env.FINNHUB_API_KEY;
+
+  delete require.cache[require.resolve('../src/services/marketDataService')];
+  delete require.cache[require.resolve('../src/services/smallCapUniverseService')];
+  delete require.cache[require.resolve('../src/services/scannerService')];
+
+  const { analyzeMarket } = require('../src/services/scannerService');
+  const response = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'small_cap_breakout', risk: 'medium', filters: {} });
+
+  assert.notEqual(response.meta.source, 'alpaca+fmp-screener');
+  assert.ok(
+    response.analysis.dataQuality.issues.some((issue) => issue.includes('מאגר מניות קטנות')),
+    `expected a small-cap fallback issue, got: ${JSON.stringify(response.analysis.dataQuality.issues)}`
+  );
 });

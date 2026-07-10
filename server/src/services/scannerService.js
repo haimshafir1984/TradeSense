@@ -1,4 +1,5 @@
 const { getMarketData, getStockSnapshots } = require('./marketDataService');
+const { getSmallCapUniverse } = require('./smallCapUniverseService');
 const { scoreStockByStrategy } = require('./strategies');
 const { clamp, round } = require('./mathUtils');
 const {
@@ -46,10 +47,19 @@ async function analyzeMarket(request = {}) {
   });
 
   const [{ stocks, source }, benchmarkSnapshots] = await Promise.all([
-    getMarketData(exchange),
+    strategy === 'small_cap_breakout' ? getSmallCapMarketData(exchange) : getMarketData(exchange),
     getStockSnapshots(MARKET_BENCHMARKS)
   ]);
   const dataQuality = assessDataQuality({ stocks, source });
+
+  // The dedicated small-cap universe (Alpaca-backed) replaces the regular universe entirely for
+  // this strategy - it's structurally useless on the regular ~40-mega-cap universe (see
+  // docs/SPEC_SMALL_CAP_STRATEGY.md). If it wasn't available, getSmallCapMarketData already fell
+  // back to the regular universe below; surface that honestly instead of silently scoring
+  // mega-caps against a small-cap eligibility filter that will reject almost everything.
+  if (strategy === 'small_cap_breakout' && source !== 'alpaca+fmp-screener') {
+    dataQuality.issues.push('האסטרטגיה דורשת מאגר מניות קטנות (Alpaca) שאינו זמין כרגע - הסריקה רצה על המאגר הרגיל');
+  }
   const spyBenchmark = benchmarkSnapshots.find((snapshot) => snapshot?.ticker === 'SPY');
   const marketContext = { benchmarkReturn3m: Number(spyBenchmark?.return_3m || 0) };
   const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters));
@@ -219,6 +229,19 @@ async function analyzeMarket(request = {}) {
       groups
     }
   };
+}
+
+// Tries the dedicated small-cap universe first; falls back to the regular universe (same as every
+// other strategy) whenever it's unavailable - the source string is how the caller tells which one
+// actually happened, without a separate side-channel flag.
+async function getSmallCapMarketData(exchange) {
+  const smallCapStocks = await getSmallCapUniverse({ exchange });
+
+  if (Array.isArray(smallCapStocks) && smallCapStocks.length) {
+    return { stocks: smallCapStocks, source: 'alpaca+fmp-screener' };
+  }
+
+  return getMarketData(exchange);
 }
 
 const STRATEGY_LEAGUE_TOP_N = 5;
