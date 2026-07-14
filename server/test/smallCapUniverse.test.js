@@ -175,19 +175,17 @@ test('the Nasdaq screener is tried first and FMP is never called when it succeed
       fmpWasCalled = true;
       return jsonResponse([]);
     }
-    return {
-      ok: true,
-      json: async () => ({
-        data: {
-          totalrecords: 1,
-          table: {
-            rows: [
-              { symbol: 'SCAP1', name: 'SCAP1 Inc Common Stock', lastsale: '10.00', marketCap: '750,000,000', pctchange: '1.0%' }
-            ]
-          }
+    const body = {
+      data: {
+        totalrecords: 1,
+        table: {
+          rows: [
+            { symbol: 'SCAP1', name: 'SCAP1 Inc Common Stock', lastsale: '10.00', marketCap: '750,000,000', pctchange: '1.0%' }
+          ]
         }
-      })
+      }
     };
+    return { ok: true, json: async () => body, text: async () => JSON.stringify(body) };
   };
 
   const originalGetDailyBars = alpacaService.getDailyBars;

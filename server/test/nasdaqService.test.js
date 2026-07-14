@@ -6,22 +6,26 @@ function freshNasdaqService() {
   return require('../src/services/providers/nasdaqService');
 }
 
+// nasdaqService reads the raw body via response.text() first (so it can detect a 200 + HTML
+// block-page from Akamai instead of assuming any 2xx is valid JSON) - every mock response needs a
+// text() that matches its json() data.
+function jsonHttpResponse(data) {
+  return { ok: true, text: async () => JSON.stringify(data) };
+}
+
 test('getScreenerRows parses comma/dollar/percent-formatted fields into plain numbers', async () => {
   const nasdaqService = freshNasdaqService();
   const originalFetch = global.fetch;
 
-  global.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      data: {
-        totalrecords: 1,
-        table: {
-          rows: [
-            { symbol: 'SRPT', name: 'Sarepta Therapeutics, Inc. Common Stock (DE)', lastsale: '$18.82', marketCap: '1,986,944,498', pctchange: '-0.686%' }
-          ]
-        }
+  global.fetch = async () => jsonHttpResponse({
+    data: {
+      totalrecords: 1,
+      table: {
+        rows: [
+          { symbol: 'SRPT', name: 'Sarepta Therapeutics, Inc. Common Stock (DE)', lastsale: '$18.82', marketCap: '1,986,944,498', pctchange: '-0.686%' }
+        ]
       }
-    })
+    }
   });
 
   const rows = await nasdaqService.getScreenerRows({ exchange: 'NASDAQ', limit: 200 });
@@ -53,10 +57,7 @@ test('getScreenerRows paginates via offset until totalrecords is reached', async
       ? Array.from({ length: 200 }, (_, i) => makeRow(i))
       : Array.from({ length: 50 }, (_, i) => makeRow(200 + i));
 
-    return {
-      ok: true,
-      json: async () => ({ data: { totalrecords: 250, table: { rows } } })
-    };
+    return jsonHttpResponse({ data: { totalrecords: 250, table: { rows } } });
   };
 
   const rows = await nasdaqService.getScreenerRows({ exchange: 'NASDAQ', limit: 250 });
@@ -73,21 +74,18 @@ test('getScreenerRows filters out warrant/unit/preferred symbols containing / . 
   const nasdaqService = freshNasdaqService();
   const originalFetch = global.fetch;
 
-  global.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      data: {
-        totalrecords: 4,
-        table: {
-          rows: [
-            { symbol: 'ABC', name: 'ABC Corp Common Stock', lastsale: '5.00', marketCap: '100,000,000', pctchange: '0.5%' },
-            { symbol: 'ABC/WS', name: 'ABC Corp Warrants', lastsale: '1.00', marketCap: '10,000,000', pctchange: '0.1%' },
-            { symbol: 'ABC.U', name: 'ABC Corp Units', lastsale: '10.00', marketCap: '100,000,000', pctchange: '0.2%' },
-            { symbol: 'ABC^A', name: 'ABC Corp Preferred', lastsale: '25.00', marketCap: '50,000,000', pctchange: '0.0%' }
-          ]
-        }
+  global.fetch = async () => jsonHttpResponse({
+    data: {
+      totalrecords: 4,
+      table: {
+        rows: [
+          { symbol: 'ABC', name: 'ABC Corp Common Stock', lastsale: '5.00', marketCap: '100,000,000', pctchange: '0.5%' },
+          { symbol: 'ABC/WS', name: 'ABC Corp Warrants', lastsale: '1.00', marketCap: '10,000,000', pctchange: '0.1%' },
+          { symbol: 'ABC.U', name: 'ABC Corp Units', lastsale: '10.00', marketCap: '100,000,000', pctchange: '0.2%' },
+          { symbol: 'ABC^A', name: 'ABC Corp Preferred', lastsale: '25.00', marketCap: '50,000,000', pctchange: '0.0%' }
+        ]
       }
-    })
+    }
   });
 
   const rows = await nasdaqService.getScreenerRows({ exchange: 'NASDAQ', limit: 200 });
@@ -107,6 +105,40 @@ test('getScreenerRows returns null when the HTTP request fails', async () => {
   const rows = await nasdaqService.getScreenerRows({ exchange: 'NASDAQ', limit: 200 });
 
   global.fetch = originalFetch;
+
+  assert.equal(rows, null);
+});
+
+test('getScreenerRows returns null (not a throw) when the response is 200 with a non-JSON body', async () => {
+  const nasdaqService = freshNasdaqService();
+  const originalFetch = global.fetch;
+
+  global.fetch = async () => ({ ok: true, text: async () => '<html>Access Denied</html>' });
+
+  const rows = await nasdaqService.getScreenerRows({ exchange: 'NASDAQ', limit: 200 });
+
+  global.fetch = originalFetch;
+
+  assert.equal(rows, null);
+});
+
+test('getScreenerRows returns null (not a hang) when the request never resolves', async () => {
+  process.env.NASDAQ_REQUEST_TIMEOUT_MS = '50';
+  const nasdaqService = freshNasdaqService();
+  const originalFetch = global.fetch;
+
+  global.fetch = (url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => {
+      const error = new Error('The operation was aborted');
+      error.name = 'AbortError';
+      reject(error);
+    });
+  });
+
+  const rows = await nasdaqService.getScreenerRows({ exchange: 'NASDAQ', limit: 200 });
+
+  global.fetch = originalFetch;
+  delete process.env.NASDAQ_REQUEST_TIMEOUT_MS;
 
   assert.equal(rows, null);
 });

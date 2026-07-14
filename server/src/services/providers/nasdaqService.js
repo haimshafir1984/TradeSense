@@ -11,8 +11,17 @@
 const BASE_URL = process.env.NASDAQ_API_BASE_URL || 'https://api.nasdaq.com';
 const REQUEST_HEADERS = {
   accept: 'application/json',
-  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+  'accept-language': 'en-US,en;q=0.9',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+  referer: 'https://www.nasdaq.com/market-activity/stocks/screener',
+  origin: 'https://www.nasdaq.com'
 };
+
+// This is an unofficial API sitting behind Akamai, which sometimes filters non-browser traffic
+// (datacenter IPs, TLS fingerprint) by simply never responding - without a timeout that hangs the
+// caller instead of failing soft. Overridable so tests don't have to wait out a real 10s timeout.
+// See docs/SPEC_UNIVERSE_RESILIENCE.md section 3.
+const REQUEST_TIMEOUT_MS = Number(process.env.NASDAQ_REQUEST_TIMEOUT_MS) || 10 * 1000;
 
 // Conservative self-throttle out of courtesy to an unofficial endpoint - no documented limit to
 // aim for, unlike Alpaca/Finnhub.
@@ -44,19 +53,37 @@ async function throttle() {
 }
 
 async function fetchNasdaq(url, label) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   try {
     await throttle();
-    const response = await fetch(url, { headers: REQUEST_HEADERS });
+    const response = await fetch(url, { headers: REQUEST_HEADERS, signal: controller.signal });
 
     if (!response.ok) {
       console.warn(`[nasdaq] ${label} failed: HTTP ${response.status}`);
       return null;
     }
 
-    return await response.json();
+    const rawBody = await response.text();
+
+    try {
+      return JSON.parse(rawBody);
+    } catch {
+      // Akamai sometimes answers with 200 + an HTML block page instead of a real error status -
+      // logging a snippet is what actually lets us diagnose that from Render's logs.
+      console.warn(`[nasdaq] ${label} failed: non-JSON response (likely bot-blocked). body starts with: ${rawBody.slice(0, 50)}`);
+      return null;
+    }
   } catch (error) {
-    console.warn(`[nasdaq] ${label} failed: ${error.message}`);
+    if (error.name === 'AbortError') {
+      console.warn(`[nasdaq] ${label} failed: timed out after ${REQUEST_TIMEOUT_MS}ms`);
+    } else {
+      console.warn(`[nasdaq] ${label} failed: ${error.message}`);
+    }
     return null;
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 }
 

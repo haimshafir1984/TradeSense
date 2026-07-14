@@ -5,7 +5,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function jsonResponse(data, ok = true) {
-  return { ok, json: async () => data };
+  // nasdaqService reads the body via text() + JSON.parse (so it can detect a 200 + non-JSON
+  // block-page from Akamai) - text() has to be present alongside json() for every mock response
+  // that might be hit by a Nasdaq call.
+  return { ok, json: async () => data, text: async () => JSON.stringify(data) };
 }
 
 function nasdaqScreenerResponse(rows) {
