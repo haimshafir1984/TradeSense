@@ -10,7 +10,10 @@ const alpacaService = require('./providers/alpacaService');
 const nasdaqService = require('./providers/nasdaqService');
 const finnhubService = require('./providers/finnhubService');
 const universeStore = require('./universeStore');
-const { fetchJson } = require('./marketDataService');
+// marketDataService.js requires this module too (lazily, inside getAlpacaNasdaqMarketData - see
+// there for why), so this stays a plain top-level require here; only the other direction needs to
+// be lazy to avoid a load-order cycle.
+const marketDataService = require('./marketDataService');
 const { SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
 
 const NASDAQ_UNIVERSE_LIMIT = 1000;
@@ -18,6 +21,55 @@ const UNIVERSE_MIN_DOLLAR_VOLUME = Number(process.env.UNIVERSE_MIN_DOLLAR_VOLUME
 const UNIVERSE_ENRICH_LIMIT = Number(process.env.UNIVERSE_ENRICH_LIMIT) || 400;
 const FINNHUB_ENRICH_CONCURRENCY = 10;
 const MARKET_CAP_REUSE_MAX_AGE_DAYS = 7;
+
+// De-dupes concurrent refresh attempts for the same exchange (e.g. several scans arriving while
+// the store is empty) so they all await one refresh instead of triggering N parallel ones.
+const inFlightRefreshes = new Map();
+
+function refreshUniverseOnce(exchange) {
+  if (!inFlightRefreshes.has(exchange)) {
+    const promise = refreshUniverse({ exchange }).finally(() => inFlightRefreshes.delete(exchange));
+    inFlightRefreshes.set(exchange, promise);
+  }
+  return inFlightRefreshes.get(exchange);
+}
+
+// The read path consumers actually call (docs/SPEC_UNIVERSE_RESILIENCE.md section 4.4):
+//   - fresh (<24h)  -> returned as-is, no refresh triggered.
+//   - stale (24-72h) -> returned immediately (still usable), refresh kicked off in the background
+//     for the next call to pick up - a scan should never wait on a ~minutes-long rebuild.
+//   - missing (>72h or no file) -> refresh is awaited synchronously, since the alternative is
+//     falling all the way to demo data for this request.
+async function getUniverseWithLazyRefresh(exchange) {
+  const existing = await universeStore.getUniverse(exchange);
+
+  if (existing && !existing.isStale) {
+    return existing;
+  }
+
+  if (existing && existing.isStale) {
+    refreshUniverseOnce(exchange).catch((error) => {
+      console.warn(`[universe] Background refresh failed for ${exchange}: ${error.message}`);
+    });
+    return existing;
+  }
+
+  await refreshUniverseOnce(exchange);
+  return universeStore.getUniverse(exchange);
+}
+
+// Maps a universeStore `source` value to the per-stock/per-scan data_source label the rest of the
+// app already uses (docs/SPEC_PROVIDER_REBALANCE.md's 'alpaca+nasdaq'/'alpaca+fmp-screener', plus
+// the new 'alpaca+finnhub').
+function dataSourceLabelFor(universeSource) {
+  if (universeSource === 'nasdaq') {
+    return 'alpaca+nasdaq';
+  }
+  if (universeSource === 'alpaca+finnhub') {
+    return 'alpaca+finnhub';
+  }
+  return 'alpaca+fmp-screener';
+}
 
 async function refreshUniverse({ exchange = 'NASDAQ' } = {}) {
   const nasdaqRows = await buildFromNasdaq(exchange);
@@ -197,7 +249,7 @@ async function buildFromFmp(exchange) {
     `&limit=${UNIVERSE_ENRICH_LIMIT}` +
     `&apikey=${apiKey}`;
 
-  const result = await fetchJson(url, `fmp-universe-screener:${exchange}`, true);
+  const result = await marketDataService.fetchJson(url, `fmp-universe-screener:${exchange}`, true);
   if (!result.ok || !Array.isArray(result.data)) {
     return null;
   }
@@ -218,5 +270,7 @@ async function buildFromFmp(exchange) {
 }
 
 module.exports = {
-  refreshUniverse
+  refreshUniverse,
+  getUniverseWithLazyRefresh,
+  dataSourceLabelFor
 };

@@ -1,4 +1,5 @@
 const watchlistService = require('./watchlistService');
+const universeBuilderService = require('./universeBuilderService');
 
 // Runs the (evening) tomorrow-watchlist scan automatically once a day, so the cache is already
 // warm by the time someone opens the app - no manual "load" step. This only fires while the
@@ -39,6 +40,17 @@ async function refreshAllExchanges() {
       console.log(`[watchlistScheduler] Refreshed tomorrow watchlist for ${exchange}`);
     } catch (error) {
       console.warn(`[watchlistScheduler] Failed to refresh tomorrow watchlist for ${exchange}: ${error.message}`);
+    }
+
+    // Nightly universe rebuild (docs/SPEC_UNIVERSE_RESILIENCE.md section 4.4) - piggybacks on the
+    // same "once a day, after the scheduled hour" mechanism as the watchlist refresh above, rather
+    // than inventing a second schedule. Failure here is non-fatal (console.warn only): scans keep
+    // using whatever is already on disk (last-known-good) or fall back to FMP/demo, same as if
+    // this refresh never ran.
+    try {
+      await universeBuilderService.refreshUniverse({ exchange });
+    } catch (error) {
+      console.warn(`[watchlistScheduler] Failed to refresh universe for ${exchange}: ${error.message}`);
     }
   }
 }

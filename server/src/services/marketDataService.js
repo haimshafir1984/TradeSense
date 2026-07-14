@@ -1,7 +1,6 @@
 const { STOCK_UNIVERSE, getTickerContext } = require('../data/universe');
 const { clamp, average, scoreConsolidation } = require('./mathUtils');
 const alpacaService = require('./providers/alpacaService');
-const nasdaqService = require('./providers/nasdaqService');
 const finnhubService = require('./providers/finnhubService');
 const { buildStockFromBars } = require('./barsStockBuilder');
 
@@ -51,21 +50,33 @@ async function getAlpacaNasdaqMarketData(exchange) {
     return null;
   }
 
-  const rows = await nasdaqService.getScreenerRows({ exchange, limit: DYNAMIC_UNIVERSE_SIZE });
-  if (!rows || !rows.length) {
+  // Required lazily (not at module top-level): universeBuilderService.js requires this module
+  // back (for fetchJson), and marketDataService.js assigns its module.exports as a single object
+  // literal at the bottom of the file - a top-level circular require here would capture that
+  // reference before it exists. By the time this function actually runs, both modules have long
+  // since finished loading, so this just hits Node's require cache. See
+  // docs/SPEC_UNIVERSE_RESILIENCE.md section 5.2.
+  const universeBuilderService = require('./universeBuilderService');
+
+  // Reads the nightly-built universe (docs/SPEC_UNIVERSE_RESILIENCE.md) instead of calling
+  // nasdaqService directly - the direct call is unreliable from some hosts (Nasdaq's screener is
+  // blocked from Render's IP range), so the store's own Nasdaq -> Alpaca+Finnhub -> FMP chain
+  // takes over. If the store has nothing usable (fresh install, first refresh still failing),
+  // this returns null and the caller falls through to the existing FMP/demo path, unchanged.
+  const universe = await universeBuilderService.getUniverseWithLazyRefresh(exchange);
+  if (!universe) {
     return null;
   }
 
-  const candidates = rows
-    .filter((row) => Number.isFinite(row.price) && row.price > 0 && Number.isFinite(row.marketCap) && row.marketCap > 0)
-    .sort((left, right) => right.marketCap - left.marketCap)
-    .slice(0, DYNAMIC_UNIVERSE_SIZE)
-    .map((row) => ({ symbol: row.symbol, companyName: row.companyName, sector: 'Unknown', marketCap: row.marketCap }));
+  const candidates = selectTopUniverseRows(universe.rows, DYNAMIC_UNIVERSE_SIZE)
+    .filter((row) => Number.isFinite(row.price) && row.price > 0)
+    .map((row) => ({ symbol: row.symbol, companyName: row.companyName, sector: row.sector || 'Unknown', marketCap: row.marketCap }));
 
   if (!candidates.length) {
     return null;
   }
 
+  const dataSource = universeBuilderService.dataSourceLabelFor(universe.source);
   const candidateBySymbol = new Map(candidates.map((candidate) => [candidate.symbol, candidate]));
   const symbols = candidates.map((candidate) => candidate.symbol);
   const barsBySymbol = await alpacaService.getDailyBars({ symbols, days: ALPACA_NASDAQ_HISTORY_DAYS });
@@ -81,7 +92,7 @@ async function getAlpacaNasdaqMarketData(exchange) {
       continue;
     }
 
-    const stock = buildStockFromBars({ exchange, candidate, bars, dataSource: 'alpaca+nasdaq' });
+    const stock = buildStockFromBars({ exchange, candidate, bars, dataSource });
     if (stock) {
       stocks.push(stock);
     }
@@ -92,10 +103,24 @@ async function getAlpacaNasdaqMarketData(exchange) {
   }
 
   if (finnhubService.isConfigured()) {
-    await enrichSectorsWithFinnhub(stocks);
+    await enrichSectorsWithFinnhub(stocks.filter((stock) => stock.sector === 'Unknown'));
   }
 
-  return { stocks, source: 'alpaca+nasdaq' };
+  return { stocks, source: dataSource, isStale: universe.isStale };
+}
+
+// Prefers rows with a known market cap (sorted descending); rows without one (possible from an
+// FMP-sourced universe entry - see universeBuilderService.js) are appended after, sorted by dollar
+// volume instead. See docs/SPEC_UNIVERSE_RESILIENCE.md section 5.2.
+function selectTopUniverseRows(rows, limit) {
+  const withMarketCap = rows
+    .filter((row) => Number.isFinite(row.marketCap) && row.marketCap > 0)
+    .sort((left, right) => right.marketCap - left.marketCap);
+  const withoutMarketCap = rows
+    .filter((row) => !(Number.isFinite(row.marketCap) && row.marketCap > 0))
+    .sort((left, right) => (right.avgDollarVolume || 0) - (left.avgDollarVolume || 0));
+
+  return [...withMarketCap, ...withoutMarketCap].slice(0, limit);
 }
 
 // Best-effort parallel sector enrichment - a failed/slow Finnhub lookup for one symbol never

@@ -3,6 +3,13 @@
 // which nasdaqService.test.js/finnhubService.test.js already cover).
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+
+function scratchUniverseStorePath() {
+  return path.join(os.tmpdir(), `universeCache-providerRebalance-test-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+}
 
 function jsonResponse(data, ok = true) {
   // nasdaqService reads the body via text() + JSON.parse (so it can detect a 200 + non-JSON
@@ -28,14 +35,20 @@ function bars({ days = 60, basePrice = 25 } = {}) {
 }
 
 function freshServices() {
+  const scratchPath = scratchUniverseStorePath();
+  process.env.UNIVERSE_STORE_FILE_PATH = scratchPath;
+
   delete require.cache[require.resolve('../src/services/providers/alpacaService')];
   delete require.cache[require.resolve('../src/services/providers/nasdaqService')];
   delete require.cache[require.resolve('../src/services/providers/finnhubService')];
+  delete require.cache[require.resolve('../src/services/universeStore')];
+  delete require.cache[require.resolve('../src/services/universeBuilderService')];
   delete require.cache[require.resolve('../src/services/marketDataService')];
   delete require.cache[require.resolve('../src/services/funnelScanService')];
   delete require.cache[require.resolve('../src/services/watchlistScoring')];
 
   return {
+    scratchPath,
     alpacaService: require('../src/services/providers/alpacaService'),
     marketDataService: require('../src/services/marketDataService'),
     funnelScanService: require('../src/services/funnelScanService'),
@@ -43,11 +56,15 @@ function freshServices() {
   };
 }
 
-function clearProviderEnv() {
+function clearProviderEnv(scratchPath) {
   delete process.env.ALPACA_API_KEY_ID;
   delete process.env.ALPACA_API_SECRET_KEY;
   delete process.env.FINNHUB_API_KEY;
   delete process.env.FMP_API_KEY;
+  if (scratchPath) {
+    fs.rmSync(scratchPath, { force: true });
+    delete process.env.UNIVERSE_STORE_FILE_PATH;
+  }
 }
 
 test('getMarketData uses the Alpaca+Nasdaq path and never calls FMP when Alpaca is configured and Nasdaq succeeds', async () => {
@@ -56,7 +73,7 @@ test('getMarketData uses the Alpaca+Nasdaq path and never calls FMP when Alpaca 
   process.env.ALPACA_API_SECRET_KEY = 'secret';
   process.env.FMP_API_KEY = 'fmp-key'; // present but must never be hit
 
-  const { alpacaService, marketDataService } = freshServices();
+  const { alpacaService, marketDataService, scratchPath } = freshServices();
 
   const originalFetch = global.fetch;
   let fmpWasCalled = false;
@@ -83,7 +100,7 @@ test('getMarketData uses the Alpaca+Nasdaq path and never calls FMP when Alpaca 
   const result = await marketDataService.getMarketData('NASDAQ');
 
   global.fetch = originalFetch;
-  clearProviderEnv();
+  clearProviderEnv(scratchPath);
 
   assert.equal(fmpWasCalled, false);
   assert.equal(result.source, 'alpaca+nasdaq');
@@ -97,7 +114,7 @@ test('getMarketData falls back to the FMP screener when the Nasdaq screener fail
   process.env.ALPACA_API_SECRET_KEY = 'secret';
   process.env.FMP_API_KEY = 'fmp-key';
 
-  const { alpacaService, marketDataService } = freshServices();
+  const { alpacaService, marketDataService, scratchPath } = freshServices();
 
   const originalFetch = global.fetch;
   global.fetch = async (url) => {
@@ -126,7 +143,7 @@ test('getMarketData falls back to the FMP screener when the Nasdaq screener fail
   const result = await marketDataService.getMarketData('NASDAQ');
 
   global.fetch = originalFetch;
-  clearProviderEnv();
+  clearProviderEnv(scratchPath);
 
   assert.equal(result.source, 'fmp');
   assert.ok(result.stocks.some((stock) => stock.ticker === 'GAMMA'));
@@ -139,7 +156,7 @@ test('getStockSnapshot uses Alpaca bars + a best-effort Finnhub profile when Alp
   process.env.FINNHUB_API_KEY = 'finnhub-key';
   process.env.FMP_API_KEY = 'fmp-key';
 
-  const { alpacaService, marketDataService } = freshServices();
+  const { alpacaService, marketDataService, scratchPath } = freshServices();
 
   const originalFetch = global.fetch;
   let fmpWasCalled = false;
@@ -160,7 +177,7 @@ test('getStockSnapshot uses Alpaca bars + a best-effort Finnhub profile when Alp
   const snapshot = await marketDataService.getStockSnapshot('AAPL');
 
   global.fetch = originalFetch;
-  clearProviderEnv();
+  clearProviderEnv(scratchPath);
 
   assert.equal(fmpWasCalled, false);
   assert.equal(snapshot.ticker, 'AAPL');
@@ -174,7 +191,7 @@ test('resolveEarningsSoon uses Finnhub when configured and never falls through t
   process.env.FINNHUB_API_KEY = 'finnhub-key';
   process.env.FMP_API_KEY = 'fmp-key';
 
-  const { watchlistScoring } = freshServices();
+  const { watchlistScoring, scratchPath } = freshServices();
 
   const originalFetch = global.fetch;
   let fmpWasCalled = false;
@@ -193,7 +210,7 @@ test('resolveEarningsSoon uses Finnhub when configured and never falls through t
   const result = await watchlistScoring.resolveEarningsSoon('AAPL', process.env.FMP_API_KEY);
 
   global.fetch = originalFetch;
-  clearProviderEnv();
+  clearProviderEnv(scratchPath);
 
   assert.equal(result, true);
   assert.equal(fmpWasCalled, false);
@@ -205,7 +222,7 @@ test('TASE requests bypass the Alpaca+Nasdaq path entirely and use the existing 
   process.env.ALPACA_API_SECRET_KEY = 'secret';
   process.env.FMP_API_KEY = 'fmp-key';
 
-  const { marketDataService } = freshServices();
+  const { marketDataService, scratchPath } = freshServices();
 
   const originalFetch = global.fetch;
   let nasdaqWasCalled = false;
@@ -231,8 +248,42 @@ test('TASE requests bypass the Alpaca+Nasdaq path entirely and use the existing 
   const result = await marketDataService.getMarketData('TASE');
 
   global.fetch = originalFetch;
-  clearProviderEnv();
+  clearProviderEnv(scratchPath);
 
   assert.equal(nasdaqWasCalled, false);
   assert.equal(result.source, 'fmp');
+});
+
+test('a stale (24-72h old) universe entry is still served immediately, flagged isStale: true', async () => {
+  clearProviderEnv();
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+
+  const { alpacaService, marketDataService, scratchPath } = freshServices();
+  const universeStore = require('../src/services/universeStore');
+
+  const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  await universeStore.writeUniverseCache({
+    NASDAQ: {
+      generatedAt: fortyEightHoursAgo,
+      source: 'nasdaq',
+      rows: [{ symbol: 'STALE', companyName: 'Stale Inc', sector: 'Technology', marketCap: 2000000000, price: 20, avgDollarVolume: 5000000 }]
+    }
+  });
+
+  // The background refresh this triggers (fire-and-forget) may itself call fetch - not asserted
+  // on here since its timing relative to this test's own assertions isn't deterministic. What
+  // matters is that the *stale* data is served immediately rather than blocking on that refresh.
+  const originalFetch = global.fetch;
+  global.fetch = async () => jsonResponse([]);
+
+  alpacaService.getDailyBars = async () => new Map([['STALE', bars()]]);
+
+  const result = await marketDataService.getMarketData('NASDAQ');
+
+  global.fetch = originalFetch;
+  clearProviderEnv(scratchPath);
+
+  assert.equal(result.isStale, true);
+  assert.ok(result.stocks.some((stock) => stock.ticker === 'STALE'));
 });

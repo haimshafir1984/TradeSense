@@ -6,6 +6,7 @@
 // comes back empty/failed - the caller (scannerService.js) falls back to the regular universe.
 const alpacaService = require('./providers/alpacaService');
 const nasdaqService = require('./providers/nasdaqService');
+const universeBuilderService = require('./universeBuilderService');
 const { fetchJson } = require('./marketDataService');
 const { buildStockFromBars } = require('./barsStockBuilder');
 const { SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
@@ -45,27 +46,61 @@ async function getSmallCapUniverse({ exchange = 'NASDAQ' } = {}) {
     return null;
   }
 
+  for (const stock of stocks) {
+    stock.dataStale = screenerResult.isStale === true;
+  }
+
   writeCache(cacheKey, stocks);
   return stocks;
 }
 
-// Stage 1: candidates that are already small-cap, liquid (FMP path only - Nasdaq's screener has no
-// volume field), and above a penny-stock price floor - with real market cap attached, so nothing
-// per-symbol is needed later. Tries the keyless Nasdaq screener first (no daily quota, unlike
-// FMP's 250 calls/day); falls back to the FMP screener only if Nasdaq is unavailable. See
-// docs/SPEC_PROVIDER_REBALANCE.md section 5.1.
+// Stage 1: candidates that are already small-cap, liquid, and above a penny-stock price floor -
+// with real market cap attached, so nothing per-symbol is needed later. Tries the nightly-built
+// universeStore first (zero network calls on the common path - see
+// docs/SPEC_UNIVERSE_RESILIENCE.md), then falls back to its own direct Nasdaq call, then its own
+// direct FMP call, exactly as before the store existed - this keeps behavior unchanged whenever
+// the store has nothing usable (e.g. a fresh install before the first nightly refresh).
 async function fetchScreenerCandidates(exchange) {
+  const storeResult = await fetchCandidatesFromStore(exchange);
+  if (storeResult) {
+    return storeResult;
+  }
+
   const nasdaqCandidates = await fetchNasdaqCandidates(exchange);
   if (nasdaqCandidates) {
-    return { candidates: nasdaqCandidates, dataSource: 'alpaca+nasdaq' };
+    return { candidates: nasdaqCandidates, dataSource: 'alpaca+nasdaq', isStale: false };
   }
 
   const fmpCandidates = await fetchFmpCandidates(exchange);
   if (fmpCandidates) {
-    return { candidates: fmpCandidates, dataSource: 'alpaca+fmp-screener' };
+    return { candidates: fmpCandidates, dataSource: 'alpaca+fmp-screener', isStale: false };
   }
 
   return null;
+}
+
+async function fetchCandidatesFromStore(exchange) {
+  const universe = await universeBuilderService.getUniverseWithLazyRefresh(exchange);
+  if (!universe) {
+    return null;
+  }
+
+  const candidates = universe.rows
+    .filter((row) => Number.isFinite(row.marketCap) && row.marketCap > 0 && row.marketCap <= SMALL_CAP_THRESHOLDS.marketCapCeiling)
+    .filter((row) => Number.isFinite(row.price) && row.price >= SMALL_CAP_THRESHOLDS.minPrice)
+    .slice(0, SMALL_CAP_UNIVERSE_SIZE)
+    .map((row) => ({
+      symbol: row.symbol,
+      companyName: row.companyName,
+      sector: row.sector || 'Unknown',
+      marketCap: row.marketCap
+    }));
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  return { candidates, dataSource: universeBuilderService.dataSourceLabelFor(universe.source), isStale: universe.isStale };
 }
 
 async function fetchNasdaqCandidates(exchange) {

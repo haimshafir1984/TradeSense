@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 const { scoreStockByStrategy } = require('../src/services/strategies');
+
+function scratchUniverseStorePath() {
+  return path.join(os.tmpdir(), `universeCache-strategy-test-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+}
 
 function jsonResponse(data, ok = true) {
   return { ok, json: async () => data, text: async () => JSON.stringify(data) };
@@ -94,16 +101,23 @@ test('analyzeMarket uses the dedicated small-cap universe end-to-end when Alpaca
   process.env.FMP_API_KEY = 'fmp-key';
   delete process.env.FINNHUB_API_KEY;
 
+  const scratchPath = scratchUniverseStorePath();
+  process.env.UNIVERSE_STORE_FILE_PATH = scratchPath;
+
   const originalFetch = global.fetch;
   global.fetch = async (url) => {
     if (url.includes('/company-screener')) {
-      return jsonResponse([{ symbol: 'SCAP1', companyName: 'Small Cap Co', sector: 'Technology', marketCap: 500000000 }]);
+      return jsonResponse([{ symbol: 'SCAP1', companyName: 'Small Cap Co', sector: 'Technology', marketCap: 500000000, price: 15 }]);
     }
     return benchmarkFmpResponses(url);
   };
 
   delete require.cache[require.resolve('../src/services/marketDataService')];
   delete require.cache[require.resolve('../src/services/providers/alpacaService')];
+  delete require.cache[require.resolve('../src/services/providers/nasdaqService')];
+  delete require.cache[require.resolve('../src/services/providers/finnhubService')];
+  delete require.cache[require.resolve('../src/services/universeStore')];
+  delete require.cache[require.resolve('../src/services/universeBuilderService')];
   delete require.cache[require.resolve('../src/services/smallCapUniverseService')];
   delete require.cache[require.resolve('../src/services/scannerService')];
 
@@ -117,6 +131,8 @@ test('analyzeMarket uses the dedicated small-cap universe end-to-end when Alpaca
   delete process.env.ALPACA_API_KEY_ID;
   delete process.env.ALPACA_API_SECRET_KEY;
   delete process.env.FMP_API_KEY;
+  fs.rmSync(scratchPath, { force: true });
+  delete process.env.UNIVERSE_STORE_FILE_PATH;
 
   assert.equal(response.meta.source, 'alpaca+fmp-screener');
   assert.ok(response.results.length > 0, 'expected at least one small-cap result');
@@ -129,12 +145,20 @@ test('falls back to the regular universe (without throwing) and reports the issu
   delete process.env.FMP_API_KEY;
   delete process.env.FINNHUB_API_KEY;
 
+  const scratchPath = scratchUniverseStorePath();
+  process.env.UNIVERSE_STORE_FILE_PATH = scratchPath;
+
   delete require.cache[require.resolve('../src/services/marketDataService')];
+  delete require.cache[require.resolve('../src/services/universeStore')];
+  delete require.cache[require.resolve('../src/services/universeBuilderService')];
   delete require.cache[require.resolve('../src/services/smallCapUniverseService')];
   delete require.cache[require.resolve('../src/services/scannerService')];
 
   const { analyzeMarket } = require('../src/services/scannerService');
   const response = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'small_cap_breakout', risk: 'medium', filters: {} });
+
+  fs.rmSync(scratchPath, { force: true });
+  delete process.env.UNIVERSE_STORE_FILE_PATH;
 
   assert.notEqual(response.meta.source, 'alpaca+fmp-screener');
   assert.ok(

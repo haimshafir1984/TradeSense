@@ -46,10 +46,11 @@ async function analyzeMarket(request = {}) {
     filters
   });
 
-  const [{ stocks, source }, benchmarkSnapshots] = await Promise.all([
+  const [marketDataResult, benchmarkSnapshots] = await Promise.all([
     strategy === 'small_cap_breakout' ? getSmallCapMarketData(exchange) : getMarketData(exchange),
     getStockSnapshots(MARKET_BENCHMARKS)
   ]);
+  const { stocks, source, isStale, usedDedicatedUniverse } = marketDataResult;
   const dataQuality = assessDataQuality({ stocks, source });
 
   // The dedicated small-cap universe (Alpaca-backed) replaces the regular universe entirely for
@@ -57,8 +58,15 @@ async function analyzeMarket(request = {}) {
   // docs/SPEC_SMALL_CAP_STRATEGY.md). If it wasn't available, getSmallCapMarketData already fell
   // back to the regular universe below; surface that honestly instead of silently scoring
   // mega-caps against a small-cap eligibility filter that will reject almost everything.
-  if (strategy === 'small_cap_breakout' && source !== 'alpaca+fmp-screener') {
+  if (strategy === 'small_cap_breakout' && !usedDedicatedUniverse) {
     dataQuality.issues.push('האסטרטגיה דורשת מאגר מניות קטנות (Alpaca) שאינו זמין כרגע - הסריקה רצה על המאגר הרגיל');
+  }
+
+  // Surfaces the freshness policy from docs/SPEC_UNIVERSE_RESILIENCE.md section 4.3 - a universe
+  // that's 24-72h old is still real, live data (not demo), but the user should know it's not
+  // tonight's refresh.
+  if (isStale) {
+    dataQuality.issues.push('רשימת המניות מבוססת על סריקת אתמול/שלשום (רענון לילי נכשל) - הנתונים עדיין אמיתיים, לא דמו');
   }
   const spyBenchmark = benchmarkSnapshots.find((snapshot) => snapshot?.ticker === 'SPY');
   const marketContext = { benchmarkReturn3m: Number(spyBenchmark?.return_3m || 0) };
@@ -238,15 +246,24 @@ async function getSmallCapMarketData(exchange) {
   const smallCapStocks = await getSmallCapUniverse({ exchange });
 
   if (Array.isArray(smallCapStocks) && smallCapStocks.length) {
-    // Every stock in the batch carries the same data_source (the whole universe came from one
-    // screener call - see smallCapUniverseService.js), so the first entry's label is authoritative
-    // for the whole result. Reading it here (instead of hardcoding 'alpaca+fmp-screener') keeps
-    // this in sync now that the screener itself can be either Nasdaq or FMP - see
-    // docs/SPEC_PROVIDER_REBALANCE.md section 5.1.
-    return { stocks: smallCapStocks, source: smallCapStocks[0].data_source || 'alpaca+fmp-screener' };
+    // Every stock in the batch carries the same data_source/dataStale (the whole universe came
+    // from one screener call - see smallCapUniverseService.js), so the first entry's labels are
+    // authoritative for the whole result. Reading data_source here (instead of hardcoding
+    // 'alpaca+fmp-screener') keeps this in sync now that the screener itself can be Nasdaq,
+    // Alpaca+Finnhub, or FMP - see docs/SPEC_PROVIDER_REBALANCE.md section 5.1 and
+    // docs/SPEC_UNIVERSE_RESILIENCE.md. usedDedicatedUniverse (rather than comparing the source
+    // string) is what tells the caller below whether this actually is the small-cap-specific
+    // universe, since every one of those three source values is a legitimate "it worked" outcome.
+    return {
+      stocks: smallCapStocks,
+      source: smallCapStocks[0].data_source || 'alpaca+fmp-screener',
+      isStale: smallCapStocks[0].dataStale === true,
+      usedDedicatedUniverse: true
+    };
   }
 
-  return getMarketData(exchange);
+  const regular = await getMarketData(exchange);
+  return { ...regular, usedDedicatedUniverse: false };
 }
 
 const STRATEGY_LEAGUE_TOP_N = 5;
