@@ -325,7 +325,20 @@ TradeSense/
 רשימת ברירת המחדל (סטטית) מגיעה מ:
 - `server/src/data/universe.js`
 
-**מאז docs/SPEC_PROVIDER_REBALANCE.md, מקור ה-universe הראשי הוא Alpaca+Nasdaq, לא FMP**: כל עוד `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` מוגדרים (ועבור `NASDAQ`/`NYSE` בלבד - `TASE` לא נתמכת ב-Alpaca), `getMarketData` מנסה קודם את הסקרינר הציבורי, חינמי, וללא מכסה יומית של Nasdaq (`api.nasdaq.com`, `server/src/services/providers/nasdaqService.js`) כדי לקבל רשימת סימולים + שווי שוק, ואז מושך בקריאה אחת מרוכזת (batch) 420 יום של bars מ-Alpaca לכל הסימולים כדי לחשב את הטכניקלים (דרך `barsStockBuilder.js`, המשותף גם עם ה-universe הייעודי ל-`small_cap_breakout`). אם Finnhub מוגדר (`FINNHUB_API_KEY`), מתבצעת העשרת סקטור מקבילה (best-effort, לא חוסמת). רק אם הסקרינר של Nasdaq נכשל/ריק, או ש-Alpaca לא מוגדר, נופלים בדיוק לאותו מסלול FMP הישן (universe **דינמי** דרך ה-screener של FMP, `stable/company-screener`, ורק אם גם הוא נכשל/ריק - לרשימה הסטטית).
+**מאז docs/SPEC_PROVIDER_REBALANCE.md, מקור ה-universe הראשי הוא Alpaca+Nasdaq, לא FMP** - ומאז docs/SPEC_UNIVERSE_RESILIENCE.md, הרשימה עצמה **לא נבנית בזמן הסריקה**: יש universe שנבנה **בלילה** ונשמר בדיסק (`server/src/services/universeStore.js`), וסריקות ביום קוראות אותו במקום לפנות לרשת.
+
+**למה:** הסקרינר הציבורי של Nasdaq (`api.nasdaq.com`) יושב מאחורי Akamai שחוסם תעבורה מטווחי IP של datacenter (מאומת בלוגי production: נכשל מ-Render, עובד מקומית) - כל עקיפה טכנית (headers/proxy) שברירה. הפתרון: לא להזדקק לסקרינר האנונימי הזה **בזמן ריצה** בכלל.
+
+**הרענון הלילי** (`server/src/services/universeBuilderService.js#refreshUniverse`, מופעל מ-`watchlistScheduler.js` יחד עם רענון "רשימת המעקב למחר"): שרשרת ניסיונות, נשמר הראשון שמצליח -
+1. **Nasdaq** - קריאה אחת לסקרינר (`nasdaqService.js`). עובד מקומית; חסום מ-Render.
+2. **Alpaca+Finnhub** - כל הנכסים הפעילים בבורסה + latest bar לכולם מ-Alpaca (batch, אותו מנגנון כמו שלב 1 של המשפך), סינון מקומי לפי מחיר/נפח דולרי (`UNIVERSE_MIN_DOLLAR_VOLUME`) לכמה מאות מועמדים (`UNIVERSE_ENRICH_LIMIT`), ואז שווי שוק פר-סימול מ-Finnhub (`stock/profile2`, ללא מכסה יומית) - עם שימוש חוזר בערך אם הוא כבר קיים ב-store מפחות משבוע, כדי לא לשאול מחדש כל לילה.
+3. **FMP screener** - fallback אחרון, רק אם שני הקודמים נכשלו.
+
+אם כל השלושה נכשלים, ה-store הקיים **לא נמחק** (last-known-good) - סריקה משתמשת ברשימה של אתמול/שלשום במקום ליפול לדמו.
+
+**קריאה בזמן סריקה** (`getMarketData`/`smallCapUniverseService`): קוראים את ה-store. רשומה בת פחות מ-24 שעות - משמשת ישירות. בת 24-72 שעות - עדיין משמשת, אך מתבצע רענון ברקע (לא חוסם) ומופיעה הודעה ב-`dataQuality.issues`. בת יותר מ-72 שעות או שאין קובץ בכלל - מטופל כאילו אין universe: מתבצע ניסיון רענון סינכרוני אחד, ואם גם הוא נכשל - נופלים למסלול FMP/דמו הישן, בדיוק כמו לפני שה-store היה קיים.
+
+לאחר שה-store נבחר, נמשכת בקריאה אחת מרוכזת (batch) היסטוריית 420 יום מ-Alpaca לכל הסימולים כדי לחשב את הטכניקלים (דרך `barsStockBuilder.js`, המשותף גם עם ה-universe הייעודי ל-`small_cap_breakout`).
 
 חשוב:
 המערכת כיום לא סורקת את כל השוק.
@@ -336,6 +349,7 @@ TradeSense/
 השרת מחזיר `meta.source` עם אחד מהערכים:
 
 - `alpaca+nasdaq`
+- `alpaca+finnhub`
 - `fmp`
 - `fmp_partial`
 - `finnhub`
@@ -345,7 +359,10 @@ TradeSense/
 פירוש:
 
 - `alpaca+nasdaq`:
-  רשימת הסימולים הגיעה מהסקרינר של Nasdaq, והטכניקלים מ-Alpaca (ראו סעיף Universe למעלה) - זהו מקור הנתונים הראשי כיום כאשר Alpaca מוגדר
+  רשימת הסימולים ב-store הגיעה מהסקרינר של Nasdaq (ברענון הלילי), והטכניקלים מ-Alpaca (ראו סעיף Universe למעלה) - זהו מקור הנתונים הראשי כאשר Alpaca מוגדר וה-store נבנה בהצלחה מ-Nasdaq
+
+- `alpaca+finnhub`:
+  רשימת הסימולים ב-store הגיעה מ-Alpaca (assets+bars) עם שווי שוק מ-Finnhub - fallback הרענון הלילי כאשר Nasdaq נכשל (המצב הנפוץ ב-Render)
 
 - `fmp`:
   התקבלו נתונים חיים מלאים מספיק מ־FMP (fallback, כאשר Alpaca/Nasdaq לא זמינים)
@@ -521,7 +538,7 @@ FUNNEL_FINALISTS=20
 
 אסטרטגיית סיכון גבוה מבוססת סגנון (ללא שם סוחר אמיתי - ראו `docs/LOGIC_IMPROVEMENTS.md`), שמטרתה מניות קטנות עם פוטנציאל תזוזה של עשרות אחוזים - פרופיל שלא קיים במאגר הרגיל של המערכת (~40 מניות, נוטה למגה-קאפ).
 
-**universe ייעודי (לא המאגר הרגיל):** `smallCapUniverseService.js` - קריאת screener אחת ל-FMP (מסננת שווי שוק, מחיר, נפח, ומחזירה שווי שוק אמיתי) ואז קריאת bars אחת ל-Alpaca לכל המועמדים יחד. אם Alpaca לא מוגדר, או אחד השלבים נכשל - האסטרטגיה נופלת חזרה למאגר הרגיל, שם פילטר הכשירות שלה יפסול כמעט הכול (הודעת הסבר מוצגת ב-`analysis.dataQuality.issues`).
+**universe ייעודי (לא המאגר הרגיל):** `smallCapUniverseService.js` - קודם בודק את ה-universe הלילי (`universeStore.js`, ראו סעיף Universe למעלה) ומסנן אותו לפי שווי שוק/מחיר small-cap; רק אם אין שם כלום שמיש, נופל לקריאת screener ישירה משלו (Nasdaq ואז FMP) - ואז קריאת bars אחת ל-Alpaca לכל המועמדים יחד. אם Alpaca לא מוגדר, או כל השלבים נכשלים - האסטרטגיה נופלת חזרה למאגר הרגיל, שם פילטר הכשירות שלה יפסול כמעט הכול (הודעת הסבר מוצגת ב-`analysis.dataQuality.issues`).
 
 פילטר כשירות (מכפיל 0 אם לא עומד בו): שווי שוק מתחת ל-2 מיליארד, מחיר מעל 2$, `adr_pct>=5` (`SMALL_CAP_THRESHOLDS` ב-`scoringConfig.js` - אותו קונפיג משמש גם את שאילתת ה-screener, כך ששני ההגדרות לא יכולות להתפצל).
 
@@ -836,6 +853,51 @@ Nasdaq (`server/src/services/providers/nasdaqService.js`). ברירת המחדל
 
 ```env
 NASDAQ_API_BASE_URL=https://api.nasdaq.com
+```
+
+#### NASDAQ_REQUEST_TIMEOUT_MS
+
+Timeout (מילישניות) לכל קריאה בודדת לסקרינר של Nasdaq, לפני שהיא נכשלת רך
+(`console.warn` + `null`) במקום להיתקע. ברירת מחדל: `10000` (10 שניות).
+נועד בעיקר לספוג את המקרה שבו Akamai פשוט לא עונה (חסימת datacenter IP,
+ראו סעיף Universe למעלה). דריסה שימושית בעיקר לטסטים.
+
+```env
+NASDAQ_REQUEST_TIMEOUT_MS=10000
+```
+
+#### UNIVERSE_STORE_FILE_PATH
+
+נתיב לקובץ ה-JSON שבו נשמר ה-universe הלילי (`server/src/services/universeStore.js`
+- רשימת סימולים + שווי שוק לכל בורסה, נבנה מדי לילה ע"י `universeBuilderService.js`
+ונקרא בזמן סריקה במקום לפנות לרשת). ברירת המחדל היא קובץ תחת
+`server/src/data/` (לא נכתב ל-Git). **ב-Render חובה להצביע על ה-Persistent
+Disk** (`/var/data/...`), אחרת הקובץ נמחק בכל דיפלוי מחדש - כמו שאר
+ה-stores (`WATCHLIST_STORE_FILE_PATH` וכו', ראו [DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+
+```env
+UNIVERSE_STORE_FILE_PATH=/var/data/universeCache.json
+```
+
+#### UNIVERSE_MIN_DOLLAR_VOLUME
+
+סף נפח דולרי (מחיר × נפח) מינימלי לסינון מקומי של מועמדים במסלול הרענון
+הלילי Alpaca+Finnhub (`universeBuilderService.js`), לפני העשרת שווי השוק
+- כדי לא לשאול את Finnhub על אלפי מניות לא-סחירות. ברירת מחדל: `2000000`
+($2M).
+
+```env
+UNIVERSE_MIN_DOLLAR_VOLUME=2000000
+```
+
+#### UNIVERSE_ENRICH_LIMIT
+
+כמה מועמדים (אחרי הסינון לפי `UNIVERSE_MIN_DOLLAR_VOLUME`, ממוינים לפי
+נפח דולרי יורד) מועשרים בשווי שוק מ-Finnhub בכל רענון לילי. ברירת מחדל:
+`400`. גם תקרת גודל ה-universe שנשמר כשהמקור הוא FMP (fallback אחרון).
+
+```env
+UNIVERSE_ENRICH_LIMIT=400
 ```
 
 #### FMP_UNIVERSE_SIZE

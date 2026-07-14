@@ -26,9 +26,17 @@
 ## Persistent Disk - חובה, לא אופציונלי
 
 בלי Disk, כל קובצי הנתונים (`portfolio.json`, `scanHistory.json`,
-`watchlistCache.json`, `watchlistOutcomes.json`) נכתבים לדיסק **הזמני**
-של הקונטיינר - שנמחק בכל deploy חדש (וזה כולל כל push ל-`main`, כי
-Render עושה auto-deploy). זו הסיבה שבניסיון הראשון "התיק שלי" לא שמר כלום.
+`watchlistCache.json`, `watchlistOutcomes.json`, וגם `universeCache.json`
+- ה-universe הלילי, ראו docs/SPEC_UNIVERSE_RESILIENCE.md) נכתבים לדיסק
+**הזמני** של הקונטיינר - שנמחק בכל deploy חדש (וזה כולל כל push ל-`main`,
+כי Render עושה auto-deploy). זו הסיבה שבניסיון הראשון "התיק שלי" לא שמר
+כלום.
+
+**חשוב במיוחד עבור `UNIVERSE_STORE_FILE_PATH`:** בלי לוודא שהוא מצביע
+על `/var/data/...`, כל deploy מוחק את ה-universe הלילי, וכל סריקה עד
+לרענון הלילי הבא (או הרענון העצל בבקשה הראשונה) נופלת בחזרה למסלול
+FMP/דמו הישן - בדיוק התסמין שדחף לכתיבת docs/SPEC_UNIVERSE_RESILIENCE.md
+מלכתחילה.
 
 ### איך זה מוגדר (ב-Backend בלבד)
 
@@ -47,6 +55,7 @@ PORTFOLIO_STORE_FILE_PATH=/var/data/portfolio.json
 SCAN_HISTORY_FILE_PATH=/var/data/scanHistory.json
 WATCHLIST_STORE_FILE_PATH=/var/data/watchlistCache.json
 WATCHLIST_OUTCOME_STORE_FILE_PATH=/var/data/watchlistOutcomes.json
+UNIVERSE_STORE_FILE_PATH=/var/data/universeCache.json
 ```
 
 בלי `Mount Path` תואם בפועל, הכתיבה תיכשל (`ENOENT`, כי `/var/data` לא
@@ -68,17 +77,23 @@ cat /var/data/portfolio.json   # לבדוק שהנתונים בפנים תקינ
 ראו את `#### ...` בקטע "משתני סביבה" ב-[README.md](../README.md#משתני-סביבה)
 לרשימה המלאה והמעודכנת (`DATA_MODE`, `FMP_API_KEY`, `FINNHUB_API_KEY`,
 `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`, `FMP_UNIVERSE_SIZE`,
-`WATCHLIST_SCHEDULE_HOUR`/`WATCHLIST_SCHEDULE_EXCHANGES`, `FUNNEL_*`). נקודה חשובה אחת שכדאי לחזור
+`WATCHLIST_SCHEDULE_HOUR`/`WATCHLIST_SCHEDULE_EXCHANGES`, `FUNNEL_*`,
+`UNIVERSE_MIN_DOLLAR_VOLUME`/`UNIVERSE_ENRICH_LIMIT`/`NASDAQ_REQUEST_TIMEOUT_MS`).
+נקודה חשובה אחת שכדאי לחזור
 עליה כאן: **`WATCHLIST_SCHEDULE_HOUR` הוא שעון UTC על Render**, לא שעון
 ישראל - יש לכוון בהתאם (למשל `19` בקיץ / `20` בחורף כדי לקבל ~22:00 שעון
-ישראל בפועל).
+ישראל בפועל). ה-universe הלילי (`UNIVERSE_STORE_FILE_PATH`) מתרענן באותו
+מנגנון תזמון, אז אותה הערה חלה עליו.
 
-**`FINNHUB_API_KEY` מומלץ מאוד גם אם `DATA_MODE=fmp`**: מאז
-docs/SPEC_PROVIDER_REBALANCE.md, כל עוד `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`
-מוגדרים, נתוני המחירים/הסקרינר עוברים ל-Alpaca+Nasdaq (ללא מכסה יומית) עוד
-לפני שמגיעים בכלל ל-FMP, ו-`FINNHUB_API_KEY` (חינמי, ללא מכסה יומית) משמש
-לבדיקות דוחות רבעוניים קרובים ולהעשרת סקטור/שווי שוק במקום FMP. ראו את
-`docs/SPEC_PROVIDER_REBALANCE.md` סעיף 10 להוראות קבלת מפתח.
+**`FINNHUB_API_KEY` כמעט חובה על Render, לא רק "מומלץ"**: הסקרינר של
+Nasdaq חסום מ-Render (Akamai מסנן datacenter IPs - ראו
+docs/SPEC_UNIVERSE_RESILIENCE.md), אז ברענון הלילי של ה-universe,
+Alpaca+Finnhub הוא בפועל המסלול הראשי שעובד (לא Nasdaq). בלי
+`FINNHUB_API_KEY`, הרענון הלילי נופל ישר ל-FMP (מכסה יומית מוגבלת),
+בדיוק הבעיה המקורית. `FINNHUB_API_KEY` משמש גם, בנפרד, לבדיקות דוחות
+רבעוניים קרובים והעשרת שווי שוק/סקטור בזמן סריקה (ראו
+docs/SPEC_PROVIDER_REBALANCE.md). ראו את `docs/SPEC_PROVIDER_REBALANCE.md`
+סעיף 10 להוראות קבלת מפתח (חינמי, finnhub.io).
 
 ## מלכודת נפוצה: הקלדת סימול (ticker) בעברית
 
