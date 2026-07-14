@@ -1,5 +1,9 @@
 const { STOCK_UNIVERSE, getTickerContext } = require('../data/universe');
 const { clamp, average, scoreConsolidation } = require('./mathUtils');
+const alpacaService = require('./providers/alpacaService');
+const nasdaqService = require('./providers/nasdaqService');
+const finnhubService = require('./providers/finnhubService');
+const { buildStockFromBars } = require('./barsStockBuilder');
 
 const REQUEST_CACHE = new Map();
 const MARKET_DATA_CACHE = new Map();
@@ -34,6 +38,120 @@ const FMP_SCREENER_EXCHANGES = new Set(['NASDAQ', 'NYSE']);
 // since the right tradeoff depends on the API plan in use.
 const DYNAMIC_UNIVERSE_SIZE = Number(process.env.FMP_UNIVERSE_SIZE) || 40;
 
+// Alpaca+Nasdaq path (docs/SPEC_PROVIDER_REBALANCE.md section 5.4/5.5): tried ahead of the FMP
+// path whenever Alpaca is configured, since neither Alpaca nor the Nasdaq screener has an
+// exhaustible daily quota. TASE isn't covered by Alpaca, so it always falls straight through to
+// the existing FMP/demo path.
+const ALPACA_NASDAQ_HISTORY_DAYS = 420; // ~290 trading days - enough for a (possibly partial) MA200.
+const ALPACA_NASDAQ_MIN_BARS = 60;
+const FINNHUB_ENRICH_CONCURRENCY = 10;
+
+async function getAlpacaNasdaqMarketData(exchange) {
+  if (exchange === 'TASE') {
+    return null;
+  }
+
+  const rows = await nasdaqService.getScreenerRows({ exchange, limit: DYNAMIC_UNIVERSE_SIZE });
+  if (!rows || !rows.length) {
+    return null;
+  }
+
+  const candidates = rows
+    .filter((row) => Number.isFinite(row.price) && row.price > 0 && Number.isFinite(row.marketCap) && row.marketCap > 0)
+    .sort((left, right) => right.marketCap - left.marketCap)
+    .slice(0, DYNAMIC_UNIVERSE_SIZE)
+    .map((row) => ({ symbol: row.symbol, companyName: row.companyName, sector: 'Unknown', marketCap: row.marketCap }));
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  const candidateBySymbol = new Map(candidates.map((candidate) => [candidate.symbol, candidate]));
+  const symbols = candidates.map((candidate) => candidate.symbol);
+  const barsBySymbol = await alpacaService.getDailyBars({ symbols, days: ALPACA_NASDAQ_HISTORY_DAYS });
+
+  const stocks = [];
+  for (const [symbol, bars] of barsBySymbol) {
+    if (!Array.isArray(bars) || bars.length < ALPACA_NASDAQ_MIN_BARS) {
+      continue;
+    }
+
+    const candidate = candidateBySymbol.get(symbol);
+    if (!candidate) {
+      continue;
+    }
+
+    const stock = buildStockFromBars({ exchange, candidate, bars, dataSource: 'alpaca+nasdaq' });
+    if (stock) {
+      stocks.push(stock);
+    }
+  }
+
+  if (!stocks.length) {
+    return null;
+  }
+
+  if (finnhubService.isConfigured()) {
+    await enrichSectorsWithFinnhub(stocks);
+  }
+
+  return { stocks, source: 'alpaca+nasdaq' };
+}
+
+// Best-effort parallel sector enrichment - a failed/slow Finnhub lookup for one symbol never
+// blocks or fails the others, and never disqualifies a stock (sector just stays 'Unknown').
+async function enrichSectorsWithFinnhub(stocks) {
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < stocks.length) {
+      const stock = stocks[nextIndex];
+      nextIndex += 1;
+
+      const profile = await finnhubService.getCompanyProfile(stock.ticker);
+      if (profile?.sector) {
+        stock.sector = profile.sector;
+      }
+    }
+  }
+
+  const workerCount = Math.min(FINNHUB_ENRICH_CONCURRENCY, stocks.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+}
+
+// Same Alpaca-first idea as getAlpacaNasdaqMarketData, for a single ticker (used by
+// getStockSnapshot: SPY/QQQ/IWM benchmarks, scanHistoryService, portfolioService). No Nasdaq call
+// needed here (it's one symbol) - name/sector/market-cap come from a best-effort Finnhub profile
+// lookup instead. Returns null if Alpaca has no usable bars for this ticker, so the caller falls
+// through to the existing FMP/demo path unchanged.
+async function getAlpacaSnapshot(context) {
+  if (context.exchange === 'TASE') {
+    return null;
+  }
+
+  const barsBySymbol = await alpacaService.getDailyBars({ symbols: [context.ticker], days: ALPACA_NASDAQ_HISTORY_DAYS });
+  const bars = barsBySymbol.get(context.ticker);
+  if (!Array.isArray(bars) || bars.length < ALPACA_NASDAQ_MIN_BARS) {
+    return null;
+  }
+
+  let companyName = context.companyName;
+  let sector = context.sector;
+  let marketCap = null;
+
+  if (finnhubService.isConfigured()) {
+    const profile = await finnhubService.getCompanyProfile(context.ticker);
+    if (profile) {
+      companyName = profile.companyName || companyName;
+      sector = profile.sector || sector;
+      marketCap = Number.isFinite(profile.marketCap) ? profile.marketCap : null;
+    }
+  }
+
+  const candidate = { symbol: context.ticker, companyName, sector, marketCap };
+  return buildStockFromBars({ exchange: context.exchange, candidate, bars, dataSource: 'alpaca+nasdaq' });
+}
+
 async function getDynamicUniverse(exchange, apiKey) {
   if (!FMP_SCREENER_EXCHANGES.has(exchange)) {
     return null;
@@ -66,6 +184,15 @@ async function getMarketData(exchange) {
 
   let entries = getExchangeSymbols(exchange);
   console.log(`[marketData] Requested exchange=${exchange} mode=${mode} symbols=${entries.length}`);
+
+  if (alpacaService.isConfigured()) {
+    const alpacaResult = await getAlpacaNasdaqMarketData(exchange);
+    if (alpacaResult) {
+      console.log(`[marketData] Using alpaca+nasdaq data. exchange=${exchange} count=${alpacaResult.stocks.length}`);
+      writeCache(MARKET_DATA_CACHE, cacheKey, alpacaResult, MARKET_DATA_CACHE_TTL_MS);
+      return alpacaResult;
+    }
+  }
 
   if (mode === 'fmp' && process.env.FMP_API_KEY) {
     const dynamicEntries = await getDynamicUniverse(exchange, process.env.FMP_API_KEY);
@@ -114,6 +241,14 @@ async function getStockSnapshot(ticker) {
   const cachedSnapshot = readCache(SNAPSHOT_CACHE, cacheKey);
   if (cachedSnapshot) {
     return cachedSnapshot;
+  }
+
+  if (alpacaService.isConfigured()) {
+    const alpacaSnapshot = await getAlpacaSnapshot(context);
+    if (alpacaSnapshot) {
+      writeCache(SNAPSHOT_CACHE, cacheKey, alpacaSnapshot, SNAPSHOT_CACHE_TTL_MS);
+      return alpacaSnapshot;
+    }
   }
 
   if (mode === 'fmp' && process.env.FMP_API_KEY) {

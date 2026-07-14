@@ -15,7 +15,7 @@ const {
   MIN_VOLUME_RATIO,
   computeRankScore,
   buildReason,
-  checkEarningsSoon
+  resolveEarningsSoon
 } = require('./watchlistScoring');
 
 // A cached watchlist stays valid this long before a request is forced to recompute it, even if
@@ -54,7 +54,7 @@ async function buildTomorrowWatchlist({ exchange = 'NASDAQ' } = {}) {
   const watchlist = await Promise.all(
     candidates.map(async (candidate) => ({
       ...candidate,
-      hasEarningsSoon: apiKey ? await checkEarningsSoon(candidate.ticker, apiKey) : false,
+      hasEarningsSoon: await resolveEarningsSoon(candidate.ticker, apiKey),
       dataSource: 'fmp-universe'
     }))
   );

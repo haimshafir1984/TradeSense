@@ -5,6 +5,7 @@
 // only). If Alpaca isn't configured, or stage 1 fails outright, this returns null so the caller
 // (watchlistService.js) falls back to the existing FMP-universe path unchanged.
 const alpacaService = require('./providers/alpacaService');
+const finnhubService = require('./providers/finnhubService');
 const { round, average } = require('./mathUtils');
 const {
   MAX_WATCHLIST_SIZE,
@@ -13,7 +14,7 @@ const {
   MIN_VOLUME_RATIO,
   computeRankScore,
   buildReason,
-  checkEarningsSoon
+  resolveEarningsSoon
 } = require('./watchlistScoring');
 
 const FUNNEL_MIN_PRICE = Number(process.env.FUNNEL_MIN_PRICE) || 1;
@@ -169,15 +170,17 @@ async function runStage2(stage1Survivors) {
     .slice(0, FUNNEL_FINALISTS);
 }
 
-// Stage 3 - FMP enrichment for the finalists only (market cap + company name via /profile, plus
-// the existing earnings-soon check). A failed profile lookup does NOT disqualify the candidate -
-// it's left with market_cap: null and a reason noting the missing figure (fail-soft, spec 3.2
-// stage 3). Candidates with a known market cap at/above MARKET_CAP_CEILING are dropped.
+// Stage 3 - enrichment for the finalists only (market cap + company name, plus the earnings-soon
+// check). Market cap and earnings are each resolved via Finnhub first (no daily quota) and FMP as
+// the fallback (docs/SPEC_PROVIDER_REBALANCE.md section 5.2). A failed lookup on both does NOT
+// disqualify the candidate - it's left with market_cap: null and a reason noting the missing
+// figure (fail-soft, spec 3.2 stage 3). Candidates with a known market cap at/above
+// MARKET_CAP_CEILING are dropped.
 async function runStage3(finalists) {
   const apiKey = process.env.FMP_API_KEY;
 
   const enriched = await Promise.all(
-    finalists.map((candidate) => enrichWithFmp(candidate, apiKey))
+    finalists.map((candidate) => enrichCandidate(candidate, apiKey))
   );
 
   return enriched
@@ -186,32 +189,39 @@ async function runStage3(finalists) {
     .slice(0, MAX_WATCHLIST_SIZE);
 }
 
-async function enrichWithFmp(candidate, apiKey) {
-  if (!apiKey) {
-    return {
-      ...candidate,
-      market_cap: null,
-      reason: `${candidate.reason}, אין נתון שווי שוק זמין`,
-      hasEarningsSoon: false,
-      dataSource: 'alpaca+fmp'
-    };
-  }
-
-  const [profile, hasEarningsSoon] = await Promise.all([
-    fetchFmpProfile(candidate.ticker, apiKey),
-    checkEarningsSoon(candidate.ticker, apiKey)
+async function enrichCandidate(candidate, apiKey) {
+  const [{ marketCap, companyName }, hasEarningsSoon] = await Promise.all([
+    resolveMarketCap(candidate.ticker, apiKey),
+    resolveEarningsSoon(candidate.ticker, apiKey)
   ]);
-
-  const marketCap = profile && Number.isFinite(Number(profile.mktCap)) ? Math.round(Number(profile.mktCap)) : null;
 
   return {
     ...candidate,
-    companyName: profile?.companyName || candidate.companyName,
+    companyName: companyName || candidate.companyName,
     market_cap: marketCap,
     reason: marketCap === null ? `${candidate.reason}, אין נתון שווי שוק זמין` : candidate.reason,
     hasEarningsSoon,
     dataSource: 'alpaca+fmp'
   };
+}
+
+// Finnhub profile first (no daily quota), FMP /profile as the fallback, null if both fail/aren't
+// configured.
+async function resolveMarketCap(ticker, apiKey) {
+  if (finnhubService.isConfigured()) {
+    const profile = await finnhubService.getCompanyProfile(ticker);
+    if (profile && Number.isFinite(profile.marketCap)) {
+      return { marketCap: Math.round(profile.marketCap), companyName: profile.companyName };
+    }
+  }
+
+  if (!apiKey) {
+    return { marketCap: null, companyName: null };
+  }
+
+  const profile = await fetchFmpProfile(ticker, apiKey);
+  const marketCap = profile && Number.isFinite(Number(profile.mktCap)) ? Math.round(Number(profile.mktCap)) : null;
+  return { marketCap, companyName: profile?.companyName || null };
 }
 
 async function fetchFmpProfile(ticker, apiKey) {

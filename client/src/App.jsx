@@ -976,7 +976,7 @@ function formatGeneratedAt(isoString) {
 }
 
 function sourceClassName(source) {
-  if (source === 'fmp' || source === 'finnhub') return 'live';
+  if (source === 'fmp' || source === 'finnhub' || source === 'alpaca+nasdaq') return 'live';
   if (source === 'fmp_partial' || source === 'finnhub_partial') return 'partial';
   return 'demo';
 }
@@ -986,6 +986,7 @@ function sourceLabel(source) {
   if (source === 'fmp_partial') return 'נתונים חיים חלקיים (FMP)';
   if (source === 'finnhub') return 'נתוני אמת (Finnhub)';
   if (source === 'finnhub_partial') return 'נתונים חיים חלקיים (Finnhub)';
+  if (source === 'alpaca+nasdaq') return 'נתוני אמת (Alpaca+Nasdaq)';
   return 'נתוני דמו';
 }
 

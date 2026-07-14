@@ -5,6 +5,7 @@
 // funnelScanService.js can depend on it without a circular require back into watchlistService.js
 // (which itself calls funnelScanService.js). See docs/SPEC_DATA_FUNNEL.md section 3.2.
 const { clamp, round } = require('./mathUtils');
+const finnhubService = require('./providers/finnhubService');
 
 // Loosened from the original 4% / 1.5x - combined with a small scanned universe, the stricter
 // thresholds meant "no candidates" most days even on live data. Still selective enough to filter
@@ -75,6 +76,23 @@ async function checkEarningsSoon(ticker, apiKey) {
   }
 }
 
+// Finnhub first (no daily quota), FMP's earnings calendar as the fallback only when Finnhub
+// couldn't answer (not configured, or its request failed) - see
+// docs/SPEC_PROVIDER_REBALANCE.md section 5.2/5.3. Shared by both funnelScanService.js and
+// watchlistService.js so the two paths use the same chain instead of duplicating it.
+async function resolveEarningsSoon(ticker, fmpApiKey) {
+  const finnhubResult = await finnhubService.getEarningsSoon(ticker, EARNINGS_LOOKAHEAD_CALENDAR_DAYS);
+  if (finnhubResult !== null) {
+    return finnhubResult;
+  }
+
+  if (!fmpApiKey) {
+    return false;
+  }
+
+  return checkEarningsSoon(ticker, fmpApiKey);
+}
+
 module.exports = {
   MAX_WATCHLIST_SIZE,
   MARKET_CAP_CEILING,
@@ -83,5 +101,6 @@ module.exports = {
   normalize,
   computeRankScore,
   buildReason,
-  checkEarningsSoon
+  checkEarningsSoon,
+  resolveEarningsSoon
 };
