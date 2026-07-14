@@ -5,8 +5,9 @@
 // for the technicals. Returns null (never throws) whenever Alpaca isn't configured or either stage
 // comes back empty/failed - the caller (scannerService.js) falls back to the regular universe.
 const alpacaService = require('./providers/alpacaService');
-const { fetchJson, scoreConsolidation } = require('./marketDataService');
-const { average } = require('./mathUtils');
+const nasdaqService = require('./providers/nasdaqService');
+const { fetchJson } = require('./marketDataService');
+const { buildStockFromBars } = require('./barsStockBuilder');
 const { SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
 
 // How many candidates to pull from the FMP screener per exchange. Configurable since the right
@@ -34,12 +35,12 @@ async function getSmallCapUniverse({ exchange = 'NASDAQ' } = {}) {
     return cached;
   }
 
-  const candidates = await fetchScreenerCandidates(exchange);
-  if (!candidates || !candidates.length) {
+  const screenerResult = await fetchScreenerCandidates(exchange);
+  if (!screenerResult || !screenerResult.candidates.length) {
     return null;
   }
 
-  const stocks = await buildUniverseFromBars(exchange, candidates);
+  const stocks = await buildUniverseFromBars(exchange, screenerResult.candidates, screenerResult.dataSource);
   if (!stocks.length) {
     return null;
   }
@@ -48,9 +49,50 @@ async function getSmallCapUniverse({ exchange = 'NASDAQ' } = {}) {
   return stocks;
 }
 
-// Stage 1: one FMP screener call for candidates that are already small-cap, liquid, and above a
-// penny-stock price floor - with real market cap attached, so nothing per-symbol is needed later.
+// Stage 1: candidates that are already small-cap, liquid (FMP path only - Nasdaq's screener has no
+// volume field), and above a penny-stock price floor - with real market cap attached, so nothing
+// per-symbol is needed later. Tries the keyless Nasdaq screener first (no daily quota, unlike
+// FMP's 250 calls/day); falls back to the FMP screener only if Nasdaq is unavailable. See
+// docs/SPEC_PROVIDER_REBALANCE.md section 5.1.
 async function fetchScreenerCandidates(exchange) {
+  const nasdaqCandidates = await fetchNasdaqCandidates(exchange);
+  if (nasdaqCandidates) {
+    return { candidates: nasdaqCandidates, dataSource: 'alpaca+nasdaq' };
+  }
+
+  const fmpCandidates = await fetchFmpCandidates(exchange);
+  if (fmpCandidates) {
+    return { candidates: fmpCandidates, dataSource: 'alpaca+fmp-screener' };
+  }
+
+  return null;
+}
+
+async function fetchNasdaqCandidates(exchange) {
+  const rows = await nasdaqService.getScreenerRows({
+    exchange,
+    marketCapTiers: ['small', 'micro'],
+    limit: SMALL_CAP_UNIVERSE_SIZE
+  });
+  if (!rows) {
+    return null;
+  }
+
+  const candidates = rows
+    .filter((row) => Number.isFinite(row.marketCap) && row.marketCap > 0 && row.marketCap <= SMALL_CAP_THRESHOLDS.marketCapCeiling)
+    .filter((row) => Number.isFinite(row.price) && row.price >= SMALL_CAP_THRESHOLDS.minPrice)
+    .slice(0, SMALL_CAP_UNIVERSE_SIZE)
+    .map((row) => ({
+      symbol: row.symbol,
+      companyName: row.companyName,
+      sector: 'Unknown',
+      marketCap: row.marketCap
+    }));
+
+  return candidates.length ? candidates : null;
+}
+
+async function fetchFmpCandidates(exchange) {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) {
     return null;
@@ -85,7 +127,7 @@ async function fetchScreenerCandidates(exchange) {
 }
 
 // Stage 2: one batched Alpaca bars request for every candidate's technicals.
-async function buildUniverseFromBars(exchange, candidates) {
+async function buildUniverseFromBars(exchange, candidates, dataSource) {
   const candidateBySymbol = new Map(candidates.map((candidate) => [candidate.symbol, candidate]));
   const symbols = candidates.map((candidate) => candidate.symbol);
   const barsBySymbol = await alpacaService.getDailyBars({ symbols, days: HISTORY_DAYS });
@@ -102,120 +144,13 @@ async function buildUniverseFromBars(exchange, candidates) {
       continue;
     }
 
-    const stock = buildStockFromBars(exchange, candidate, bars);
+    const stock = buildStockFromBars({ exchange, candidate, bars, dataSource });
     if (stock) {
       stocks.push(stock);
     }
   }
 
   return stocks;
-}
-
-// bars is oldest-to-newest (alpacaService contract). Field names/definitions mirror
-// marketDataService.js exactly so downstream scoring code can't tell the difference.
-function buildStockFromBars(exchange, candidate, bars) {
-  const last = bars[bars.length - 1];
-  const previous = bars[bars.length - 2];
-  const price = Number(last?.c);
-  const previousClose = Number(previous?.c);
-
-  if (!Number.isFinite(price) || !Number.isFinite(previousClose) || previousClose <= 0) {
-    return null;
-  }
-
-  const closes = bars.map((bar) => Number(bar.c)).filter(Number.isFinite);
-  const highs = bars.map((bar) => Number(bar.h)).filter(Number.isFinite);
-  const lows = bars.map((bar) => Number(bar.l)).filter(Number.isFinite);
-  const volumes = bars.map((bar) => Number(bar.v)).filter(Number.isFinite);
-  const imputedFields = [];
-
-  const dailyChange = ((price - previousClose) / previousClose) * 100;
-  const lastOpen = Number(last?.o);
-  const gapPct = Number.isFinite(lastOpen) ? ((lastOpen - previousClose) / previousClose) * 100 : 0;
-
-  const last20 = bars.slice(-20);
-  const adrValues = last20
-    .filter((bar) => Number.isFinite(bar.h) && Number.isFinite(bar.l) && bar.l > 0)
-    .map((bar) => ((bar.h - bar.l) / bar.l) * 100);
-  const adrPct = adrValues.length ? average(adrValues) : 0;
-
-  const volume = Number(last?.v) || 0;
-  const averageVolume30d = volumes.length ? average(volumes.slice(-30)) : 0;
-
-  const high52w = highs.length ? Math.max(...highs) : price;
-  const low52w = lows.length ? Math.min(...lows) : price;
-
-  const last50Closes = closes.slice(-50);
-  if (last50Closes.length < 50) {
-    imputedFields.push('MA50');
-  }
-  const ma50 = last50Closes.length ? average(last50Closes) : price;
-
-  const last200Closes = closes.slice(-200);
-  if (last200Closes.length < 200) {
-    imputedFields.push('MA200');
-  }
-  const ma200 = last200Closes.length ? average(last200Closes) : price;
-
-  const previousMa50 = average(closes.slice(-55, -5)) || ma50;
-  const ma50Slope = previousMa50 ? (ma50 - previousMa50) / previousMa50 : 0;
-
-  const returns = closes.slice(1).map((value, index) => (closes[index] ? (value - closes[index]) / closes[index] : 0));
-  const volatility = standardDeviation(returns.slice(-20));
-
-  const return3m = computeReturnPctFromEnd(closes, 63);
-
-  const lastHigh = Number(last?.h);
-  const priceNearDailyHigh = Number.isFinite(lastHigh) && lastHigh > 0 ? price / lastHigh : 0.9;
-
-  // No fundamentals in this path (the screener call already spent our FMP budget on candidates,
-  // not per-symbol profile/growth lookups) - flagged as imputed rather than fabricated.
-  imputedFields.push('revenue_growth_pct', 'dividend_yield');
-
-  return {
-    ticker: candidate.symbol,
-    companyName: candidate.companyName,
-    sector: candidate.sector,
-    exchange,
-    price,
-    daily_change: dailyChange,
-    gap_pct: gapPct,
-    volume,
-    average_volume_30d: averageVolume30d,
-    market_cap: candidate.marketCap,
-    dividend_yield: 0,
-    MA50: ma50,
-    MA200: ma200,
-    high_52w: high52w,
-    low_52w: low52w,
-    volatility,
-    return_3m: Number.isFinite(return3m) ? return3m : 0,
-    revenue_growth_pct: 0,
-    adr_pct: adrPct,
-    ma50_slope: ma50Slope,
-    price_near_daily_high: priceNearDailyHigh,
-    consolidation_score: scoreConsolidation(closes.slice(-20), high52w, low52w),
-    data_source: 'alpaca+fmp-screener',
-    imputedFields
-  };
-}
-
-function standardDeviation(values) {
-  const filtered = values.filter(Number.isFinite);
-  if (!filtered.length) {
-    return 0;
-  }
-
-  const mean = average(filtered);
-  const variance = average(filtered.map((value) => (value - mean) ** 2));
-  return Math.sqrt(variance);
-}
-
-// closes is oldest-to-newest; anchor ~63 trading days back from the latest close.
-function computeReturnPctFromEnd(closes, windowDays) {
-  const price = closes[closes.length - 1];
-  const anchor = closes[closes.length - 1 - windowDays];
-  return Number.isFinite(anchor) && anchor > 0 && Number.isFinite(price) ? ((price - anchor) / anchor) * 100 : NaN;
 }
 
 function readCache(key) {

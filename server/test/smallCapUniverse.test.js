@@ -162,6 +162,82 @@ test('empty bars from Alpaca returns null', async () => {
   assert.equal(result, null);
 });
 
+test('the Nasdaq screener is tried first and FMP is never called when it succeeds', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  process.env.FMP_API_KEY = 'fmp-key';
+  const { smallCapUniverseService, alpacaService } = freshSmallCapUniverseService();
+
+  const originalFetch = global.fetch;
+  let fmpWasCalled = false;
+  global.fetch = async (url) => {
+    if (String(url).includes('/company-screener')) {
+      fmpWasCalled = true;
+      return jsonResponse([]);
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        data: {
+          totalrecords: 1,
+          table: {
+            rows: [
+              { symbol: 'SCAP1', name: 'SCAP1 Inc Common Stock', lastsale: '10.00', marketCap: '750,000,000', pctchange: '1.0%' }
+            ]
+          }
+        }
+      })
+    };
+  };
+
+  const originalGetDailyBars = alpacaService.getDailyBars;
+  alpacaService.getDailyBars = async () => new Map([['SCAP1', makeBars()]]);
+
+  const result = await smallCapUniverseService.getSmallCapUniverse({ exchange: 'NASDAQ' });
+
+  global.fetch = originalFetch;
+  alpacaService.getDailyBars = originalGetDailyBars;
+  delete process.env.ALPACA_API_KEY_ID;
+  delete process.env.ALPACA_API_SECRET_KEY;
+  delete process.env.FMP_API_KEY;
+
+  assert.equal(fmpWasCalled, false);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].ticker, 'SCAP1');
+  assert.equal(result[0].market_cap, 750000000);
+  assert.equal(result[0].data_source, 'alpaca+nasdaq');
+});
+
+test('FMP is used as the screener fallback when the Nasdaq screener fails', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  process.env.FMP_API_KEY = 'fmp-key';
+  const { smallCapUniverseService, alpacaService } = freshSmallCapUniverseService();
+
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('/company-screener')) {
+      return jsonResponse([screenerCandidate('SCAP1')]);
+    }
+    return { ok: false, status: 403 };
+  };
+
+  const originalGetDailyBars = alpacaService.getDailyBars;
+  alpacaService.getDailyBars = async () => new Map([['SCAP1', makeBars()]]);
+
+  const result = await smallCapUniverseService.getSmallCapUniverse({ exchange: 'NASDAQ' });
+
+  global.fetch = originalFetch;
+  alpacaService.getDailyBars = originalGetDailyBars;
+  delete process.env.ALPACA_API_KEY_ID;
+  delete process.env.ALPACA_API_SECRET_KEY;
+  delete process.env.FMP_API_KEY;
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].ticker, 'SCAP1');
+  assert.equal(result[0].data_source, 'alpaca+fmp-screener');
+});
+
 test('a symbol with fewer than 60 bars is skipped without affecting other symbols', async () => {
   process.env.ALPACA_API_KEY_ID = 'key';
   process.env.ALPACA_API_SECRET_KEY = 'secret';

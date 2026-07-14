@@ -1,5 +1,5 @@
 const { STOCK_UNIVERSE, getTickerContext } = require('../data/universe');
-const { clamp, average } = require('./mathUtils');
+const { clamp, average, scoreConsolidation } = require('./mathUtils');
 
 const REQUEST_CACHE = new Map();
 const MARKET_DATA_CACHE = new Map();
@@ -636,19 +636,6 @@ function createDemoStock(exchange, ticker, companyName, sector) {
     data_source: 'demo',
     imputedFields: []
   };
-}
-
-function scoreConsolidation(closes, high52, low52) {
-  if (!closes.length) {
-    return 0.5;
-  }
-
-  const localHigh = Math.max(...closes);
-  const localLow = Math.min(...closes);
-  const range = localHigh && localLow ? (localHigh - localLow) / localHigh : 0.1;
-  const yearlyRange = high52 && low52 ? (high52 - low52) / high52 : 0.25;
-
-  return clamp(1 - range / Math.max(yearlyRange, 0.08));
 }
 
 function standardDeviation(values) {
