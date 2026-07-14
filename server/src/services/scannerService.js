@@ -238,7 +238,12 @@ async function getSmallCapMarketData(exchange) {
   const smallCapStocks = await getSmallCapUniverse({ exchange });
 
   if (Array.isArray(smallCapStocks) && smallCapStocks.length) {
-    return { stocks: smallCapStocks, source: 'alpaca+fmp-screener' };
+    // Every stock in the batch carries the same data_source (the whole universe came from one
+    // screener call - see smallCapUniverseService.js), so the first entry's label is authoritative
+    // for the whole result. Reading it here (instead of hardcoding 'alpaca+fmp-screener') keeps
+    // this in sync now that the screener itself can be either Nasdaq or FMP - see
+    // docs/SPEC_PROVIDER_REBALANCE.md section 5.1.
+    return { stocks: smallCapStocks, source: smallCapStocks[0].data_source || 'alpaca+fmp-screener' };
   }
 
   return getMarketData(exchange);
