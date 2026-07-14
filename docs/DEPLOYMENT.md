@@ -66,12 +66,19 @@ cat /var/data/portfolio.json   # לבדוק שהנתונים בפנים תקינ
 ## שאר משתני הסביבה (Backend)
 
 ראו את `#### ...` בקטע "משתני סביבה" ב-[README.md](../README.md#משתני-סביבה)
-לרשימה המלאה והמעודכנת (`DATA_MODE`, `FMP_API_KEY`, `ALPACA_API_KEY_ID`/
-`ALPACA_API_SECRET_KEY`, `FMP_UNIVERSE_SIZE`, `WATCHLIST_SCHEDULE_HOUR`/
-`WATCHLIST_SCHEDULE_EXCHANGES`, `FUNNEL_*`). נקודה חשובה אחת שכדאי לחזור
+לרשימה המלאה והמעודכנת (`DATA_MODE`, `FMP_API_KEY`, `FINNHUB_API_KEY`,
+`ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`, `FMP_UNIVERSE_SIZE`,
+`WATCHLIST_SCHEDULE_HOUR`/`WATCHLIST_SCHEDULE_EXCHANGES`, `FUNNEL_*`). נקודה חשובה אחת שכדאי לחזור
 עליה כאן: **`WATCHLIST_SCHEDULE_HOUR` הוא שעון UTC על Render**, לא שעון
 ישראל - יש לכוון בהתאם (למשל `19` בקיץ / `20` בחורף כדי לקבל ~22:00 שעון
 ישראל בפועל).
+
+**`FINNHUB_API_KEY` מומלץ מאוד גם אם `DATA_MODE=fmp`**: מאז
+docs/SPEC_PROVIDER_REBALANCE.md, כל עוד `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`
+מוגדרים, נתוני המחירים/הסקרינר עוברים ל-Alpaca+Nasdaq (ללא מכסה יומית) עוד
+לפני שמגיעים בכלל ל-FMP, ו-`FINNHUB_API_KEY` (חינמי, ללא מכסה יומית) משמש
+לבדיקות דוחות רבעוניים קרובים ולהעשרת סקטור/שווי שוק במקום FMP. ראו את
+`docs/SPEC_PROVIDER_REBALANCE.md` סעיף 10 להוראות קבלת מפתח.
 
 ## מלכודת נפוצה: הקלדת סימול (ticker) בעברית
 

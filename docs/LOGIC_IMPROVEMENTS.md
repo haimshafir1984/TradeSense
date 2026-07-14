@@ -233,7 +233,27 @@
 
 ### 7.6 אסטרטגיה חמישית — Small-Cap Breakout, עם universe ייעודי
 
-ההטיה למגה-קאפ במאגר הרגיל (~40 מניות) לא רק פגעה ב-gap-and-go (סעיף 7.5/5.3) - היא גם הפכה כל אסטרטגיה שמחפשת מניות small-cap נפיצות לחסרת תוחלת מבנית, כי המאגר שהיא נסרקת עליו כמעט ולא מכיל כאלה. `small_cap_breakout` (`server/src/services/strategies.js`) פותרת את זה בשני חלקים בלתי-נפרדים: לוגיקת ניקוד ייעודית, **ו**-universe ייעודי (`smallCapUniverseService.js`) שמחליף את המאגר הרגיל כליל כשהאסטרטגיה נבחרת - קריאת screener אחת ל-FMP (`marketCapLowerThan`/`priceMoreThan`/`volumeMoreThan`, עם שווי שוק אמיתי מוחזר) ואז קריאת bars אחת מ-Alpaca לכל המועמדים יחד, בלי קריאות פר-מניה. פילטר כשירות (שווי שוק<2B, מחיר≥2$, `adr_pct>=5`) חולק את אותו `SMALL_CAP_THRESHOLDS` עם שאילתת ה-screener (`scoringConfig.js`), כדי שהגדרת "small cap" לא תתפצל בין שני המקומות. Fail-soft: ללא Alpaca או כישלון ב-universe הייעודי, האסטרטגיה נופלת למאגר הרגיל, שם פילטר הכשירות שלה פוסל כמעט הכול - התנהגות כנה ("אין סטאפים איכותיים" + הודעת הסבר), לא תוצאות מזויפות. פירוט מלא: `docs/SPEC_SMALL_CAP_STRATEGY.md` וסעיף "Small-Cap Breakout" ב-README. בכוונה **לא** נכללת ב-`REGIME_RECOMMENDED_STRATEGY` (סיכון גבוה, לא מומלצת אוטומטית), ומוצגת עם באנר אזהרה קבוע ב-UI.
+ההטיה למגה-קאפ במאגר הרגיל (~40 מניות) לא רק פגעה ב-gap-and-go (סעיף 7.5/5.3) - היא גם הפכה כל אסטרטגיה שמחפשת מניות small-cap נפיצות לחסרת תוחלת מבנית, כי המאגר שהיא נסרקת עליו כמעט ולא מכיל כאלה. `small_cap_breakout` (`server/src/services/strategies.js`) פותרת את זה בשני חלקים בלתי-נפרדים: לוגיקת ניקוד ייעודית, **ו**-universe ייעודי (`smallCapUniverseService.js`) שמחליף את המאגר הרגיל כליל כשהאסטרטגיה נבחרת - קריאת screener אחת (Nasdaq קודם, FMP כ-fallback - ראו 7.7) ואז קריאת bars אחת מ-Alpaca לכל המועמדים יחד, בלי קריאות פר-מניה. פילטר כשירות (שווי שוק<2B, מחיר≥2$, `adr_pct>=5`) חולק את אותו `SMALL_CAP_THRESHOLDS` עם שאילתת ה-screener (`scoringConfig.js`), כדי שהגדרת "small cap" לא תתפצל בין שני המקומות. Fail-soft: ללא Alpaca או כישלון ב-universe הייעודי, האסטרטגיה נופלת למאגר הרגיל, שם פילטר הכשירות שלה פוסל כמעט הכול - התנהגות כנה ("אין סטאפים איכותיים" + הודעת הסבר), לא תוצאות מזויפות. פירוט מלא: `docs/SPEC_SMALL_CAP_STRATEGY.md` וסעיף "Small-Cap Breakout" ב-README. בכוונה **לא** נכללת ב-`REGIME_RECOMMENDED_STRATEGY` (סיכון גבוה, לא מומלצת אוטומטית), ומוצגת עם באנר אזהרה קבוע ב-UI.
+
+### 7.7 רה-איזון ספקים — Alpaca+Nasdaq+Finnhub במקום FMP כברירת מחדל
+
+**הבעיה:** מכסת ה-free tier של FMP (250 קריאות/יום) נגמרה כמעט מדי יום, וגרמה לתקלה מוחשית - `small_cap_breakout` החזירה "אין סטאפים איכותיים" ללא הסבר, כי הסקרינר של FMP חזר עם 429 ("Limit Reach") ונפל בשקט ל-fallback שגם הוא נכשל. אומת ידנית מול חשבון אמיתי: קריאות `company-screener`/`profile` חוזרות עם 429 כמעט כל יום עד לאיפוס המכסה. פתרון נקודתי (הצגת `dataQuality.issues` ב-UI, סעיף 2.4) חשף את הבעיה אבל לא פתר את הגורם השורשי.
+
+**הפתרון (`docs/SPEC_PROVIDER_REBALANCE.md`):** במקום להחליף את FMP כליל, פוצל התפקיד לפי סוג נתון, לפי מה שכל ספק חינמי טוב בו בפועל:
+
+| סוג נתון | ספק ראשי | ספק גיבוי | הערה |
+|---|---|---|---|
+| רשימת סימולים + שווי שוק (universe) | Nasdaq (`api.nasdaq.com`, ללא מפתח) | FMP screener | Nasdaq ללא מכסה יומית מתועדת, אבל API לא-רשמי |
+| מחירים/היסטוריה (technicals) | Alpaca (batch) | FMP (רק כשאין Alpaca) | ללא שינוי - Alpaca כבר שימש לזה |
+| דוחות רבעוניים קרובים + סקטור/שווי שוק לפינליסטים | Finnhub (60 קריאות/דקה, ללא מכסה יומית) | FMP | `resolveEarningsSoon` / `resolveMarketCap` |
+
+- **`nasdaqService.js`** (`server/src/services/providers/nasdaqService.js`): אדפטר חדש, ללא מפתח, ל-`GET /api/screener/stocks` הציבורי של nasdaq.com - עם pagination, ניקוי שדות מפורמטים (`"1,986,944,498"` → `1986944498`), וסינון סימולי warrants/units/preferred (`/`, `.`, `^`). מחזיר `null` (לא זורק) בכל כשל, כך שכל קורא נופל בביטחון ל-fallback.
+- **`finnhubService.js`** (`server/src/services/providers/finnhubService.js`): אדפטר חדש שמשתמש ב-`FINNHUB_API_KEY` הקיים. `getEarningsSoon` מחזירה `null` (לא `false`) כשלא ניתן היה לשאול - כדי להבדיל "לא ידוע" מ"אושר שאין דוח קרוב", ולאפשר נפילה נקייה ל-FMP.
+- **`barsStockBuilder.js`** (`server/src/services/barsStockBuilder.js`): פונקציית `buildStockFromBars` שהייתה חלק מ-`smallCapUniverseService.js` הופרדה למודול משותף, כך שגם ה-universe הרגיל (`marketDataService.getMarketData`/`getStockSnapshot`) וגם ה-universe הייעודי ל-`small_cap_breakout` משתמשים באותה מתמטיקה בדיוק (ADR, MA50/MA200, consolidation וכו') במקום לשכפל אותה.
+- **`getMarketData`/`getStockSnapshot`** (`marketDataService.js`): כשAlpaca מוגדר (וזו לא `TASE`, ש-Alpaca לא מכסה), מנסים תחילה את מסלול Alpaca+Nasdaq (`source: 'alpaca+nasdaq'`) לפני `DATA_MODE`. נכשל/ריק ⇒ נופל בדיוק למסלול FMP/Finnhub/demo הקיים, ללא שינוי בהתנהגות.
+- **Fail-soft בכל שכבה:** ללא מפתחות/עם כישלון בכל ספק חדש, ההתנהגות זהה ביט-לביט למה שהייתה - כל 106 הטסטים הקיימים ממשיכים לעבור ללא שינוי, ונוספו טסטים ייעודיים (`nasdaqService.test.js`, `finnhubService.test.js`, `providerRebalance.test.js`) שמוודאים גם את מסלול ההצלחה החדש וגם את ה-fallback.
+
+פירוט מלא, כולל 7 קריטריוני קבלה: `docs/SPEC_PROVIDER_REBALANCE.md`.
 
 ---
 

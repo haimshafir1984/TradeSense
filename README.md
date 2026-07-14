@@ -325,16 +325,17 @@ TradeSense/
 רשימת ברירת המחדל (סטטית) מגיעה מ:
 - `server/src/data/universe.js`
 
-עבור `NASDAQ`/`NYSE` במצב `DATA_MODE=fmp`, המערכת מנסה קודם universe **דינמי** דרך ה-screener של FMP (`stable/company-screener`, מניות actively-trading), ורק אם הקריאה נכשלת/ריקה חוזרת לרשימה הסטטית. `TASE` תמיד משתמשת ברשימה הסטטית (עם מיפוי `.TA`, ראו שכבת הנתונים למטה).
+**מאז docs/SPEC_PROVIDER_REBALANCE.md, מקור ה-universe הראשי הוא Alpaca+Nasdaq, לא FMP**: כל עוד `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` מוגדרים (ועבור `NASDAQ`/`NYSE` בלבד - `TASE` לא נתמכת ב-Alpaca), `getMarketData` מנסה קודם את הסקרינר הציבורי, חינמי, וללא מכסה יומית של Nasdaq (`api.nasdaq.com`, `server/src/services/providers/nasdaqService.js`) כדי לקבל רשימת סימולים + שווי שוק, ואז מושך בקריאה אחת מרוכזת (batch) 420 יום של bars מ-Alpaca לכל הסימולים כדי לחשב את הטכניקלים (דרך `barsStockBuilder.js`, המשותף גם עם ה-universe הייעודי ל-`small_cap_breakout`). אם Finnhub מוגדר (`FINNHUB_API_KEY`), מתבצעת העשרת סקטור מקבילה (best-effort, לא חוסמת). רק אם הסקרינר של Nasdaq נכשל/ריק, או ש-Alpaca לא מוגדר, נופלים בדיוק לאותו מסלול FMP הישן (universe **דינמי** דרך ה-screener של FMP, `stable/company-screener`, ורק אם גם הוא נכשל/ריק - לרשימה הסטטית).
 
 חשוב:
 המערכת כיום לא סורקת את כל השוק.
-היא סורקת רשימה סגורה של סימולים לכל בורסה.
+היא סורקת רשימה סגורה של סימולים לכל בורסה (עד `FMP_UNIVERSE_SIZE`, גם עבור מסלול Alpaca+Nasdaq).
 
 ### מצב מקור נתונים
 
 השרת מחזיר `meta.source` עם אחד מהערכים:
 
+- `alpaca+nasdaq`
 - `fmp`
 - `fmp_partial`
 - `finnhub`
@@ -343,14 +344,17 @@ TradeSense/
 
 פירוש:
 
+- `alpaca+nasdaq`:
+  רשימת הסימולים הגיעה מהסקרינר של Nasdaq, והטכניקלים מ-Alpaca (ראו סעיף Universe למעלה) - זהו מקור הנתונים הראשי כיום כאשר Alpaca מוגדר
+
 - `fmp`:
-  התקבלו נתונים חיים מלאים מספיק מ־FMP
+  התקבלו נתונים חיים מלאים מספיק מ־FMP (fallback, כאשר Alpaca/Nasdaq לא זמינים)
 
 - `fmp_partial`:
   התקבלו רק חלק מהנתונים החיים, והשאר הושלם בפולבקים פנימיים
 
 - `finnhub`:
-  התקבלו נתונים חיים מלאים מספיק מ־Finnhub
+  התקבלו נתונים חיים מלאים מספיק מ־Finnhub (מסלול `DATA_MODE=finnhub` הישן, נפרד מהעשרת ה-Finnhub שבמסלול Alpaca+Nasdaq)
 
 - `finnhub_partial`:
   התקבלו נתונים חיים חלקיים מ־Finnhub
@@ -412,9 +416,10 @@ TradeSense/
 | ספק | תפקיד ב-funnel | קובץ |
 |---|---|---|
 | Alpaca | שלבים 1-2: universe רחב + היסטוריה, זול/חינמי | `server/src/services/providers/alpacaService.js` |
-| FMP | שלב 3 בלבד: market cap + earnings calendar, לפינליסטים בלבד | `watchlistScoring.js` (`checkEarningsSoon`) + `funnelScanService.js` |
+| Finnhub | שלב 3: market cap + earnings calendar, מנסה ראשון (ללא מכסה יומית) | `watchlistScoring.js` (`resolveEarningsSoon`) + `funnelScanService.js` (`resolveMarketCap`) |
+| FMP | שלב 3: fallback ל-Finnhub בלבד, לפינליסטים בלבד | `watchlistScoring.js` (`checkEarningsSoon`) + `funnelScanService.js` |
 
-FMP **לא מוחלף** - הוא ממשיך לשרת גם את שאר המערכת (`marketDataService.js`) בדיוק כמו היום; ה-funnel הוא תוסף שמופעל אך ורק עבור "רשימת המעקב למחר".
+FMP **לא מוחלף לגמרי** - כשאין `FINNHUB_API_KEY` (או ש-Finnhub נכשל), שלב 3 עדיין נופל בדיוק לאותה קריאת FMP `/profile` + `earnings-calendar` הישנה; ה-funnel הוא תוסף שמופעל אך ורק עבור "רשימת המעקב למחר".
 
 Alpaca משמש כיום **שני** צרכנים נפרדים: `funnelScanService.js` (רשימת המעקב למחר, סעיף זה) ו-`smallCapUniverseService.js` (universe ייעודי לאסטרטגיית `small_cap_breakout` - ראו סעיף [אסטרטגיות וניקוד](#אסטרטגיות-וניקוד)). שני הצרכנים משתמשים באותו `alpacaService.js` (auth/rate-limiting/error-handling משותפים), אך בונים universe שונה כל אחד לפי הצורך שלו.
 
@@ -773,7 +778,10 @@ CLIENT_ORIGIN=http://localhost:5174
 
 #### DATA_MODE
 
-מקור הנתונים הפעיל.
+מקור הנתונים הפעיל **כשאין מפתחות Alpaca** (fallback ל-FMP/Finnhub). כאשר
+`ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` מוגדרים, `DATA_MODE` לא רלוונטי
+עבור `NASDAQ`/`NYSE` - המערכת משתמשת במסלול Alpaca+Nasdaq קודם (ראו
+[שכבת הנתונים](#שכבת-הנתונים)), ורק אם הוא נכשל נופלת ל-`DATA_MODE`.
 
 אפשרויות:
 - `fmp`
@@ -789,7 +797,9 @@ DATA_MODE=fmp
 
 #### FMP_API_KEY
 
-מפתח API עבור Financial Modeling Prep.
+מפתח API עבור Financial Modeling Prep. **מומלץ עדיין להגדיר**, גם עם
+Alpaca+Nasdaq פעיל - הוא משמש כ-fallback בכל מקום (universe, earnings,
+market cap) כשהמקורות החדשים נכשלים/לא זמינים.
 
 דוגמה:
 
@@ -799,12 +809,33 @@ FMP_API_KEY=your_fmp_key_here
 
 #### FINNHUB_API_KEY
 
-מפתח API עבור Finnhub.
+מפתח API עבור Finnhub. חינמי (60 קריאות/דקה, **ללא מכסה יומית** - בניגוד
+ל-250 הקריאות היומיות של FMP בחינם). מאז docs/SPEC_PROVIDER_REBALANCE.md
+משמש בשני מקומות בלתי-תלויים: (1) `DATA_MODE=finnhub` - מסלול נתונים מלא
+עצמאי, כפי שהיה קודם; (2) **תמיד**, ללא קשר ל-`DATA_MODE`, כמקור ראשון
+(לפני FMP) לבדיקת "דוחות רבעוניים קרובים" ולהעשרת סקטור/שווי שוק בכל
+מקום שמשתמש ב-Alpaca (universe הרגיל, `small_cap_breakout`, ה-funnel של
+"רשימת המעקב למחר"). ראו `server/src/services/providers/finnhubService.js`.
 
 דוגמה:
 
 ```env
 FINNHUB_API_KEY=your_finnhub_key_here
+```
+
+#### NASDAQ_API_BASE_URL
+
+דריסה אופציונלית של כתובת הבסיס לסקרינר הציבורי, חינמי, וללא-מפתח של
+Nasdaq (`server/src/services/providers/nasdaqService.js`). ברירת המחדל
+היא `https://api.nasdaq.com`. שימושי בעיקר לבדיקות, או אם הכתובת
+הרשמית משתנה. **הערה: זהו API לא-רשמי** (משרת את nasdaq.com עצמו, לא
+מוצר מתועד/מגורסן) - כל קוד שמשתמש בו חייב להתייחס לתשובה ריקה/כושלת
+כ"נפול ל-fallback", לא כ"אין מניות".
+
+דוגמה:
+
+```env
+NASDAQ_API_BASE_URL=https://api.nasdaq.com
 ```
 
 #### FMP_UNIVERSE_SIZE
