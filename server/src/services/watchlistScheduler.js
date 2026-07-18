@@ -1,5 +1,6 @@
 const watchlistService = require('./watchlistService');
 const universeBuilderService = require('./universeBuilderService');
+const shadowScanService = require('./shadowScanService');
 
 // Runs the (evening) tomorrow-watchlist scan automatically once a day, so the cache is already
 // warm by the time someone opens the app - no manual "load" step. This only fires while the
@@ -33,7 +34,7 @@ function dateKey(date) {
   return date.toISOString().slice(0, 10);
 }
 
-async function refreshAllExchanges() {
+async function refreshAllExchanges(now) {
   for (const exchange of getScheduledExchanges()) {
     try {
       await watchlistService.getTomorrowWatchlist({ exchange, forceRefresh: true });
@@ -53,6 +54,15 @@ async function refreshAllExchanges() {
       console.warn(`[watchlistScheduler] Failed to refresh universe for ${exchange}: ${error.message}`);
     }
   }
+
+  // Shadow-scan recording (docs/SPEC_SHORT_TERM_UPGRADE.md step 1) - piggybacks on this same
+  // once-a-day mechanism rather than adding a second scheduler. Best-effort: a failure here must
+  // never affect the watchlist/universe refresh above, which already completed by this point.
+  try {
+    await shadowScanService.runShadowScans({ now });
+  } catch (error) {
+    console.warn(`[watchlistScheduler] Failed to run shadow scans: ${error.message}`);
+  }
 }
 
 async function checkAndRun(now = new Date()) {
@@ -63,7 +73,7 @@ async function checkAndRun(now = new Date()) {
   }
 
   lastRunDateKey = today;
-  await refreshAllExchanges();
+  await refreshAllExchanges(now);
 }
 
 // Starts the recurring check. Safe to call once at server boot; checkAndRun itself is

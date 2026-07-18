@@ -78,7 +78,8 @@ cat /var/data/portfolio.json   # לבדוק שהנתונים בפנים תקינ
 לרשימה המלאה והמעודכנת (`DATA_MODE`, `FMP_API_KEY`, `FINNHUB_API_KEY`,
 `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`, `FMP_UNIVERSE_SIZE`,
 `WATCHLIST_SCHEDULE_HOUR`/`WATCHLIST_SCHEDULE_EXCHANGES`, `FUNNEL_*`,
-`UNIVERSE_MIN_DOLLAR_VOLUME`/`UNIVERSE_ENRICH_LIMIT`/`NASDAQ_REQUEST_TIMEOUT_MS`).
+`UNIVERSE_MIN_DOLLAR_VOLUME`/`UNIVERSE_ENRICH_LIMIT`/`NASDAQ_REQUEST_TIMEOUT_MS`,
+`SHADOW_SCAN_ENABLED`/`SHADOW_SCAN_EXCHANGES`).
 נקודה חשובה אחת שכדאי לחזור
 עליה כאן: **`WATCHLIST_SCHEDULE_HOUR` הוא שעון UTC על Render**, לא שעון
 ישראל - יש לכוון בהתאם (למשל `19` בקיץ / `20` בחורף כדי לקבל ~22:00 שעון

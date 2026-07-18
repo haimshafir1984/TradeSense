@@ -29,7 +29,7 @@ const OPPORTUNITY_RANK_BUCKETS = [
 const LEAGUE_WINDOW_DAYS = 90;
 const LEAGUE_MIN_SAMPLES_TO_LEAD = 10;
 
-async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan, strategyTopPicks = {} }) {
+async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan, strategyTopPicks = {}, source }) {
   if (!Number.isFinite(spyPriceAtScan) || spyPriceAtScan <= 0 || !results.length) {
     return null;
   }
@@ -71,6 +71,10 @@ async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtSc
     exchange,
     strategy,
     risk,
+    // Only set when the caller (e.g. shadowScanService) tags the scan explicitly - omitted for
+    // ordinary manual scans so existing scanHistory.json records (which never had this field)
+    // and their consumers stay byte-identical. See docs/SPEC_SHORT_TERM_UPGRADE.md step 1.
+    ...(source ? { source } : {}),
     benchmark: { ticker: 'SPY', priceAtScan: spyPriceAtScan },
     results: [...selectedResults, ...otherResults]
   };

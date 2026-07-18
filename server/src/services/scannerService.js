@@ -204,7 +204,18 @@ async function analyzeMarket(request = {}) {
     // (docs/LOGIC_IMPROVEMENTS.md - Strategy League) can measure how each strategy would have
     // done, not just the one the user happened to pick.
     const strategyTopPicks = buildStrategyTopPicks(filteredStocks, marketContext, risk);
-    await recordScan({ exchange, strategy, risk, results, spyPriceAtScan: spyBenchmark?.price, strategyTopPicks });
+    // request.scanSource lets internal callers (shadowScanService's nightly recording) tag their
+    // scans as 'scheduled' without changing the default (untagged) behavior for ordinary user
+    // scans - see docs/SPEC_SHORT_TERM_UPGRADE.md step 1.
+    await recordScan({
+      exchange,
+      strategy,
+      risk,
+      results,
+      spyPriceAtScan: spyBenchmark?.price,
+      strategyTopPicks,
+      source: request.scanSource
+    });
   } catch (error) {
     console.warn('[analyze] Failed to record scan history', error.message);
   }

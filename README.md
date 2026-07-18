@@ -937,6 +937,15 @@ WATCHLIST_SCHEDULE_HOUR=22
 WATCHLIST_SCHEDULE_EXCHANGES=NASDAQ,NYSE
 ```
 
+#### SHADOW_SCAN_ENABLED / SHADOW_SCAN_EXCHANGES
+
+"הקלטת-צל" לילית (ראו [docs/SPEC_SHORT_TERM_UPGRADE.md](docs/SPEC_SHORT_TERM_UPGRADE.md), שלב 1): פעם ביום, מיד אחרי הריענון של "רשימת המעקב למחר" ו-universe (אותו scheduler, לא scheduler נפרד), המערכת מריצה סריקה אמיתית עם `swing_momentum` ואז עם `small_cap_breakout` נבחרות (כדי ש-small_cap_breakout תיבדק גם על ה-universe הייעודי שלה), ורושמת את התוצאות ל-`scanHistory.json` (מתויגות `source: "scheduled"`) - בדיוק כמו סריקה ידנית של המשתמש. **זו הקלטת נתונים בלבד** - שום דבר לא נסחר ושום המלצה לא מוצגת למישהו; המטרה היחידה היא להאיץ את הצטברות הדגימות שליגת האסטרטגיות (`GET /api/strategy-league`) ודוח ה-hit-rate נשענים עליהן. ברירת מחדל: **פעיל**, על `NASDAQ,NYSE`. מדלג אוטומטית על סופי שבוע (שבת/ראשון לפי שעון ה-UTC של השרת - קירוב, לא לוח חגים).
+
+```env
+SHADOW_SCAN_ENABLED=true
+SHADOW_SCAN_EXCHANGES=NASDAQ,NYSE
+```
+
 #### ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY
 
 מפתחות API עבור Alpaca Market Data (v2), משמשים אך ורק את [ארכיטקטורת משפך הנתונים](#ארכיטקטורת-משפך-לנתונים) של "רשימת המעקב למחר". אם לא מוגדרים - "רשימת המעקב למחר" ממשיכה לעבוד בדיוק כמו היום, דרך `marketDataService`/FMP.

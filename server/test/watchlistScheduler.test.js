@@ -20,11 +20,13 @@ function freshScheduler() {
   delete require.cache[require.resolve('../src/services/universeStore')];
   delete require.cache[require.resolve('../src/services/universeBuilderService')];
   delete require.cache[require.resolve('../src/services/providers/nasdaqService')];
+  delete require.cache[require.resolve('../src/services/shadowScanService')];
   return {
     scratchPath,
     scheduler: require('../src/services/watchlistScheduler'),
     watchlistService: require('../src/services/watchlistService'),
-    nasdaqService: require('../src/services/providers/nasdaqService')
+    nasdaqService: require('../src/services/providers/nasdaqService'),
+    shadowScanService: require('../src/services/shadowScanService')
   };
 }
 
@@ -99,4 +101,31 @@ test('checkAndRun also triggers a universe refresh for each scheduled exchange',
   cleanupUniverseStore(scratchPath);
 
   assert.deepEqual(refreshedExchanges.sort(), ['NASDAQ', 'NYSE']);
+});
+
+test('checkAndRun also triggers the shadow-scan recording after the watchlist/universe refresh, using the same injected date', async () => {
+  const { scheduler, watchlistService, nasdaqService, shadowScanService, scratchPath } = freshScheduler();
+  watchlistService.getTomorrowWatchlist = async () => ({ generatedAt: new Date().toISOString(), watchlist: [] });
+  nasdaqService.getScreenerRows = async () => null;
+
+  const receivedNows = [];
+  const originalRunShadowScans = shadowScanService.runShadowScans;
+  shadowScanService.runShadowScans = async ({ now } = {}) => {
+    receivedNows.push(now);
+    return { ranCount: 0, runs: [] };
+  };
+
+  process.env.WATCHLIST_SCHEDULE_HOUR = '22';
+  process.env.WATCHLIST_SCHEDULE_EXCHANGES = 'NASDAQ';
+  const fixedNow = new Date('2026-07-06T22:30:00'); // a Monday, so a real weekend-skip can't mask this
+
+  await scheduler.checkAndRun(fixedNow);
+
+  shadowScanService.runShadowScans = originalRunShadowScans;
+  delete process.env.WATCHLIST_SCHEDULE_HOUR;
+  delete process.env.WATCHLIST_SCHEDULE_EXCHANGES;
+  cleanupUniverseStore(scratchPath);
+
+  assert.equal(receivedNows.length, 1);
+  assert.equal(receivedNows[0].getTime(), fixedNow.getTime());
 });
