@@ -1,5 +1,9 @@
 const { getMarketData, getStockSnapshots } = require('./marketDataService');
 const { getSmallCapUniverse } = require('./smallCapUniverseService');
+// Called as wideScanUniverseService.scanWideUniverse(...) rather than destructured, so tests can
+// monkey-patch the export without needing to reload this module (same convention as
+// marketDataService in scanHistoryService.js).
+const wideScanUniverseService = require('./wideScanUniverseService');
 const { scoreStockByStrategy } = require('./strategies');
 const { clamp, round } = require('./mathUtils');
 const {
@@ -34,24 +38,32 @@ const { computeRiskFraming } = require('./riskFramingService');
 const { QUALITY_SCORE_THRESHOLD, RISK_FIT_THRESHOLDS } = require('../config/scoringConfig');
 const { recordScan, getLeagueSnapshot } = require('./scanHistoryService');
 
+// Strategies eligible for the opt-in "wide scan" (docs/SPEC_SHORT_TERM_UPGRADE.md step 4).
+// small_cap_breakout is deliberately excluded - see that file's "סטיות מהתכנון" section: it
+// already gets its own dedicated, real-market-cap wide-ish universe regardless of this flag, and
+// its eligibility gate hard-requires market_cap, which the (deliberately cheap) wide scan doesn't fetch.
+const WIDE_SCAN_STRATEGIES = ['swing_momentum', 'ross_cameron'];
+
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
   const strategy = request.strategy || 'micha_stocks';
   const risk = request.risk || 'medium';
   const filters = request.filters || {};
+  const wideScanRequested = request.wideScan === true && WIDE_SCAN_STRATEGIES.includes(strategy);
 
   console.log('[analyze] Incoming request', {
     exchange,
     strategy,
     risk,
-    filters
+    filters,
+    wideScanRequested
   });
 
   const [marketDataResult, benchmarkSnapshots] = await Promise.all([
-    strategy === 'small_cap_breakout' ? getSmallCapMarketData(exchange) : getMarketData(exchange),
+    resolveMarketData({ strategy, exchange, wideScanRequested }),
     getStockSnapshots(MARKET_BENCHMARKS)
   ]);
-  const { stocks, source, isStale, usedDedicatedUniverse } = marketDataResult;
+  const { stocks, source, isStale, usedDedicatedUniverse, usedWideScan } = marketDataResult;
   const dataQuality = assessDataQuality({ stocks, source });
 
   // The dedicated small-cap universe (Alpaca-backed) replaces the regular universe entirely for
@@ -61,6 +73,13 @@ async function analyzeMarket(request = {}) {
   // mega-caps against a small-cap eligibility filter that will reject almost everything.
   if (strategy === 'small_cap_breakout' && !usedDedicatedUniverse) {
     dataQuality.issues.push('האסטרטגיה דורשת מאגר מניות קטנות (Alpaca) שאינו זמין כרגע - הסריקה רצה על המאגר הרגיל');
+  }
+
+  // Same honesty pattern as above: if the user opted into the wide scan but it wasn't available
+  // (no Alpaca, or the pipeline came back empty), the scan still runs - just on the regular
+  // universe - and says so, rather than silently substituting a much smaller universe.
+  if (wideScanRequested && !usedWideScan) {
+    dataQuality.issues.push('סריקה רחבה לא הייתה זמינה כרגע - הופעלה סריקה רגילה על המאגר הקיים');
   }
 
   // Surfaces the freshness policy from docs/SPEC_UNIVERSE_RESILIENCE.md section 4.3 - a universe
@@ -171,7 +190,10 @@ async function analyzeMarket(request = {}) {
       opportunityScore: opportunity.opportunityScore,
       price: round(stock.price, 2),
       volatility: round(stock.volatility, 4),
-      market_cap: Math.round(stock.market_cap)
+      // Wide-scan stocks (docs/SPEC_SHORT_TERM_UPGRADE.md step 4) deliberately carry market_cap:
+      // null rather than a fabricated number - Math.round(null) silently coerces to 0, which reads
+      // as "a real, zero-value company" rather than "unknown". Preserve null instead.
+      market_cap: Number.isFinite(stock.market_cap) ? Math.round(stock.market_cap) : null
     };
   });
   const layerSummary = summarizeResultLayers(results);
@@ -230,6 +252,8 @@ async function analyzeMarket(request = {}) {
       strategy,
       risk,
       source,
+      wideScanRequested,
+      wideScanUsed: usedWideScan === true,
       analyzedCount: filteredStocks.length,
       returnedCount: results.length,
       noQualitySetups,
@@ -251,6 +275,26 @@ async function analyzeMarket(request = {}) {
       groups
     }
   };
+}
+
+// Picks which universe a scan actually runs on: the dedicated small-cap universe for that one
+// strategy, the wide-scan universe when requested and eligible (docs/SPEC_SHORT_TERM_UPGRADE.md
+// step 4), or the regular universe otherwise - falling back to the regular universe whenever a
+// requested special path comes back empty/unavailable.
+async function resolveMarketData({ strategy, exchange, wideScanRequested }) {
+  if (strategy === 'small_cap_breakout') {
+    return getSmallCapMarketData(exchange);
+  }
+
+  if (wideScanRequested) {
+    const wideStocks = await wideScanUniverseService.scanWideUniverse({ exchange });
+    if (Array.isArray(wideStocks) && wideStocks.length) {
+      return { stocks: wideStocks, source: 'alpaca+wide-scan', isStale: false, usedWideScan: true };
+    }
+  }
+
+  const regular = await getMarketData(exchange);
+  return { ...regular, usedWideScan: false };
 }
 
 // Tries the dedicated small-cap universe first; falls back to the regular universe (same as every

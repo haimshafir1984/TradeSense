@@ -111,6 +111,10 @@ function findOpportunityRankBucketLabel(opportunityRank) {
   return OPPORTUNITY_RANK_BUCKETS.find((bucket) => opportunityRank >= bucket.min && opportunityRank <= bucket.max)?.label;
 }
 
+// Mirrors WIDE_SCAN_STRATEGIES in server/src/services/scannerService.js - small_cap_breakout is
+// excluded there deliberately (see docs/SPEC_SHORT_TERM_UPGRADE.md "סטיות מהתכנון").
+const WIDE_SCAN_STRATEGIES = ['swing_momentum', 'ross_cameron'];
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 function App() {
@@ -119,6 +123,7 @@ function App() {
     exchange: 'NASDAQ',
     risk: 'medium',
     strategy: 'micha_stocks',
+    wideScan: false,
     filters: initialFilters
   });
   const [results, setResults] = useState([]);
@@ -685,6 +690,19 @@ function App() {
               ))}
             </div>
 
+            {WIDE_SCAN_STRATEGIES.includes(form.strategy) ? (
+              <>
+                <Checkbox
+                  label="סריקה רחבה (אלפי מניות, ~40-70 שניות)"
+                  checked={form.wideScan}
+                  onChange={(checked) => handleFieldChange('wideScan', checked)}
+                />
+                <p className="advanced-panel-hint">
+                  מרחיבה את הסריקה מעבר למאגר הרגיל, כדי לגלות מניות שלא נמצאות בו - עלולה לקחת יותר זמן. אם לא זמינה כרגע, הסריקה נופלת חזרה למאגר הרגיל ומצוין הדבר בתוצאות.
+                </p>
+              </>
+            ) : null}
+
             <Field label="סיכון מקסימלי לעסקה ($) - אופציונלי">
               <input
                 type="number"
@@ -804,6 +822,7 @@ function App() {
           {meta ? (
             <div className="result-meta-bar">
               <span className={`source-badge ${sourceClassName(meta.source)}`}>מקור נתונים: {sourceLabel(meta.source)}</span>
+              {meta.wideScanUsed ? <span className="source-badge">סריקה רחבה הופעלה</span> : null}
               {vibeTradingEnabled ? (
                 <button
                   type="button"
@@ -1226,7 +1245,16 @@ function formatGeneratedAt(isoString) {
 }
 
 function sourceClassName(source) {
-  if (source === 'fmp' || source === 'finnhub' || source === 'alpaca+nasdaq' || source === 'alpaca+fmp-screener' || source === 'alpaca+finnhub') return 'live';
+  if (
+    source === 'fmp' ||
+    source === 'finnhub' ||
+    source === 'alpaca+nasdaq' ||
+    source === 'alpaca+fmp-screener' ||
+    source === 'alpaca+finnhub' ||
+    source === 'alpaca+wide-scan'
+  ) {
+    return 'live';
+  }
   if (source === 'fmp_partial' || source === 'finnhub_partial') return 'partial';
   return 'demo';
 }
@@ -1239,6 +1267,7 @@ function sourceLabel(source) {
   if (source === 'alpaca+nasdaq') return 'נתוני אמת (Alpaca+Nasdaq)';
   if (source === 'alpaca+fmp-screener') return 'נתוני אמת (Alpaca+FMP)';
   if (source === 'alpaca+finnhub') return 'נתוני אמת (Alpaca+Finnhub)';
+  if (source === 'alpaca+wide-scan') return 'נתוני אמת (סריקה רחבה)';
   return 'נתוני דמו';
 }
 

@@ -979,6 +979,14 @@ FUNNEL_STAGE2_SIZE=300
 FUNNEL_FINALISTS=20
 ```
 
+#### WIDE_SCAN_STAGE2_SIZE
+
+"סריקה רחבה" ([docs/SPEC_SHORT_TERM_UPGRADE.md](docs/SPEC_SHORT_TERM_UPGRADE.md), שלב 4): צ'קבוקס ביוזמת משתמש בטאב סריקת שוק, זמין רק לאסטרטגיות `swing_momentum`/`ross_cameron` (לא `small_cap_breakout` - ראו הסבר ב"סטיות מהתכנון" באותו מסמך). מריצה שלב 1 של המשפך (`wideScanUniverseService.js`) - כל הנכסים הפעילים בבורסה דרך Alpaca, מסונן מקומית לפי טווח מחיר ונפח דולרי (חולק את `FUNNEL_MIN_PRICE`/`FUNNEL_MAX_PRICE`/`FUNNEL_MIN_DOLLAR_VOLUME` למעלה) - ואז היסטוריה מלאה לשורדים, ובונה אובייקטי מניה מלאים (ללא שווי שוק) לניקוד ישיר לפי האסטרטגיה שנבחרה. כמה שורדי-שלב-1 (מקסימום) עוברים לשלב ההיסטוריה. ברירת מחדל: `300`. ללא Alpaca, או אם התוצאה ריקה - נופל בשקט למאגר הרגיל, עם הודעה ב-`dataQuality.issues`.
+
+```env
+WIDE_SCAN_STAGE2_SIZE=300
+```
+
 ### דוגמת .env מומלצת ל-FMP
 
 ```env

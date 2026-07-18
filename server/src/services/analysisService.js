@@ -254,7 +254,10 @@ function assessRiskOverlay({ stock, dataQuality, strategy }) {
     factors.push('תנודתיות בינונית');
   }
 
-  if (stock.market_cap < 2000000000) {
+  // Number.isFinite guard: a wide-scan stock (docs/SPEC_SHORT_TERM_UPGRADE.md step 4) can carry
+  // market_cap: null (genuinely unknown) rather than a real figure - `null < 2000000000` is `true`
+  // in JS, which would mislabel "unknown" as "small market cap".
+  if (Number.isFinite(stock.market_cap) && stock.market_cap < 2000000000) {
     points += 1;
     factors.push('שווי שוק קטן');
   }
