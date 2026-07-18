@@ -274,6 +274,7 @@ TradeSense/
 - `GET /api/scan-history/outcomes`
 - `GET /api/strategy-league`
 - `GET /api/watchlist/tomorrow`
+- `POST /api/watchlist/tomorrow/rerank`
 - `POST /api/watchlist/outcomes`, `GET /api/watchlist/outcomes`
 
 ### Route מרכזי
@@ -526,7 +527,9 @@ FUNNEL_FINALISTS=20
 - daily momentum
 - unusual volume
 - breakout behavior
-- float proxy לפי market cap
+- float - real share count (Finnhub/FMP) ל-Top-10 הפינליסטים כשקיים (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 5), אחרת proxy לפי market cap כמו קודם. `result.floatSource` מציין איזה מהשניים שימש.
+
+גם `hasEarningsSoon`/`hasRecentNews`/`recentNewsCount` מחושבים ל-Top-10 הפינליסטים (ולאותם שדות עבור `swing_momentum`/`small_cap_breakout`) - תצוגתי בלבד, לא נכנס לניקוד.
 
 ### Swing Momentum
 
@@ -665,10 +668,12 @@ Content-Type: application/json
 
 מערך של עד 10 מניות שעברו גם את סף האיכות המינימלי (ראו `meta.noQualitySetups`).
 
-- `opportunityRank` - ציון הזדמנות **יחסי** (0–100), לא הסתברות סטטיסטית מכוילת. שם השדה שונה במכוון מ-`successProbability` הישן כדי לא להטעות.
+- `opportunityRank` - ציון הזדמנות **יחסי** (0–100), לא הסתברות סטטיסטית מכוילת. שם השדה שונה במכוון מ-`successProbability` הישן כדי לא להטעות. ה-UI מציג לצידו, כשיש מספיק דגימות (ראו `byStrategyAndBucket` למטה), גם מספר **נמדד בפועל** במקום/לצד הציון היחסי (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 3).
 - `imputedFields` - אילו שדות של המניה הזו הושלמו אוטומטית (seeded) בהיעדר נתון חי, גם כש-`dataSource` נראה live.
 - `riskFitPenalty` - עד כמה המניה מתאימה לפרופיל הסיכון שנבחר (1 = מתאימה במלואה).
 - `confluence.percentileByStrategy` - ציון כל אסטרטגיה כ-percentile בתוך ה-universe הנסרק, בר-השוואה בין אסטרטגיות (בניגוד לציון הגולמי).
+- `riskFraming` - מסגור סיכון טכני לכל תוצאה, בכל אסטרטגיה (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 2): `{ stopDistancePct, stopPrice, rewardRiskRatio }`, מבוסס על `adr_pct` של המניה (לא ניחוש קבוע) - `null` בכולם כשאין `adr_pct` אמין (חסר או `imputedFields`).
+- `hasEarningsSoon` / `hasRecentNews` / `recentNewsCount` - ל-Top-10 של האסטרטגיות הקצרות בלבד (`ross_cameron`/`swing_momentum`/`small_cap_breakout`, docs/SPEC_SHORT_TERM_UPGRADE.md שלב 5) - תצוגתי, לא נכנס לניקוד. `null` = לא נבדק (אסטרטגיה ארוכה), לא "אושר שאין".
 
 #### meta.exchange
 
@@ -684,7 +689,11 @@ Content-Type: application/json
 
 #### meta.source
 
-מאיזה מקור נתונים הגיעו התוצאות בפועל.
+מאיזה מקור נתונים הגיעו התוצאות בפועל. ערך נוסף אפשרי: `alpaca+wide-scan` (סריקה רחבה, ראו למטה).
+
+#### meta.wideScanRequested / meta.wideScanUsed
+
+`wideScanRequested` - האם `request.wideScan===true` **וגם** האסטרטגיה נתמכת (`swing_momentum`/`ross_cameron` בלבד - ראו docs/SPEC_SHORT_TERM_UPGRADE.md "סטיות מהתכנון"). `wideScanUsed` - האם הסריקה הרחבה בפועל רצה בהצלחה; אם `wideScanRequested && !wideScanUsed`, הסריקה נפלה חזרה למאגר הרגיל וההודעה מופיעה ב-`analysis.dataQuality.issues`.
 
 #### meta.analyzedCount
 
@@ -704,11 +713,15 @@ Content-Type: application/json
 - `regime` - נקבע לפי `REGIME_RECOMMENDED_STRATEGY` ב-`scoringConfig.js` (בשוק דובי - `null`, "עדיף להמתין").
 - `league` - כאשר לליגת האסטרטגיות (ראו למטה) יש מובילה מדדת עם מספיק דגימות, היא גוברת על ברירת המחדל לפי מצב השוק.
 
+#### analysis.marketRegime.smoothedRegime
+
+מצב השוק אחרי הרוב מבין עד 3 הימים האחרונים (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 6, `regimeHistoryStore.js`) - כדי שלא יתהפך בין שתי סריקות באותו יום. כשהאסטרטגיה הנבחרת היא `small_cap_breakout`/`swing_momentum` והשדה הזה `bearish`/`volatile`, ה-UI מציג באנר אזהרה שמפנה ל-`docs/BACKTEST_FINDINGS.md`.
+
 ## Endpoints נוספים
 
 ### GET /api/scan-history/outcomes
 
-מריץ הערכת תוצאות לכל הסריקות שעברו את אופק הזמן שלהן (מול מדד SPY), ומחזיר דו"ח hit-rate כללי, פר אסטרטגיה ופר `opportunityRank` bucket. לוגיקת ההערכה וההיסטוריה עצמה נמצאות ב-`scanHistoryService.js`/`scanHistoryStore.js`.
+מריץ הערכת תוצאות לכל הסריקות שעברו את אופק הזמן שלהן (מול מדד SPY), ומחזיר דו"ח hit-rate כללי, פר אסטרטגיה, פר `opportunityRank` bucket, וגם `byStrategyAndBucket` - חתך אסטרטגיה×bucket עם `medianReturnPct`/`worstReturnPct`/`pctBelowMinus10` ודגל `insufficientSamples` (מתחת ל-10 דגימות ב-90 הימים האחרונים - docs/SPEC_SHORT_TERM_UPGRADE.md שלב 3). לוגיקת ההערכה וההיסטוריה עצמה נמצאות ב-`scanHistoryService.js`/`scanHistoryStore.js`.
 
 ### GET /api/strategy-league
 

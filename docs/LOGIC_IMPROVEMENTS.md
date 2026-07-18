@@ -142,7 +142,7 @@
 - אין זיכרון — regime יכול להתהפך בין שתי סריקות באותו יום.
 **הצעה:** להוסיף מדדי רוחב (אחוז מניות ה-universe מעל MA50/MA200 — הנתונים כבר קיימים!), החלקה על חלון של כמה ימים, ואופציונלית VIX. את מטריצת ההתאמה אסטרטגיה-regime להוציא לקונפיג.
 
-**יושם:** מדדי רוחב (`computeMarketBreadth`) ומטריצת ההתאמה בקונפיג (`STRATEGY_REGIME_FIT_MATRIX`). **הורחב (סעיף 7.4 למטה):** ה-regime כיום גם ממליץ אסטרטגיה קונקרטית (`recommendedStrategy`), לא רק מדרג התאמה לאסטרטגיה שכבר נבחרה. עדיין חסר: החלקה על פני כמה ימים / VIX.
+**יושם:** מדדי רוחב (`computeMarketBreadth`) ומטריצת ההתאמה בקונפיג (`STRATEGY_REGIME_FIT_MATRIX`). **הורחב (סעיף 7.4 למטה):** ה-regime כיום גם ממליץ אסטרטגיה קונקרטית (`recommendedStrategy`), לא רק מדרג התאמה לאסטרטגיה שכבר נבחרה. **הורחב שוב (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 6, 2026-07-18):** נוסף `smoothedRegime` - רוב מבין עד 3 הימים האחרונים (`regimeHistoryStore.js` + `computeSmoothedRegime`), כדי שה-regime לא יתהפך בין שתי סריקות באותו יום; מוצג באנר דמפינג ל-`small_cap_breakout`/`swing_momentum` כשהוא בעייתי. עדיין חסר: VIX.
 
 ### 3.8 Top-10 תמיד, גם כשאין מה להמליץ ✅ יושם
 
@@ -179,16 +179,18 @@
 בסדר תועלת-מול-מאמץ (כולם קיימים ב-FMP בתוכניות בתשלום, חלקם בחינם):
 1. RS אמיתי מול SPY (הנתונים כבר במערכת — סעיף 3.2). ✅ יושם.
 2. פונדמנטלס בסיסי: צמיחת הכנסות/EPS — נותן ל-micha_stocks ממד שאינו טכני (היום "growth" = גודל שווי שוק, שהוא בכלל מדד גודל, לא צמיחה). ✅ יושם (`revenue_growth_pct`).
-3. Earnings calendar — לסמן/לקנוס מניות עם דוחות קרובים (סיכון אירוע שהמערכת עיוורת לו לגמרי היום). ✅ יושם חלקית: קיים כ-`hasEarningsSoon` ברשימת המעקב למחר (סעיף 7.3) בלבד, לא (עדיין) בתוצאות הסריקה הרגילה של `POST /api/analyze`.
-4. חדשות/סנטימנט כ-flag (לא כציון) — "יש אירוע חדשותי, בדוק לפני החלטה". עדיין לא יושם.
+3. Earnings calendar — לסמן/לקנוס מניות עם דוחות קרובים (סיכון אירוע שהמערכת עיוורת לו לגמרי היום). ✅ יושם: `hasEarningsSoon` ברשימת המעקב למחר (סעיף 7.3), **וגם** (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 5, 2026-07-18) ב-`POST /api/analyze` עצמו, ל-Top-10 הפינליסטים של האסטרטגיות הקצרות (`ross_cameron`/`swing_momentum`/`small_cap_breakout`) - תצוגתי בלבד, לא נכנס לניקוד.
+4. חדשות/סנטימנט כ-flag (לא כציון) — "יש אירוע חדשותי, בדוק לפני החלטה". ✅ יושם (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 5): `hasRecentNews`/`recentNewsCount` (Finnhub company-news, חלון 48 שעות) לאותם Top-10 פינליסטים, שוב תצוגתי בלבד.
 
-### 5.3 Universe דינמי ✅ יושם (NASDAQ/NYSE)
+### 5.3 Universe דינמי ✅ יושם (NASDAQ/NYSE) + universe רחב פר-בקשה
 
 ה-universe הסטטי (20 מגה-קאפ לבורסה) הוא תקרת הזכוכית של כל הלוגיקה — אי אפשר "לגלות" מניה שלא ברשימה, וההטיה לגודל שוברת את האסטרטגיות הקצרות. שלב ביניים זול: screener endpoint של FMP כ-universe דינמי פר אסטרטגיה (top gainers / most active ל-ross_cameron; מניות מעל MA200 עם RS גבוה ל-minervini), עם ה-universe הסטטי כ-fallback.
 
-**יושם:** universe דינמי דרך FMP screener (`stable/company-screener`) עבור NASDAQ/NYSE, עם נפילה לרשימה הסטטית. עדיין לא: universe דינמי פר-אסטרטגיה (למשל top-gainers ל-ross_cameron/swing_momentum), ו-TASE/Finnhub עדיין תמיד סטטיים.
+**יושם:** universe דינמי דרך FMP screener (`stable/company-screener`) עבור NASDAQ/NYSE, עם נפילה לרשימה הסטטית. TASE/Finnhub עדיין תמיד סטטיים.
 
-**עדכון:** עבור "רשימת המעקב למחר" (gap-and-go) הבעיה קיבלה מענה מלא - לא רק universe דינמי אלא סינון בפועל על **אלפי** מניות, דרך ארכיטקטורת המשפך שמתוארת בסעיף 7.5. שאר המערכת (`analyzeMarket` והאסטרטגיות) עדיין משתמשת ב-universe הדינמי/סטטי הקיים דרך FMP - זה לא שונה.
+**עדכון:** עבור "רשימת המעקב למחר" (gap-and-go) הבעיה קיבלה מענה מלא - לא רק universe דינמי אלא סינון בפועל על **אלפי** מניות, דרך ארכיטקטורת המשפך שמתוארת בסעיף 7.5. שאר המערכת (`analyzeMarket` והאסטרטגיות) עדיין משתמשת ב-universe הדינמי/סטטי הקיים דרך FMP כברירת מחדל.
+
+**הורחב (docs/SPEC_SHORT_TERM_UPGRADE.md שלב 4, 2026-07-18):** "universe דינמי פר-אסטרטגיה" קיים כעת גם ב-`analyzeMarket` עצמו - toggle ביוזמת משתמש ("סריקה רחבה") ל-`swing_momentum`/`ross_cameron`, שמריץ את שלב 1 של אותה ארכיטקטורת משפך (`wideScanUniverseService.js`, נשען על `alpacaService`) ומנקד ישירות את השורדים, בלי סינון gap-and-go-ספציפי. `small_cap_breakout` מכוונת נשארת מחוץ לתחולה - יש לה כבר universe רחב-משלה עם שווי שוק אמיתי (`smallCapUniverseService.js`), ופילטר הכשירות שלה דורש שווי שוק שהסריקה הרחבה (בכוונה) לא שולפת.
 
 ---
 
@@ -268,6 +270,19 @@
 - **תיקון אגבי:** הבדיקה בסעיף 7.7 ש"נפל למאגר הרגיל" ב-`scannerService.js` השוותה את `source` למחרוזת בודדת (`'alpaca+fmp-screener'`) - עם `'alpaca+finnhub'` כערך `source` אפשרי נוסף להיום, זו הייתה נהפכת לבאג אמיתי (מסמנת success כ"נפל"). הוחלף בדגל מפורש (`usedDedicatedUniverse`) שלא תלוי במחרוזת ה-source הספציפית.
 
 פירוט מלא, כולל 7 קריטריוני קבלה: `docs/SPEC_UNIVERSE_RESILIENCE.md`.
+
+### 7.9 שדרוג טווח-קצר/High-Risk — 9 שלבים
+
+מיושם ב-2026-07-18, פירוט מלא ב-`docs/SPEC_SHORT_TERM_UPGRADE.md`. שמונה תוספות מרכזיות סביב סריקה לטווח ימים בודדים ומועמדים בסיכון גבוה:
+
+1. **הקלטת-צל לילית** (`shadowScanService.js`) - מריצה בפועל את חמש האסטרטגיות כל ערב (לא רק כשהמשתמש סורק ידנית), כולל `small_cap_breakout` על ה-universe הייעודי שלה, כדי שליגת האסטרטגיות (7.1) תצטבר מהר יותר.
+2. **מסגור R** (`riskFramingService.js`) - סטופ מוצע ויחס סיכוי/סיכון לכל תוצאה, מבוסס `adr_pct` של המניה עצמה.
+3. **כיול מוצג** - `byStrategyAndBucket` ב-`scanHistoryService.js` (median/worst/pctBelowMinus10 פר אסטרטגיה×bucket) מחליף את הצגת ה"ציון הזדמנות" בסטטיסטיקה נמדדת כשיש מספיק דגימות.
+4. **סריקה רחבה** (`wideScanUniverseService.js`) - universe דינמי פר-בקשה ל-`swing_momentum`/`ross_cameron` (ראו 5.3).
+5. **Float אמיתי + קטליזטורים** (`shareCountService.js`) - ראו 5.2.
+6. **Regime מוחלק + באנר דמפינג** (`regimeHistoryStore.js`) - ראו 3.7.
+7. **דירוג-מחדש פרה-מרקט** (`watchlistRerankService.js`) - snapshot חי מ-Alpaca לרשימת המעקב למחר, ביוזמת משתמש.
+8. **Universe שיטתי ל-Vibe-Trading** - `vibeTradingService.js#buildTheoryUniverse` בונה את מדגם "בדוק תאוריה היסטורית" מה-universe הלילי האמיתי במקום רשימה ידנית קבועה (ראו docs/BACKTEST_FINDINGS.md).
 
 ---
 
