@@ -6,6 +6,7 @@ const scanHistoryRouter = require('./routes/scanHistory');
 const strategyLeagueRouter = require('./routes/strategyLeague');
 const watchlistRouter = require('./routes/watchlist');
 const watchlistOutcomesRouter = require('./routes/watchlistOutcomes');
+const backtestRouter = require('./routes/backtest');
 
 const app = express();
 
@@ -31,5 +32,7 @@ app.use('/api/strategy-league', strategyLeagueRouter);
 // docs/SPEC_MANUAL_TESTING_TOOLS.md section 3.2.
 app.use('/api/watchlist/outcomes', watchlistOutcomesRouter);
 app.use('/api/watchlist', watchlistRouter);
+// On-demand only (never called by any scan) - see docs/SPEC_VIBE_TRADING_INTEGRATION.md.
+app.use('/api/backtest', backtestRouter);
 
 module.exports = app;

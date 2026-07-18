@@ -875,3 +875,103 @@ th {
   background: rgba(222, 161, 81, 0.2);
   color: #8c5b0a;
 }
+
+/* Vibe-Trading on-demand historical-check integration (docs/SPEC_VIBE_TRADING_INTEGRATION.md) -
+   opt-in only, buttons only render when the backend reports the feature as enabled. */
+.vibe-trading-theory-button,
+.vibe-trading-stock-button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.vibe-trading-theory-button:hover:not(:disabled),
+.vibe-trading-stock-button:hover:not(:disabled) {
+  background: rgba(58, 123, 213, 0.08);
+  border-color: rgba(58, 123, 213, 0.3);
+}
+
+.vibe-trading-theory-button:disabled,
+.vibe-trading-stock-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.backtest-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 33, 61, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 1000;
+}
+
+.backtest-modal {
+  background: var(--panel);
+  border-radius: 14px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(20, 33, 61, 0.25);
+}
+
+.backtest-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.backtest-modal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.backtest-modal-close {
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--text);
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+}
+
+.backtest-modal-disclaimer {
+  margin: 0.9rem 1.25rem 0;
+  font-size: 0.8rem;
+  color: #8c5b0a;
+  background: rgba(222, 161, 81, 0.14);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+
+.backtest-modal-report {
+  margin: 0.9rem 1.25rem 1.25rem;
+  padding: 0.9rem;
+  background: rgba(20, 33, 61, 0.04);
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.backtest-modal-error {
+  margin: 0.9rem 1.25rem 1.25rem;
+  color: #b3261e;
+}

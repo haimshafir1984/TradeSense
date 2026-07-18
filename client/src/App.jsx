@@ -127,6 +127,12 @@ function App() {
   const [actualOpenInputs, setActualOpenInputs] = useState({});
   const [outcomeBusyTicker, setOutcomeBusyTicker] = useState(null);
   const [outcomeError, setOutcomeError] = useState('');
+  // Vibe-Trading on-demand historical-check integration (see
+  // docs/SPEC_VIBE_TRADING_INTEGRATION.md) - opt-in only, never fired automatically by a scan.
+  const [vibeTradingEnabled, setVibeTradingEnabled] = useState(false);
+  const [backtestBusyTicker, setBacktestBusyTicker] = useState(null);
+  const [backtestTheoryBusy, setBacktestTheoryBusy] = useState(false);
+  const [backtestModal, setBacktestModal] = useState(null); // { title, ok, report, message } | null
 
   const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
 
@@ -143,6 +149,27 @@ function App() {
       .catch(() => {
         if (!cancelled) {
           setStrategyLeague(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`${API_BASE_URL}/api/backtest/status`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) {
+          setVibeTradingEnabled(Boolean(data?.enabled));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVibeTradingEnabled(false);
         }
       });
 
@@ -225,6 +252,42 @@ function App() {
       setError(requestError.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleCheckStockHistory = async (ticker) => {
+    setBacktestBusyTicker(ticker);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/backtest/stock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, strategy: form.strategy })
+      });
+      const data = await response.json();
+      setBacktestModal({ title: `בדיקה היסטורית — ${ticker}`, ...data });
+    } catch (requestError) {
+      setBacktestModal({ title: `בדיקה היסטורית — ${ticker}`, ok: false, message: requestError.message });
+    } finally {
+      setBacktestBusyTicker(null);
+    }
+  };
+
+  const handleCheckTheory = async () => {
+    setBacktestTheoryBusy(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/backtest/theory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: form.strategy })
+      });
+      const data = await response.json();
+      setBacktestModal({ title: 'בדיקת תאוריה — האסטרטגיה שנבחרה', ...data });
+    } catch (requestError) {
+      setBacktestModal({ title: 'בדיקת תאוריה — האסטרטגיה שנבחרה', ok: false, message: requestError.message });
+    } finally {
+      setBacktestTheoryBusy(false);
     }
   };
 
@@ -664,6 +727,17 @@ function App() {
           {meta ? (
             <div className="result-meta-bar">
               <span className={`source-badge ${sourceClassName(meta.source)}`}>מקור נתונים: {sourceLabel(meta.source)}</span>
+              {vibeTradingEnabled ? (
+                <button
+                  type="button"
+                  className="vibe-trading-theory-button"
+                  onClick={handleCheckTheory}
+                  disabled={backtestTheoryBusy}
+                  title="בודק את חוקי האסטרטגיה על מדגם מניות היסטורי (Vibe-Trading + DeepSeek, בלחיצה בלבד - כ-30-90 שניות, עלות זניחה)"
+                >
+                  {backtestTheoryBusy ? 'בודק תאוריה…' : 'בדוק תאוריה היסטורית'}
+                </button>
+              ) : null}
               {analysis?.marketRegime ? (
                 <span className={`source-badge fit ${fitClassName(analysis.marketRegime.strategyFit?.level)}`}>
                   התאמת אסטרטגיה: {analysis.marketRegime.strategyFit?.label || 'בינונית'}
@@ -709,12 +783,13 @@ function App() {
                   <th>אסטרטגיה</th>
                   <th>הסבר קצר</th>
                   <th>פתיחה</th>
+                  {vibeTradingEnabled ? <th>בדיקה היסטורית</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan={showIndiColumn ? 10 : 9} className="empty-state">
+                    <td colSpan={(showIndiColumn ? 10 : 9) + (vibeTradingEnabled ? 1 : 0)} className="empty-state">
                       {emptyStateMessage}
                     </td>
                   </tr>
@@ -754,6 +829,19 @@ function App() {
                           onClose={() => setOpenBrokerMenu(null)}
                         />
                       </td>
+                      {vibeTradingEnabled ? (
+                        <td>
+                          <button
+                            type="button"
+                            className="vibe-trading-stock-button"
+                            onClick={() => handleCheckStockHistory(result.ticker)}
+                            disabled={backtestBusyTicker === result.ticker}
+                            title="בודק מה המניה הזו עשתה בעבר בתבניות דומות (Vibe-Trading + DeepSeek, בלחיצה בלבד)"
+                          >
+                            {backtestBusyTicker === result.ticker ? 'בודק…' : 'בדוק היסטורית'}
+                          </button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))
                 )}
@@ -766,6 +854,38 @@ function App() {
 
         {activeTab === 'portfolio' ? <PortfolioSection apiBaseUrl={API_BASE_URL} /> : null}
       </main>
+
+      {backtestModal ? <BacktestReportModal modal={backtestModal} onClose={() => setBacktestModal(null)} /> : null}
+    </div>
+  );
+}
+
+// Shows the plain-text/markdown report a Vibe-Trading run returns, or the error/disabled message
+// if it failed. This is deliberately a raw text dump, not a parsed/styled report - the run's own
+// output already reads fine as markdown-ish text, and parsing it would be brittle against
+// whatever the agent happens to write this time. See docs/SPEC_VIBE_TRADING_INTEGRATION.md.
+function BacktestReportModal({ modal, onClose }) {
+  return (
+    <div className="backtest-modal-overlay" onClick={onClose}>
+      <div className="backtest-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="backtest-modal-header">
+          <h3>{modal.title}</h3>
+          <button type="button" className="backtest-modal-close" onClick={onClose} aria-label="סגור">
+            ✕
+          </button>
+        </div>
+        {modal.ok ? (
+          <>
+            <p className="backtest-modal-disclaimer">
+              בדיקה היסטורית חד-פעמית דרך Vibe-Trading (DeepSeek) - לא ייעוץ השקעות, ולא תמיד בדיקה על universe מלא. ראו
+              docs/BACKTEST_FINDINGS.md להסתייגויות המלאות.
+            </p>
+            <pre className="backtest-modal-report">{modal.report}</pre>
+          </>
+        ) : (
+          <p className="backtest-modal-error">{modal.message}</p>
+        )}
+      </div>
     </div>
   );
 }
