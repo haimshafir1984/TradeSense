@@ -133,8 +133,32 @@ function App() {
   const [backtestBusyTicker, setBacktestBusyTicker] = useState(null);
   const [backtestTheoryBusy, setBacktestTheoryBusy] = useState(false);
   const [backtestModal, setBacktestModal] = useState(null); // { title, ok, report, message } | null
+  // Risk framing (docs/SPEC_SHORT_TERM_UPGRADE.md step 2): a personal position-sizing input,
+  // client-side only - never sent to the server, never affects scoring. Persisted locally so it
+  // survives a refresh; empty by default so no quantity is shown until the user opts in.
+  const [maxRiskPerTrade, setMaxRiskPerTrade] = useState(() => {
+    try {
+      return window.localStorage.getItem('tradesense.maxRiskPerTrade') || '';
+    } catch {
+      return '';
+    }
+  });
 
   const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
+
+  const handleMaxRiskPerTradeChange = (value) => {
+    setMaxRiskPerTrade(value);
+    try {
+      if (value) {
+        window.localStorage.setItem('tradesense.maxRiskPerTrade', value);
+      } else {
+        window.localStorage.removeItem('tradesense.maxRiskPerTrade');
+      }
+    } catch {
+      // localStorage can throw in private-browsing/blocked-storage contexts - the input still
+      // works for the current session, it just won't persist across reloads.
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -622,6 +646,20 @@ function App() {
               ))}
             </div>
 
+            <Field label="סיכון מקסימלי לעסקה ($) - אופציונלי">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={maxRiskPerTrade}
+                onChange={(event) => handleMaxRiskPerTradeChange(event.target.value)}
+                placeholder="למשל 200"
+              />
+            </Field>
+            <p className="advanced-panel-hint">
+              משמש רק לחישוב כמות מניות מוצעת בטבלת התוצאות, לפי מרחק הסטופ הטכני. נשמר במכשיר הזה בלבד ולא נשלח לשרת.
+            </p>
+
             <details className="advanced-panel">
               <summary>פילטרים מתקדמים</summary>
               <p className="advanced-panel-hint">כל הפילטרים חלים לפני חישוב ניקוד האסטרטגיה.</p>
@@ -779,6 +817,7 @@ function App() {
                   <th>ציון הזדמנות (יחסי)</th>
                   <th>פוטנציאל מהלך</th>
                   <th>תשואה משוקללת</th>
+                  <th>מסגור סיכון (טכני)</th>
                   {showIndiColumn ? <th>התאמה ל-Indi</th> : null}
                   <th>אסטרטגיה</th>
                   <th>הסבר קצר</th>
@@ -789,7 +828,7 @@ function App() {
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan={(showIndiColumn ? 10 : 9) + (vibeTradingEnabled ? 1 : 0)} className="empty-state">
+                    <td colSpan={(showIndiColumn ? 11 : 10) + (vibeTradingEnabled ? 1 : 0)} className="empty-state">
                       {emptyStateMessage}
                     </td>
                   </tr>
@@ -808,6 +847,9 @@ function App() {
                       <td>
                         <div className="value-tone positive">{result.expectedReturnPct}%</div>
                         <div className="cell-subtext">{result.opportunity?.recommendationLabel}</div>
+                      </td>
+                      <td>
+                        <RiskFramingCell riskFraming={result.riskFraming} price={result.price} maxRiskPerTrade={maxRiskPerTrade} />
                       </td>
                       {showIndiColumn ? (
                         <td>
@@ -998,6 +1040,30 @@ function ActualOpenCell({ outcome, inputValue, busy, onChange, onSave }) {
       >
         {busy ? 'שומר...' : 'שמור'}
       </button>
+    </div>
+  );
+}
+
+// Purely a mechanical calculation shown for the user's own judgment - never a recommendation to
+// enter/exit a position. Quantity only appears once the user opts into the (client-side-only,
+// never sent to the server) "max risk per trade" field. See docs/SPEC_SHORT_TERM_UPGRADE.md step 2.
+function RiskFramingCell({ riskFraming, price, maxRiskPerTrade }) {
+  if (!riskFraming || riskFraming.stopDistancePct == null) {
+    return <span className="cell-subtext">אין מספיק נתוני תנודתיות</span>;
+  }
+
+  const maxRisk = Number(maxRiskPerTrade);
+  const perShareRisk = Number(price) - Number(riskFraming.stopPrice);
+  const quantity = Number.isFinite(maxRisk) && maxRisk > 0 && perShareRisk > 0
+    ? Math.floor(maxRisk / perShareRisk)
+    : null;
+
+  return (
+    <div>
+      <div>סטופ מוצע: ${riskFraming.stopPrice} ({riskFraming.stopDistancePct}%)</div>
+      {riskFraming.rewardRiskRatio != null ? <div>יחס סיכוי/סיכון: {riskFraming.rewardRiskRatio}</div> : null}
+      {quantity != null ? <div>כמות לפי הסיכון שהוגדר: {quantity}</div> : null}
+      <div className="cell-subtext">מרחק סטופ לפי טווח התנודה היומי - חישוב טכני, לא ייעוץ</div>
     </div>
   );
 }

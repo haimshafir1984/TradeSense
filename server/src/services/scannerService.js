@@ -30,6 +30,7 @@ const {
   summarizeOpportunity
 } = require('./opportunityScoringService');
 const { assessIndiFit } = require('./indiOverlayService');
+const { computeRiskFraming } = require('./riskFramingService');
 const { QUALITY_SCORE_THRESHOLD, RISK_FIT_THRESHOLDS } = require('../config/scoringConfig');
 const { recordScan, getLeagueSnapshot } = require('./scanHistoryService');
 
@@ -137,6 +138,7 @@ async function analyzeMarket(request = {}) {
       riskOverlay,
       marketRegime
     });
+    const riskFraming = computeRiskFraming({ stock, estimatedUpside: opportunity.estimatedUpside });
 
     return {
       ticker: stock.ticker,
@@ -162,6 +164,7 @@ async function analyzeMarket(request = {}) {
       riskOverlay,
       opportunity,
       indiFit,
+      riskFraming,
       opportunityRank: opportunity.opportunityRank,
       estimatedUpsideRange: opportunity.estimatedUpside.label,
       expectedReturnPct: opportunity.expectedReturnPct,
