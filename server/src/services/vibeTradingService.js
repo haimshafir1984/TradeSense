@@ -63,6 +63,14 @@ function getExecutablePath() {
 // present in the child process's environment before it starts - so this reads the file ourselves
 // and merges it into the spawned process's env, exactly like the shell workaround that was
 // validated manually.
+// --no-rich stops Rich from *choosing* to colorize, but some CLI output (e.g. the preflight
+// check table) still emits raw ANSI escape codes regardless - so strip them ourselves rather
+// than depend on the third-party CLI's flag coverage.
+function stripAnsiCodes(text) {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+}
+
 function loadDeepSeekEnvOverrides() {
   const envFilePath = path.join(os.homedir(), '.vibe-trading', '.env');
   const overrides = {};
@@ -151,14 +159,14 @@ async function runPrompt(promptText) {
       child.on('close', (code) => {
         clearTimeout(timeoutHandle);
         if (code !== 0) {
-          reject(new Error(stderrBuffer.slice(-800) || `Vibe-Trading exited with code ${code}`));
+          reject(new Error(stripAnsiCodes(stderrBuffer).slice(-800) || `Vibe-Trading exited with code ${code}`));
         } else {
           resolve(stdoutBuffer);
         }
       });
     });
 
-    return { ok: true, report: stdout };
+    return { ok: true, report: stripAnsiCodes(stdout) };
   } catch (error) {
     console.warn(`[vibeTrading] run failed: ${error.message}`);
     return { ok: false, message: `הבדיקה נכשלה: ${error.message}` };
