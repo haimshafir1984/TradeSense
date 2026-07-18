@@ -10,6 +10,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
+const universeStore = require('./universeStore');
+const { SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
 
 const RUN_TIMEOUT_MS = 3 * 60 * 1000; // Vibe-Trading agent runs take ~30-90s; generous ceiling.
 
@@ -36,12 +38,57 @@ const STRATEGY_RULES = {
 
 // Fixed, previously-validated candidate lists (see docs/BACKTEST_FINDINGS.md - an open-ended
 // "build your own universe" prompt made the agent loop unproductively for 40 iterations without
-// a result; a fixed ticker list works reliably). Reusing the exact same lists keeps the "theory"
-// button's results comparable across runs.
+// a result; a fixed ticker list works reliably). Kept only as the fallback for when the
+// systematic universe below isn't available (docs/SPEC_SHORT_TERM_UPGRADE.md step 8) - the
+// BACKTEST_FINDINGS.md report itself flags these as hand-picked, so selection-bias-free is
+// strictly better whenever the nightly universe store has usable data.
 const THEORY_CHECK_UNIVERSE = {
   small_cap_breakout: 'SMCI, AEHR, CELH, ONON, FUBO, IONQ, RGTI, MARA, RIOT, CLSK, SOUN, BBAI, LAZR, CHPT, PLUG, FCEL, GEVO, RIVN, LCID, NKLA, ACHR, JOBY, UPST, AFRM, SOFI, OPEN, CVNA, BYND, PTON, DKNG, RUM, GRAB, DNA, RXRX, CRSP, NTLA, BEAM, EDIT, SAVA, SRPT',
   swing_momentum: 'AAPL, MSFT, NVDA, AMD, TSLA, META, GOOGL, AMZN, NFLX, CRM, ADBE, ORCL, AVGO, QCOM, INTC, MU, PANW, CRWD, SNOW, PLTR, UBER, ABNB, SHOP, SQ, PYPL, COIN, MSTR, JPM, GS, BAC, V, MA, HD, NKE, SBUX, DIS, BA, CAT, DE, XOM, CVX, LLY, UNH, JNJ, PFE'
 };
+
+const SYSTEMATIC_UNIVERSE_SIZE = { small_cap_breakout: 40, swing_momentum: 45 };
+const SWING_MOMENTUM_MIN_MARKET_CAP = 10000000000; // large-cap floor, matching the spirit of the old hand-picked list.
+
+// Builds a candidate list from the nightly-refreshed universe store (universeStore.js) instead of
+// the hand-picked list above - the single biggest selection-bias caveat in BACKTEST_FINDINGS.md.
+// Deterministic (sorted by dollar volume, symbol as a tiebreaker) so repeated runs stay
+// comparable. Falls back to the fixed list when the store has nothing usable (empty, or the
+// >72h-stale cutoff in universeStore.getUniverse already returns null for that).
+async function buildTheoryUniverse(strategyKey) {
+  const universe = await universeStore.getUniverse('NASDAQ');
+  const fallback = { tickers: THEORY_CHECK_UNIVERSE[strategyKey] || THEORY_CHECK_UNIVERSE.small_cap_breakout, source: 'fixed legacy list' };
+
+  if (!universe || !Array.isArray(universe.rows) || !universe.rows.length) {
+    return fallback;
+  }
+
+  const limit = SYSTEMATIC_UNIVERSE_SIZE[strategyKey] || SYSTEMATIC_UNIVERSE_SIZE.small_cap_breakout;
+  const filtered = universe.rows.filter((row) => {
+    if (!Number.isFinite(row?.marketCap) || row.marketCap <= 0) {
+      return false;
+    }
+    if (strategyKey === 'small_cap_breakout') {
+      return row.marketCap < SMALL_CAP_THRESHOLDS.marketCapCeiling && Number.isFinite(row.price) && row.price >= SMALL_CAP_THRESHOLDS.minPrice;
+    }
+    return row.marketCap >= SWING_MOMENTUM_MIN_MARKET_CAP;
+  });
+
+  const sorted = filtered
+    .slice()
+    .sort((left, right) => {
+      const leftVolume = Number(left.avgDollarVolume) || 0;
+      const rightVolume = Number(right.avgDollarVolume) || 0;
+      return rightVolume !== leftVolume ? rightVolume - leftVolume : left.symbol.localeCompare(right.symbol);
+    })
+    .slice(0, limit);
+
+  if (!sorted.length) {
+    return fallback;
+  }
+
+  return { tickers: sorted.map((row) => row.symbol).join(', '), source: 'systematic (universeStore)' };
+}
 
 function isEnabled() {
   return process.env.VIBE_TRADING_ENABLED === 'true';
@@ -107,12 +154,16 @@ function loadDeepSeekEnvOverrides() {
 // would multiply cost and contend for the same DeepSeek rate limit for no benefit.
 let runInFlight = false;
 
+function disabledResponse() {
+  return {
+    ok: false,
+    message: 'תכונת הבדיקה ההיסטורית לא פעילה בסביבה הזו (זמינה רק בפיתוח מקומי עם Vibe-Trading מותקן - ראו docs/SPEC_VIBE_TRADING_INTEGRATION.md).'
+  };
+}
+
 async function runPrompt(promptText) {
   if (!isEnabled()) {
-    return {
-      ok: false,
-      message: 'תכונת הבדיקה ההיסטורית לא פעילה בסביבה הזו (זמינה רק בפיתוח מקומי עם Vibe-Trading מותקן - ראו docs/SPEC_VIBE_TRADING_INTEGRATION.md).'
-    };
+    return disabledResponse();
   }
 
   if (runInFlight) {
@@ -187,13 +238,12 @@ function buildStockHistoryPrompt({ ticker, strategy }) {
   );
 }
 
-function buildTheoryPrompt({ strategy }) {
+function buildTheoryPrompt({ strategy, universeTickers }) {
   const rules = STRATEGY_RULES[strategy] || STRATEGY_RULES.small_cap_breakout;
-  const universe = THEORY_CHECK_UNIVERSE[strategy] || THEORY_CHECK_UNIVERSE.small_cap_breakout;
 
   return (
     `Write and run ONE complete Python script (write it to a file first, then execute that file - do not explore interactively) that backtests a swing-trading rule over the trailing 3 years using yfinance daily data.\n\n` +
-    `CANDIDATE UNIVERSE (use exactly this fixed list - do not fetch a broader universe): ${universe}\n\n` +
+    `CANDIDATE UNIVERSE (use exactly this fixed list - do not fetch a broader universe): ${universeTickers}\n\n` +
     `${rules.ruleText}\n\n` +
     'For every signal day found, simulate three trades entering at that close and exiting at the close 5, 10, and 20 trading days later.\n\n' +
     `Also download ${rules.benchmark} over the same period as a benchmark (buy-and-hold).\n\n` +
@@ -207,11 +257,30 @@ async function checkStockHistory({ ticker, strategy }) {
 }
 
 async function checkTheory({ strategy }) {
-  return runPrompt(buildTheoryPrompt({ strategy }));
+  // Checked here (mirroring runPrompt's own check) before touching the universe store, so a
+  // disabled response doesn't pay for a disk read it doesn't need.
+  if (!isEnabled()) {
+    return disabledResponse();
+  }
+
+  const { tickers, source } = await buildTheoryUniverse(strategy);
+  const result = await runPrompt(buildTheoryPrompt({ strategy, universeTickers: tickers }));
+
+  if (!result.ok) {
+    return result;
+  }
+
+  const sourceNote =
+    source === 'systematic (universeStore)'
+      ? 'מדגם universe: נבנה שיטתית מה-universe הלילי (universeStore) - לא רשימה ידנית.'
+      : 'מדגם universe: רשימה קבועה שנבחרה ידנית (universeStore הלילי לא היה זמין/מספיק כרגע) - ראו הסתייגות selection bias ב-docs/BACKTEST_FINDINGS.md.';
+
+  return { ...result, report: `${sourceNote}\n\n${result.report}` };
 }
 
 module.exports = {
   isEnabled,
   checkStockHistory,
-  checkTheory
+  checkTheory,
+  buildTheoryUniverse
 };
