@@ -256,3 +256,53 @@ test('getActiveAssets filters to tradable, exact-exchange, plain-symbol equities
   assert.equal(assets.length, 1);
   assert.equal(assets[0].symbol, 'AAPL');
 });
+
+test('getSnapshots returns an empty map when no symbols are given', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const result = await alpacaService.getSnapshots({ symbols: [] });
+
+  clearAlpacaEnv();
+
+  assert.equal(result.size, 0);
+});
+
+test('getSnapshots returns a Map keyed by symbol, skipping entries Alpaca left null', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    jsonResponse({
+      AAPL: { latestTrade: { p: 210.5 }, prevDailyBar: { c: 205 } },
+      MSFT: null
+    });
+
+  const result = await alpacaService.getSnapshots({ symbols: ['AAPL', 'MSFT'] });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(result.size, 1);
+  assert.equal(result.get('AAPL').latestTrade.p, 210.5);
+  assert.equal(result.has('MSFT'), false);
+});
+
+test('getSnapshots returns an empty map when the request fails', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  global.fetch = async () => jsonResponse(null, false, 500);
+
+  const result = await alpacaService.getSnapshots({ symbols: ['AAPL'] });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(result.size, 0);
+});

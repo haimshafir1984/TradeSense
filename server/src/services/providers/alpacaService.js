@@ -221,9 +221,39 @@ async function getLatestDailyBars({ symbols = [] } = {}) {
   return latest;
 }
 
+// GET /v2/stocks/snapshots - latest trade/quote plus today's and yesterday's daily bar, for up to
+// a handful of symbols in one batched call. Used for the user-triggered pre-market re-rank
+// (docs/SPEC_SHORT_TERM_UPGRADE.md step 7), not any automatic scan. Returns Map<symbol, snapshot>;
+// a symbol Alpaca has no snapshot for (e.g. no pre-market trades yet on the IEX feed) is simply
+// absent from the map, not an error.
+async function getSnapshots({ symbols = [] } = {}) {
+  const result = new Map();
+
+  if (!Array.isArray(symbols) || symbols.length === 0) {
+    return result;
+  }
+
+  const params = new URLSearchParams({ symbols: symbols.join(','), feed: 'iex' });
+  const url = `${DATA_BASE_URL}/v2/stocks/snapshots?${params.toString()}`;
+  const data = await fetchAlpaca(url, 'getSnapshots');
+
+  if (!data || typeof data !== 'object') {
+    return result;
+  }
+
+  for (const [symbol, snapshot] of Object.entries(data)) {
+    if (snapshot) {
+      result.set(symbol, snapshot);
+    }
+  }
+
+  return result;
+}
+
 module.exports = {
   isConfigured,
   getActiveAssets,
   getDailyBars,
-  getLatestDailyBars
+  getLatestDailyBars,
+  getSnapshots
 };

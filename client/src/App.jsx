@@ -154,6 +154,11 @@ function App() {
   const [actualOpenInputs, setActualOpenInputs] = useState({});
   const [outcomeBusyTicker, setOutcomeBusyTicker] = useState(null);
   const [outcomeError, setOutcomeError] = useState('');
+  // Pre-market re-rank (docs/SPEC_SHORT_TERM_UPGRADE.md step 7) - user-triggered only, never
+  // automatic. Replaces tomorrowWatchlist in place with the reranked (gapStatus-tagged) list.
+  const [premarketRerankBusy, setPremarketRerankBusy] = useState(false);
+  const [premarketRerankError, setPremarketRerankError] = useState('');
+  const [premarketRerankAt, setPremarketRerankAt] = useState(null);
   // Vibe-Trading on-demand historical-check integration (see
   // docs/SPEC_VIBE_TRADING_INTEGRATION.md) - opt-in only, never fired automatically by a scan.
   const [vibeTradingEnabled, setVibeTradingEnabled] = useState(false);
@@ -367,6 +372,8 @@ function App() {
   const handleLoadTomorrowWatchlist = async (forceRefresh = false) => {
     setTomorrowWatchlistLoading(true);
     setTomorrowWatchlistError('');
+    setPremarketRerankAt(null);
+    setPremarketRerankError('');
 
     try {
       const refreshParam = forceRefresh ? '&refresh=true' : '';
@@ -389,6 +396,34 @@ function App() {
       setTomorrowWatchlistError(requestError.message);
     } finally {
       setTomorrowWatchlistLoading(false);
+    }
+  };
+
+  // User-triggered only (a button click) - re-ranks the already-loaded watchlist by actual
+  // pre-market gap instead of last night's EOD prediction. Replaces tomorrowWatchlist in place.
+  const handleRerankByPremarket = async () => {
+    setPremarketRerankBusy(true);
+    setPremarketRerankError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/watchlist/tomorrow/rerank`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exchange: form.exchange })
+      });
+      const data = await response.json();
+
+      if (!data.available) {
+        setPremarketRerankError(data.message || 'דירוג מחדש לפי פרה-מרקט אינו זמין כרגע.');
+        return;
+      }
+
+      setTomorrowWatchlist(data.watchlist ?? []);
+      setPremarketRerankAt(data.snapshotAt ?? new Date().toISOString());
+    } catch (requestError) {
+      setPremarketRerankError('דירוג מחדש לפי פרה-מרקט נכשל. נסה שוב.');
+    } finally {
+      setPremarketRerankBusy(false);
     }
   };
 
@@ -566,6 +601,15 @@ function App() {
               >
                 {tomorrowWatchlistLoading ? 'מרענן...' : 'רענן עכשיו'}
               </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleRerankByPremarket}
+                disabled={premarketRerankBusy || tomorrowWatchlist.length === 0}
+                title="שולף תמונת מצב אחת מ-Alpaca לכל הרשימה ומדרג מחדש לפי הגאפ בפועל במקום התחזית מאתמול בערב"
+              >
+                {premarketRerankBusy ? 'מעדכן לפי פרה-מרקט...' : 'עדכן לפי פרה-מרקט'}
+              </button>
               <button type="button" className="ghost-button" onClick={() => setShowTomorrowWatchlist((current) => !current)}>
                 {showTomorrowWatchlist ? 'הסתר' : 'הצג'}
               </button>
@@ -579,6 +623,12 @@ function App() {
               </p>
 
               {tomorrowWatchlistError ? <p className="error-box">{tomorrowWatchlistError}</p> : null}
+              {premarketRerankError ? <p className="error-box">{premarketRerankError}</p> : null}
+              {premarketRerankAt ? (
+                <p className="watchlist-disclaimer">
+                  דורג מחדש לפי פרה-מרקט ({formatGeneratedAt(premarketRerankAt)}) - הנתון עשוי להיות חלקי (feed IEX).
+                </p>
+              ) : null}
               {outcomeError ? <p className="error-box">{outcomeError}</p> : null}
 
               <div className="results-wrapper">
@@ -594,19 +644,20 @@ function App() {
                       <th>דוח בקרוב</th>
                       <th>סיבה</th>
                       <th>סיכוי לפריצה</th>
+                      {premarketRerankAt ? <th>פרה-מרקט בפועל</th> : null}
                       <th>מחיר פתיחה בפועל</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tomorrowWatchlistLoading ? (
                       <tr>
-                        <td colSpan={10} className="empty-state">
+                        <td colSpan={10 + (premarketRerankAt ? 1 : 0)} className="empty-state">
                           טוען רשימת מעקב...
                         </td>
                       </tr>
                     ) : tomorrowWatchlist.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="empty-state">
+                        <td colSpan={10 + (premarketRerankAt ? 1 : 0)} className="empty-state">
                           לא נמצאו כרגע מועמדים שעומדים בקריטריונים.
                         </td>
                       </tr>
@@ -630,6 +681,11 @@ function App() {
                           <td>
                             <BreakoutLikelihoodCell likelihood={item.breakoutLikelihood} />
                           </td>
+                          {premarketRerankAt ? (
+                            <td>
+                              <PremarketGapCell gapStatus={item.gapStatus} actualGapPct={item.actualGapPct} />
+                            </td>
+                          ) : null}
                           <td>
                             <ActualOpenCell
                               outcome={tomorrowWatchlistOutcomes[item.ticker]}
@@ -1065,6 +1121,23 @@ function RegimeRecommendationNote({ marketRegime, selectedStrategy }) {
 // (watchlistLearningService.js, computed server-side from watchlistOutcomes.json). Below the
 // minimum sample size it says so explicitly rather than showing a percentage that would look
 // scientific but rest on a handful of data points.
+// Shows the actual pre-market gap vs. last night's EOD prediction, after a user-triggered rerank
+// (docs/SPEC_SHORT_TERM_UPGRADE.md step 7). 'unknown' (no snapshot data for this ticker) is shown
+// distinctly from a confirmed/faded gap - it's "we don't know", not "the gap disappeared".
+function PremarketGapCell({ gapStatus, actualGapPct }) {
+  if (gapStatus === 'unknown' || actualGapPct === null || actualGapPct === undefined) {
+    return <span className="cell-subtext">אין נתון פרה-מרקט</span>;
+  }
+
+  const sign = actualGapPct > 0 ? '+' : '';
+  return (
+    <span className={`metric-pill ${gapStatus === 'confirmed' ? 'high' : 'low'}`}>
+      {gapStatus === 'confirmed' ? 'גאפ מאושר' : 'גאפ נחלש'}: {sign}
+      {actualGapPct}%
+    </span>
+  );
+}
+
 function BreakoutLikelihoodCell({ likelihood }) {
   if (!likelihood || likelihood.positiveGapRatePct === null) {
     const sampleSize = likelihood?.sampleSize ?? 0;
