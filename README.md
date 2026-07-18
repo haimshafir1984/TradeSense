@@ -15,6 +15,10 @@ TradeSense היא מערכת סריקת מניות עם ממשק משתמש ב־
 > **פורס ל-Render?** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — הגדרות נדרשות (Instance Type, Persistent Disk, משתני סביבה) ומכשולים אמיתיים שנתקלנו בהם.
 >
 > **בודק את המערכת מול כסף אמיתי?** [docs/TESTING_PLAN.md](docs/TESTING_PLAN.md) — הפרוטוקול המעשי: מה לתעד, מתי לא לגעת בפוזיציה, ומתי יש מספיק דגימות כדי להסיק משהו.
+>
+> **רוצה לבדוק אסטרטגיה מול נתונים היסטוריים?** [docs/SPEC_VIBE_TRADING_INTEGRATION.md](docs/SPEC_VIBE_TRADING_INTEGRATION.md) — תוסף מקומי-בלבד (כבוי כברירת מחדל, לא קיים ב-Render) שמריץ בדיקה היסטורית בלחיצת כפתור דרך כלי חיצוני; הרקע והמגבלות ב-[docs/BACKTEST_FINDINGS.md](docs/BACKTEST_FINDINGS.md).
+>
+> **פותח שיחה חדשה עם Claude על הפרויקט?** [CLAUDE.md](CLAUDE.md) — מפת התמצאות קצרה לכל המסמכים והמוסכמות.
 
 ## תוכן העניינים
 
