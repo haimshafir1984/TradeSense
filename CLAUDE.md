@@ -19,6 +19,7 @@
 - `LOGIC_IMPROVEMENTS.md` - ממצאים ידועים + backlog לשיפור לוגיקת ההמלצות.
 - `SPEC_VIBE_TRADING_LAB.md`, `BACKTEST_STRATEGY_DEFINITIONS.md`, `BACKTEST_FINDINGS.md` - מעבדת ה-backtest הנפרדת (ראו למטה).
 - `SPEC_VIBE_TRADING_INTEGRATION.md` - האינטגרציה בפועל בתוך TradeSense (ראו למטה).
+- `SPEC_SHORT_TERM_UPGRADE.md` - **תוכנית העבודה הפעילה (2026-07-18)**: שדרוג טווח-קצר/high-risk ב-9 שלבים ממוספרים עם קריטריוני קבלה, מיועד לביצוע שלב-אחר-שלב ע"י agent. אם התבקשת "להריץ את השדרוג" - התחל שם.
 
 ## התוסף Vibe-Trading (נוסף 2026-07-18)
 
