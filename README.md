@@ -19,6 +19,8 @@ TradeSense היא מערכת סריקת מניות עם ממשק משתמש ב־
 > **רוצה לבדוק אסטרטגיה מול נתונים היסטוריים?** [docs/SPEC_VIBE_TRADING_INTEGRATION.md](docs/SPEC_VIBE_TRADING_INTEGRATION.md) — תוסף מקומי-בלבד (כבוי כברירת מחדל, לא קיים ב-Render) שמריץ בדיקה היסטורית בלחיצת כפתור דרך כלי חיצוני; הרקע והמגבלות ב-[docs/BACKTEST_FINDINGS.md](docs/BACKTEST_FINDINGS.md).
 >
 > **פותח שיחה חדשה עם Claude על הפרויקט?** [CLAUDE.md](CLAUDE.md) — מפת התמצאות קצרה לכל המסמכים והמוסכמות.
+>
+> **רוצה להסביר למישהו אחר מה המערכת עושה?** [docs/EXPLAINER.html](docs/EXPLAINER.html) — מסמך הסבר אינטראקטיבי בשפה פשוטה (לפתוח בדפדפן).
 
 ## תוכן העניינים
 

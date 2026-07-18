@@ -1,0 +1,469 @@
+<title>TradeSense — איך המערכת בוחרת מניות</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --ink:#16202A;
+    --ink-soft:#4B5A64;
+    --paper:#F4F6F5;
+    --card:#FFFFFF;
+    --card-border:#DCE1DF;
+    --accent:#9C6A1E;
+    --accent-strong:#7C5417;
+    --steel:#2B4C63;
+    --good:#2F7D5C;
+    --risk:#B23A34;
+    --rule:#D7DCD9;
+    --shadow: 0 1px 2px rgba(22,32,42,.04), 0 8px 24px rgba(22,32,42,.06);
+    --sans: -apple-system, "Segoe UI", Arial, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "Consolas", "SF Mono", monospace;
+  }
+  :root[data-theme="dark"]{
+    --ink:#E7E9E6;
+    --ink-soft:#A9B3B8;
+    --paper:#12181C;
+    --card:#1A2226;
+    --card-border:#2B363B;
+    --accent:#D9A94B;
+    --accent-strong:#EFC372;
+    --steel:#7FA6C2;
+    --good:#4FB584;
+    --risk:#E2726B;
+    --rule:#2B363B;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#E7E9E6;
+      --ink-soft:#A9B3B8;
+      --paper:#12181C;
+      --card:#1A2226;
+      --card-border:#2B363B;
+      --accent:#D9A94B;
+      --accent-strong:#EFC372;
+      --steel:#7FA6C2;
+      --good:#4FB584;
+      --risk:#E2726B;
+      --rule:#2B363B;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.35);
+    }
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    direction:rtl;
+    text-align:right;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent); color:#fff; }
+
+  .wrap{
+    max-width:920px;
+    margin:0 auto;
+    padding:0 24px 96px;
+  }
+
+  /* ---------- nav ---------- */
+  .toc{
+    position:fixed;
+    top:0; bottom:0; left:0;
+    width:220px;
+    padding:32px 18px;
+    display:none;
+    flex-direction:column;
+    gap:4px;
+    overflow-y:auto;
+    z-index:5;
+  }
+  .toc a{
+    display:flex; align-items:center; gap:10px;
+    padding:7px 10px;
+    border-radius:6px;
+    color:var(--ink-soft);
+    text-decoration:none;
+    font-size:13px;
+    transition:color .15s, background .15s;
+    white-space:nowrap;
+  }
+  .toc a .dot{
+    width:6px; height:6px; border-radius:50%;
+    background:var(--rule);
+    flex:none;
+    transition:background .15s, transform .15s;
+  }
+  .toc a:hover{ color:var(--ink); }
+  .toc a.active{ color:var(--accent-strong); font-weight:600; }
+  .toc a.active .dot{ background:var(--accent); transform:scale(1.3); }
+  @media (min-width:1240px){ .toc{ display:flex; } }
+
+  /* ---------- hero ---------- */
+  .hero{
+    position:relative;
+    padding:88px 0 56px;
+    overflow:hidden;
+  }
+  .hero::before{
+    content:"";
+    position:absolute; inset:0 -200px auto -200px; height:340px;
+    background-image: repeating-linear-gradient(var(--rule) 0 1px, transparent 1px 40px);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+            mask-image: linear-gradient(to bottom, black, transparent);
+    opacity:.55;
+    z-index:-1;
+  }
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:12.5px;
+    letter-spacing:.14em;
+    color:var(--accent-strong);
+    text-transform:uppercase;
+    margin:0 0 14px;
+  }
+  h1{
+    font-size:clamp(32px,5vw,50px);
+    line-height:1.15;
+    margin:0 0 20px;
+    text-wrap:balance;
+    letter-spacing:-.01em;
+  }
+  .hero p.lede{
+    font-size:18px;
+    color:var(--ink-soft);
+    max-width:60ch;
+    margin:0;
+  }
+
+  section{ padding:52px 0; border-top:1px solid var(--rule); }
+  section:first-of-type{ border-top:none; }
+  h2{
+    font-size:25px;
+    margin:0 0 8px;
+    display:flex; align-items:baseline; gap:10px;
+  }
+  h2 .num{ font-family:var(--mono); font-size:14px; color:var(--ink-soft); font-weight:400; }
+  .section-sub{ color:var(--ink-soft); margin:0 0 32px; max-width:65ch; }
+
+  /* ---------- flow ---------- */
+  .flow{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(150px,1fr));
+    gap:0;
+    counter-reset:step;
+  }
+  .flow-step{
+    position:relative;
+    padding:18px 16px 18px 8px;
+    border-inline-start:2px solid var(--rule);
+  }
+  .flow-step:first-child{ border-inline-start:2px solid var(--accent); }
+  .flow-step .k{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--accent-strong);
+    display:block;
+    margin-bottom:6px;
+  }
+  .flow-step h3{ font-size:15.5px; margin:0 0 6px; }
+  .flow-step p{ font-size:13.5px; color:var(--ink-soft); margin:0; }
+
+  /* ---------- cards ---------- */
+  .grid-2{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+  .card{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:10px;
+    padding:22px 24px;
+    box-shadow:var(--shadow);
+  }
+  .card h3{
+    font-size:16.5px;
+    margin:0 0 4px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  .card .tag{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.03em;
+    color:var(--steel);
+    background:color-mix(in srgb, var(--steel) 12%, transparent);
+    padding:3px 8px;
+    border-radius:20px;
+    white-space:nowrap;
+  }
+  .card p{ font-size:14.5px; color:var(--ink-soft); margin:8px 0 0; }
+  .card .gate{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px dashed var(--rule);
+    font-size:13px;
+    font-family:var(--mono);
+    color:var(--ink);
+  }
+  .card .gate b{ color:var(--accent-strong); font-weight:600; }
+
+  /* ---------- data section ---------- */
+  .datalist{ display:grid; gap:14px; }
+  .datarow{
+    display:grid;
+    grid-template-columns:170px 1fr;
+    gap:18px;
+    align-items:start;
+    padding:14px 0;
+    border-bottom:1px solid var(--rule);
+  }
+  .datarow:last-child{ border-bottom:none; }
+  .datarow .label{ font-weight:600; font-size:14.5px; }
+  .datarow .label small{ display:block; font-family:var(--mono); font-size:11.5px; color:var(--ink-soft); font-weight:400; margin-top:2px; }
+  .datarow p{ margin:0; font-size:14.5px; color:var(--ink-soft); }
+  @media (max-width:560px){ .datarow{ grid-template-columns:1fr; } }
+
+  /* ---------- callouts ---------- */
+  .callout{
+    border-inline-start:3px solid var(--risk);
+    background:color-mix(in srgb, var(--risk) 7%, var(--card));
+    border-radius:0 10px 10px 0;
+    padding:18px 22px;
+    margin-bottom:14px;
+  }
+  .callout h4{ margin:0 0 6px; font-size:14.5px; color:var(--risk); }
+  .callout p{ margin:0; font-size:14px; color:var(--ink-soft); }
+  .callout.good{ border-inline-start-color:var(--good); background:color-mix(in srgb, var(--good) 7%, var(--card)); }
+  .callout.good h4{ color:var(--good); }
+
+  /* ---------- addon panel ---------- */
+  .addon{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:14px;
+    padding:28px 28px 24px;
+    box-shadow:var(--shadow);
+  }
+  .addon-head{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:6px; }
+  .addon-head h3{ margin:0; font-size:18px; }
+  .switch{
+    display:flex; align-items:center; gap:9px;
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-soft);
+  }
+  .switch .track{
+    width:34px; height:18px; border-radius:20px;
+    background:var(--rule);
+    position:relative;
+    flex:none;
+  }
+  .switch .track::after{
+    content:""; position:absolute; top:2px; right:2px;
+    width:14px; height:14px; border-radius:50%;
+    background:var(--card); box-shadow:0 1px 2px rgba(0,0,0,.25);
+  }
+  .addon p.desc{ color:var(--ink-soft); margin:10px 0 20px; max-width:62ch; }
+  .addon-actions{ display:flex; gap:12px; flex-wrap:wrap; }
+  .fakebtn{
+    font-size:13.5px;
+    padding:10px 18px;
+    border-radius:20px;
+    border:1px solid var(--card-border);
+    color:var(--ink-soft);
+    background:transparent;
+    font-family:var(--sans);
+  }
+
+  /* ---------- glossary ---------- */
+  dl.gloss{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:18px 28px; margin:0; }
+  dl.gloss div{ border-inline-start:2px solid var(--rule); padding-inline-start:14px; }
+  dl.gloss dt{ font-family:var(--mono); font-size:13px; color:var(--accent-strong); margin-bottom:4px; }
+  dl.gloss dd{ margin:0; font-size:13.5px; color:var(--ink-soft); }
+
+  footer{
+    padding:40px 0 0;
+    color:var(--ink-soft);
+    font-size:12.5px;
+    font-family:var(--mono);
+  }
+
+  @media (prefers-reduced-motion:no-preference){
+    section{ animation:rise .5s ease both; }
+  }
+  @keyframes rise{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none; } }
+</style>
+
+<nav class="toc" id="toc">
+  <a href="#flow"><span class="dot"></span>איך זה עובד</a>
+  <a href="#strategies"><span class="dot"></span>חמש שיטות בחירה</a>
+  <a href="#data"><span class="dot"></span>על מה זה מסתכל</a>
+  <a href="#watchlist"><span class="dot"></span>רשימת מעקב למחר</a>
+  <a href="#honesty"><span class="dot"></span>מגבלות בכנות</a>
+  <a href="#addon"><span class="dot"></span>בדיקה מול היסטוריה</a>
+  <a href="#gloss"><span class="dot"></span>מילון קצר</a>
+</nav>
+
+<div class="wrap">
+
+  <div class="hero">
+    <p class="eyebrow">TradeSense · מסמך הסבר</p>
+    <h1>איך המערכת בוחרת מניות — בלי הפרזות</h1>
+    <p class="lede">מסמך אחד, בעברית פשוטה, שמסביר מה TradeSense עושה בפועל, על אילו נתונים היא מסתכלת, ומה היא <b>לא</b> — לפני שקוראים לזה "המלצת השקעה".</p>
+  </div>
+
+  <section id="flow">
+    <h2><span class="num">01</span>איך זה עובד, מקצה לקצה</h2>
+    <p class="section-sub">כל סריקה עוברת חמישה שלבים קבועים, באותו סדר, על כל מניה בבורסה שנבחרה.</p>
+    <div class="flow">
+      <div class="flow-step"><span class="k">קלט</span><h3>בחירת פרמטרים</h3><p>בורסה, רמת סיכון, שיטת השקעה ופילטרים — כולם נבחרים על ידך בטופס.</p></div>
+      <div class="flow-step"><span class="k">מאגר</span><h3>רשימת מניות</h3><p>נבנית פעם בלילה ונשמרת לדיסק, כדי שהסריקה היומית לא תלויה בזמינות רגעית של ספק נתונים.</p></div>
+      <div class="flow-step"><span class="k">סינון</span><h3>פילטרים קשיחים</h3><p>מניות שלא עומדות בסף (למשל שווי שוק, מחיר מינימלי, תנודתיות) נפסלות לגמרי — לא מדורגות נמוך, נעלמות.</p></div>
+      <div class="flow-step"><span class="k">ניקוד</span><h3>חישוב לפי שיטה</h3><p>כל מניה שנשארה מקבלת ציון 0–1 לפי הנוסחה של השיטה שנבחרה (פירוט בסעיף הבא).</p></div>
+      <div class="flow-step"><span class="k">פלט</span><h3>עד 10 תוצאות</h3><p>ממוינות מהגבוה לנמוך, כל אחת עם הסבר קצר בעברית למה היא הגיעה לרשימה.</p></div>
+    </div>
+  </section>
+
+  <section id="strategies">
+    <h2><span class="num">02</span>חמש שיטות בחירה</h2>
+    <p class="section-sub">"שיטת השקעה" בטופס היא בעצם נוסחת ניקוד שונה — כל אחת שמה דגש על תמהיל אחר של מגמה, מומנטום, נפח מסחר וחוזק יחסי מול השוק. כמה מהן נועלות מניה על 0 אם היא לא עוברת סף כניסה בסיסי, לפני שהניקוד בכלל נכנס לתמונה.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Micha Stocks <span class="tag">טווח ארוך</span></h3>
+        <p>מחפשת יציבות: מגמת עלייה מעל ממוצע 200 יום, קרבה לשיא השנתי, ונפח מסחר תומך. משלבת גם צמיחת הכנסות שנתית בפועל — לא רק גודל חברה.</p>
+      </div>
+      <div class="card">
+        <h3>Mark Minervini <span class="tag">מומנטום טכני</span></h3>
+        <p>ה"תבנית מגמה" הקלאסית: מחיר מעל שני הממוצעים בסדר הנכון (50 מעל 200), רחוק משמעותית מהשפל השנתי, קרוב לשיא, וחוזק יחסי גבוה מול המדד — לרוב אחרי תקופת התכנסות (VCP).</p>
+      </div>
+      <div class="card">
+        <h3>Ross Cameron <span class="tag">קצר טווח</span></h3>
+        <p>מומנטום חד ביום המסחר: שינוי יומי גדול, נפח חריג, קרבה לשיא היום, עם העדפה למניות בעלות שווי שוק קטן (הנחת "float" נמוך).</p>
+      </div>
+      <div class="card">
+        <h3>Swing Momentum <span class="tag">פריצות</span></h3>
+        <p>שני תת-מבנים: פריצה מקונסולידציה צמודה בנפח גבוה, או גאפ חד על קטליזטור ("Episodic Pivot"). המניה מדורגת לפי מה שמתאים לה יותר.</p>
+        <div class="gate">סף כניסה: <b>ADR ≥ 3.5%</b> ומחיר מעל ממוצע 200 יום — אחרת ציון 0.</div>
+      </div>
+      <div class="card">
+        <h3>Small-Cap Breakout <span class="tag">מניות קטנות</span></h3>
+        <p>פרופיל "מניה קטנה שיכולה לזוז עשרות אחוזים": פריצת נפח, תנועה יומית חדה, קרבה לשיא וחוזק יחסי — אך ורק על מניות שעומדות בסף.</p>
+        <div class="gate">סף כניסה: <b>שווי שוק &lt; 2B$</b>, <b>מחיר ≥ 2$</b>, <b>ADR ≥ 5%</b>.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="data">
+    <h2><span class="num">03</span>על מה זה מסתבס בפועל</h2>
+    <p class="section-sub">שילוב של נתונים טכניים (מבוססי מחיר ונפח) ומעט נתונים פונדמנטליים. אין ניתוח סנטימנט, חדשות או דוחות כספיים מלאים.</p>
+    <div class="datalist">
+      <div class="datarow">
+        <div class="label">ממוצעים נעים<small>MA50 / MA200</small></div>
+        <p>לזיהוי מגמה: האם המחיר מעל הממוצע, והאם הממוצע הקצר מעל הארוך (סדר "בריא" לפי מינרוויני).</p>
+      </div>
+      <div class="datarow">
+        <div class="label">טווח יומי ממוצע<small>ADR%</small></div>
+        <p>ממוצע תנודה יומית ב-20 הימים האחרונים. משמש כסף כניסה בסיסי לשיטות המומנטום — מניה "רדומה" נפסלת.</p>
+      </div>
+      <div class="datarow">
+        <div class="label">יחס נפח מסחר<small>volume vs. avg 30d</small></div>
+        <p>נפח מסחר יומי מול הממוצע ב-30 יום — סימן לעניין חריג במניה באותו יום.</p>
+      </div>
+      <div class="datarow">
+        <div class="label">קרבה לשיא/שפל שנתי<small>52w high/low</small></div>
+        <p>כמה קרוב המחיר לשיא השנתי (פוטנציאל פריצה) וכמה רחוק מהשפל השנתי (סימן לחוזק, לא נפילה שמתאוששת רגעית).</p>
+      </div>
+      <div class="datarow">
+        <div class="label">חוזק יחסי אמיתי<small>return 3m − SPY 3m</small></div>
+        <p>לא מדד פנימי — תשואת 3 חודשים של המניה בפועל, פחות תשואת ה-SPY לאותה תקופה. אם המניה לא מנצחת את השוק, זה נספג בציון.</p>
+      </div>
+      <div class="datarow">
+        <div class="label">שווי שוק וצמיחת הכנסות<small>market cap · revenue growth YoY</small></div>
+        <p>הפונדמנטלי היחיד שנכנס לניקוד: גודל החברה (לסינון small-cap) וצמיחת הכנסות שנתית בפועל (רק בשיטת Micha Stocks).</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="watchlist">
+    <h2><span class="num">04</span>רשימת מעקב למחר</h2>
+    <p class="section-sub">תכונה נפרדת לגמרי מהסריקה הראשית: כל ערב המערכת מכינה לבד, בלי שתלחץ על כלום, רשימה של עד 10 מניות קטנות-בינוניות שזזו חזק היום בנפח חריג — מועמדות אפשריות להמשך תנועה ("gap and go") בפתיחת המסחר מחר.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>איך זה נשאר בתקציב <span class="tag">משפך תלת-שלבי</span></h3>
+        <p>שירותי הנתונים מוגבלים במכסה יומית, אז המערכת לא בודקת כל מניה לעומק מההתחלה: מבט רחב וזול על אלפי מניות ← מבט בינוני על כמה מאות ← מבט מדוקדק (שווי שוק, דוח כספים קרוב) רק על 10–20 הפינליסטים שבאמת שרדו.</p>
+      </div>
+      <div class="card">
+        <h3>לומד מהתוצאות שלך <span class="tag">Breakout Likelihood</span></h3>
+        <p>אפשר לרשום ליד כל שורה את מחיר הפתיחה בפועל למחרת. אחרי כמה תיעודים (מינימום 5) המערכת משווה כל מועמד חדש לתיעודים דומים שקדמו לו, ומציגה "כמה פעמים דפוס דומה נגמר בפער חיובי" — שקוף ופשוט, לא מודל "קופסה שחורה".</p>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:16px;">
+      <h4>נתוני סוף יום, לא זמן אמת</h4>
+      <p>הרשימה מבוססת על מחיר הסגירה של היום. לפני כל החלטה צריך לוודא מול המחיר האמיתי בפתיחת המסחר מחר — וכל מניה עם דוח כספים קרוב מסומנת בדגל, כי זה יכול להיות גם הזדמנות וגם סיכון.</p>
+    </div>
+  </section>
+
+  <section id="honesty">
+    <h2><span class="num">05</span>מגבלות — בכנות</h2>
+    <p class="section-sub">חשוב להבין מה המערכת <b>לא</b> עושה, לפני שמסתכלים על תוצאה בודדת כעל "המלצה".</p>
+    <div class="callout">
+      <h4>זו לא ייעוץ השקעות</h4>
+      <p>הניקוד הוא נוסחה טכנית קבועה מראש, לא חוות דעת של יועץ מוסמך. עבר לא מבטיח עתיד, וזו בדיוק הסיבה שיש בהמשך כלי לבדוק זאת.</p>
+    </div>
+    <div class="callout">
+      <h4>נתונים חלקיים אפשריים</h4>
+      <p>ספקי הנתונים (Alpaca / Nasdaq / Finnhub / FMP) עלולים להחזיר שדות חסרים בגלל מגבלות API. במקרה כזה חלק מהשדות מחושבים מתוך ערך פנימי (imputed) — התוצאה עדיין מוצגת, אך רמת הביטחון בה יורדת.</p>
+    </div>
+    <div class="callout">
+      <h4>אין רשת ביטחון של "מסחר אמיתי"</h4>
+      <p>שום חלק במערכת לא מתחבר לברוקר או מבצע פעולת קנייה/מכירה בפועל. הפלט הוא רשימה מדורגת ותו לא.</p>
+    </div>
+  </section>
+
+  <section id="addon">
+    <h2><span class="num">06</span>בדיקה מול היסטוריה — תוסף אופציונלי</h2>
+    <p class="section-sub">תוסף חדש, מקומי בלבד, שמריץ בדיקה נתונים היסטוריים דרך כלי חיצוני (Vibe-Trading) — <b>אך ורק בלחיצת כפתור</b>, אף פעם לא אוטומטית על סריקה.</p>
+    <div class="addon">
+      <div class="addon-head">
+        <h3>שני כפתורים, שני סוגי שאלה</h3>
+        <div class="switch"><span class="track"></span>כבוי כברירת מחדל</div>
+      </div>
+      <p class="desc">
+        <b>"בדוק היסטורית"</b> ליד מניה בודדת בתוצאות — שואל: מה <i>המניה הזו עצמה</i> עשתה בעבר, כשהראתה תבנית דומה לחוקי השיטה שנבחרה?
+        <br>
+        <b>"בדוק תאוריה היסטורית"</b> ליד סרגל התוצאות — שואל שאלה רחבה יותר: איך <i>החוקים עצמם</i> של השיטה הנבחרת ביצעו על מדגם קבוע של מניות ב-3 השנים האחרונות.
+      </p>
+      <div class="addon-actions">
+        <span class="fakebtn">בדוק היסטורית ↗</span>
+        <span class="fakebtn">בדוק תאוריה היסטורית ↗</span>
+      </div>
+    </div>
+    <div class="callout good" style="margin-top:16px;">
+      <h4>למה זה מוגבל בכוונה</h4>
+      <p>הבדיקה רצה רק בפיתוח מקומי, לא קיימת בכלל בסביבת הענן, ולא נוגעת בשום חיבור למסחר אמיתי. המדגם הקבוע ששימש לאימות (ולא universe אמיתי ומלא) הוא מגבלה מתועדת, לא מוסתרת — פירוט מלא ב-docs/BACKTEST_FINDINGS.md.</p>
+    </div>
+  </section>
+
+  <section id="gloss">
+    <h2><span class="num">07</span>מילון קצר</h2>
+    <dl class="gloss">
+      <div><dt>ADR%</dt><dd>טווח תנודה יומי ממוצע — מדד לכמה "חיה" המניה ביום מסחר רגיל.</dd></div>
+      <div><dt>MA50 / MA200</dt><dd>ממוצע נע של המחיר על פני 50 או 200 ימי מסחר — מייצג מגמה.</dd></div>
+      <div><dt>Relative Strength</dt><dd>תשואת המניה פחות תשואת המדד (SPY) לאותה תקופה — האם המניה "מנצחת" את השוק.</dd></div>
+      <div><dt>VCP / Consolidation</dt><dd>תקופת התכנסות מחיר בטווח מצטמצם, לרוב לפני פריצה.</dd></div>
+      <div><dt>Episodic Pivot</dt><dd>גאפ חד על קטליזטור (חדשות/דוחות) בנפח חריג — סוג אחר של הזדמנות מפריצה רגילה.</dd></div>
+      <div><dt>imputedFields</dt><dd>שדות שחושבו מקירוב פנימי כי הספק לא החזיר נתון אמיתי — משפיע על ציון הביטחון.</dd></div>
+    </dl>
+  </section>
+
+  <footer>TradeSense — מסמך הסבר · מבוסס על הקוד בפועל בריפו, לא על תיאור שיווקי</footer>
+</div>
+
+<script>
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var sections = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function onScroll(){
+    var pos = window.scrollY + 140;
+    var current = 0;
+    sections.forEach(function(sec, i){ if (sec && sec.offsetTop <= pos) current = i; });
+    links.forEach(function(a, i){ a.classList.toggle('active', i === current); });
+  }
+  document.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
