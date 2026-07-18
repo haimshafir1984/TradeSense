@@ -56,6 +56,7 @@ SCAN_HISTORY_FILE_PATH=/var/data/scanHistory.json
 WATCHLIST_STORE_FILE_PATH=/var/data/watchlistCache.json
 WATCHLIST_OUTCOME_STORE_FILE_PATH=/var/data/watchlistOutcomes.json
 UNIVERSE_STORE_FILE_PATH=/var/data/universeCache.json
+REGIME_HISTORY_FILE_PATH=/var/data/regimeHistory.json
 ```
 
 בלי `Mount Path` תואם בפועל, הכתיבה תיכשל (`ENOENT`, כי `/var/data` לא

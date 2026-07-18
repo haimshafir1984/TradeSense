@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 const { analyzeMarket } = require('../src/services/scannerService');
 
 test('analyzeMarket runs end-to-end on demo data without institutional/insider filters', async () => {
@@ -212,4 +215,64 @@ test('ross_cameron finalists get re-scored with a real share count when the look
   assert.ok(
     withRealFloat.results.some((result) => result.matchScore > (baselineByTicker.get(result.ticker) ?? -Infinity))
   );
+});
+
+test('marketRegime.smoothedRegime reflects the recorded history (majority vote), not just today\'s regime', async () => {
+  delete process.env.FMP_API_KEY;
+  delete process.env.FINNHUB_API_KEY;
+
+  const regimeHistoryStore = require('../src/services/regimeHistoryStore');
+  const originalRecordRegimeSnapshot = regimeHistoryStore.recordRegimeSnapshot;
+  regimeHistoryStore.recordRegimeSnapshot = async (_exchange, regime) => [
+    { date: '2026-07-08', regime: 'bearish' },
+    { date: '2026-07-09', regime: 'bearish' },
+    { date: '2026-07-10', regime }
+  ];
+
+  const response = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'micha_stocks', risk: 'medium', filters: {} });
+
+  regimeHistoryStore.recordRegimeSnapshot = originalRecordRegimeSnapshot;
+
+  // Whatever today's own regime came out as, the majority of the fake 3-day history is 'bearish'.
+  assert.equal(response.analysis.marketRegime.smoothedRegime, 'bearish');
+});
+
+test('a regime-history storage failure does not fail the scan - falls back to the unsmoothed regime', async () => {
+  delete process.env.FMP_API_KEY;
+  delete process.env.FINNHUB_API_KEY;
+
+  const regimeHistoryStore = require('../src/services/regimeHistoryStore');
+  const originalRecordRegimeSnapshot = regimeHistoryStore.recordRegimeSnapshot;
+  regimeHistoryStore.recordRegimeSnapshot = async () => {
+    throw new Error('simulated disk failure');
+  };
+
+  const response = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'micha_stocks', risk: 'medium', filters: {} });
+
+  regimeHistoryStore.recordRegimeSnapshot = originalRecordRegimeSnapshot;
+
+  assert.ok(response.results.length > 0);
+  assert.equal(response.analysis.marketRegime.smoothedRegime, response.analysis.marketRegime.regime);
+});
+
+test('recordScan persists both the current and smoothed regime on the scan entry', async () => {
+  delete process.env.FMP_API_KEY;
+  delete process.env.FINNHUB_API_KEY;
+  const scratchPath = path.join(os.tmpdir(), `scanHistory-regime-test-${Date.now()}.json`);
+  process.env.SCAN_HISTORY_FILE_PATH = scratchPath;
+  delete require.cache[require.resolve('../src/services/scanHistoryService')];
+  delete require.cache[require.resolve('../src/services/scanHistoryStore')];
+  delete require.cache[require.resolve('../src/services/scannerService')];
+  const { analyzeMarket: freshAnalyzeMarket } = require('../src/services/scannerService');
+
+  await freshAnalyzeMarket({ exchange: 'NASDAQ', strategy: 'micha_stocks', risk: 'medium', filters: {} });
+
+  const raw = JSON.parse(fs.readFileSync(scratchPath, 'utf8'));
+
+  fs.rmSync(scratchPath, { force: true });
+  delete process.env.SCAN_HISTORY_FILE_PATH;
+
+  assert.equal(raw.scans.length, 1);
+  assert.ok(typeof raw.scans[0].regime.current === 'string');
+  assert.ok(typeof raw.scans[0].regime.smoothed === 'string');
 });

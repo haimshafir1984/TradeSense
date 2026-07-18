@@ -27,8 +27,12 @@ const {
 const {
   MARKET_BENCHMARKS,
   assessMarketRegime,
-  computeRegimeAdjustedConfidence
+  computeRegimeAdjustedConfidence,
+  computeSmoothedRegime
 } = require('./marketRegimeService');
+// Called as regimeHistoryStore.recordRegimeSnapshot(...) rather than destructured, so tests can
+// monkey-patch the export without needing to reload this module.
+const regimeHistoryStore = require('./regimeHistoryStore');
 const {
   assessOpportunity,
   summarizeOpportunity
@@ -146,6 +150,17 @@ async function analyzeMarket(request = {}) {
     league: leagueSnapshot
   });
   const adjustedConfidenceScore = computeRegimeAdjustedConfidence(confidenceScore, marketRegime);
+
+  // Smoothed regime (docs/SPEC_SHORT_TERM_UPGRADE.md step 6) - best-effort: a storage failure
+  // shouldn't fail the scan, it just falls back to today's own (unsmoothed) regime.
+  let smoothedRegime = marketRegime.regime;
+  try {
+    const recentEntries = await regimeHistoryStore.recordRegimeSnapshot(exchange, marketRegime.regime);
+    smoothedRegime = computeSmoothedRegime(recentEntries) || marketRegime.regime;
+  } catch (error) {
+    console.warn('[analyze] Failed to record/read regime history', error.message);
+  }
+  marketRegime.smoothedRegime = smoothedRegime;
 
   // Catalyst flags (earnings-soon, recent news) for the short-horizon strategies' finalists only
   // (docs/SPEC_SHORT_TERM_UPGRADE.md step 5) - informational, never fed into any strategy's score.
@@ -271,7 +286,10 @@ async function analyzeMarket(request = {}) {
       results,
       spyPriceAtScan: spyBenchmark?.price,
       strategyTopPicks,
-      source: request.scanSource
+      source: request.scanSource,
+      // Both the same-day and smoothed regime (docs/SPEC_SHORT_TERM_UPGRADE.md step 6) - lets a
+      // future pass segment hit-rate by regime, even though nothing reads this yet.
+      regime: { current: marketRegime.regime, smoothed: marketRegime.smoothedRegime }
     });
   } catch (error) {
     console.warn('[analyze] Failed to record scan history', error.message);

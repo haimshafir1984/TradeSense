@@ -1034,6 +1034,18 @@ function RegimeRecommendationNote({ marketRegime, selectedStrategy }) {
     notes.push('השוק חלש, שקול להקטין חשיפה.');
   }
 
+  // Damping banner for the two highest-risk strategies (docs/SPEC_SHORT_TERM_UPGRADE.md step 6) -
+  // based on the smoothed (multi-day) regime, not a single potentially-noisy same-day reading.
+  // Doesn't block the scan, just prices the risk in - see docs/BACKTEST_FINDINGS.md for the
+  // backtest evidence behind this.
+  const dampedStrategies = ['small_cap_breakout', 'swing_momentum'];
+  const riskyRegimes = ['bearish', 'volatile'];
+  if (dampedStrategies.includes(selectedStrategy) && riskyRegimes.includes(marketRegime.smoothedRegime)) {
+    notes.push(
+      'במשטר שוק כזה (על פני כמה ימים) הסגנון הזה נטה היסטורית לביצועים חלשים - ראו docs/BACKTEST_FINDINGS.md. לא נחסמת הסריקה, אך כדאי לתמחר את הסיכון בהתאם.'
+    );
+  }
+
   if (!notes.length) {
     return null;
   }

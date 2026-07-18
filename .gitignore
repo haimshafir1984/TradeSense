@@ -7,3 +7,4 @@ server/src/data/scanHistory.json
 server/src/data/watchlistCache.json
 server/src/data/watchlistOutcomes.json
 server/src/data/universeCache.json
+server/src/data/regimeHistory.json

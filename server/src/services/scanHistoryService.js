@@ -35,7 +35,7 @@ const LEAGUE_MIN_SAMPLES_TO_LEAD = 10;
 // instead of a number that looks more solid than it is.
 const MIN_SAMPLES_FOR_MEASURED_DISPLAY = 10;
 
-async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan, strategyTopPicks = {}, source }) {
+async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan, strategyTopPicks = {}, source, regime }) {
   if (!Number.isFinite(spyPriceAtScan) || spyPriceAtScan <= 0 || !results.length) {
     return null;
   }
@@ -81,6 +81,10 @@ async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtSc
     // ordinary manual scans so existing scanHistory.json records (which never had this field)
     // and their consumers stay byte-identical. See docs/SPEC_SHORT_TERM_UPGRADE.md step 1.
     ...(source ? { source } : {}),
+    // Same-day and smoothed regime at scan time (docs/SPEC_SHORT_TERM_UPGRADE.md step 6) - not
+    // consumed by anything yet, but lets a future pass segment hit-rate by regime. Omitted (not
+    // just null) when the caller doesn't provide one, for the same backward-compat reason as source.
+    ...(regime ? { regime } : {}),
     benchmark: { ticker: 'SPY', priceAtScan: spyPriceAtScan },
     results: [...selectedResults, ...otherResults]
   };

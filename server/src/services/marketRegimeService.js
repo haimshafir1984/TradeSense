@@ -205,8 +205,34 @@ function buildEmptyIndicators() {
   };
 }
 
+// Majority vote among the most recent (up to) 3 calendar-day entries (docs/SPEC_SHORT_TERM_UPGRADE.md
+// step 6) - smooths over a regime that flips between two same-day scans. Ties are broken by
+// recency (today's own regime wins). Returns null when there's no history yet - callers should
+// fall back to the current (unsmoothed) regime in that case.
+function computeSmoothedRegime(entries = []) {
+  if (!entries.length) {
+    return null;
+  }
+
+  const recent = entries.slice(-3);
+  const counts = new Map();
+  for (const entry of recent) {
+    counts.set(entry.regime, (counts.get(entry.regime) || 0) + 1);
+  }
+  const maxCount = Math.max(...counts.values());
+
+  for (let i = recent.length - 1; i >= 0; i -= 1) {
+    if (counts.get(recent[i].regime) === maxCount) {
+      return recent[i].regime;
+    }
+  }
+
+  return recent[recent.length - 1].regime;
+}
+
 module.exports = {
   MARKET_BENCHMARKS,
   assessMarketRegime,
-  computeRegimeAdjustedConfidence
+  computeRegimeAdjustedConfidence,
+  computeSmoothedRegime
 };
