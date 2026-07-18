@@ -17,6 +17,17 @@ function average(values = []) {
   return filtered.reduce((total, value) => total + value, 0) / filtered.length;
 }
 
+function median(values = []) {
+  const filtered = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
+
+  if (!filtered.length) {
+    return null;
+  }
+
+  const mid = Math.floor(filtered.length / 2);
+  return filtered.length % 2 === 0 ? (filtered[mid - 1] + filtered[mid]) / 2 : filtered[mid];
+}
+
 // Moved here (from marketDataService.js) so both marketDataService.js and barsStockBuilder.js can
 // use it without a circular require between the two.
 function scoreConsolidation(closes, high52, low52) {
@@ -36,5 +47,6 @@ module.exports = {
   clamp,
   round,
   average,
+  median,
   scoreConsolidation
 };

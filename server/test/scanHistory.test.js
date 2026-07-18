@@ -142,3 +142,69 @@ test('league does not declare a leader when no strategy has reached the minimum 
 
   assert.equal(report.league.leadingStrategy, null);
 });
+
+test('buildHitRateReport computes a measured risk profile (median/worst/pctBelowMinus10) per strategy+opportunityRank bucket, flagging thin cells as insufficientSamples', async () => {
+  const scratchPath = path.join(os.tmpdir(), `scanHistory-bucket-test-${Date.now()}.json`);
+  const { recordScan, evaluateOutcomes, buildHitRateReport } = freshScanHistoryService(scratchPath);
+
+  // 12 samples at opportunityRank 85 ("80-100" bucket) - enough to cross MIN_SAMPLES_FOR_MEASURED_DISPLAY (10).
+  const deltas = [-20, -15, -5, -2, 0, 3, 5, 8, 10, 12, 15, 20];
+  for (let index = 0; index < deltas.length; index += 1) {
+    await recordScan({
+      exchange: 'NASDAQ',
+      strategy: 'ross_cameron', // 5-day horizon, easy to backdate past
+      risk: 'medium',
+      results: [{ ticker: `HB${index}`, price: 100, opportunityRank: 85 }],
+      spyPriceAtScan: 500
+    });
+  }
+
+  // 5 samples at opportunityRank 45 ("40-59" bucket) for the same strategy - stays below the threshold.
+  for (let index = 0; index < 5; index += 1) {
+    await recordScan({
+      exchange: 'NASDAQ',
+      strategy: 'ross_cameron',
+      risk: 'medium',
+      results: [{ ticker: `LB${index}`, price: 100, opportunityRank: 45 }],
+      spyPriceAtScan: 500
+    });
+  }
+
+  const raw = JSON.parse(fs.readFileSync(scratchPath, 'utf8'));
+  for (const scan of raw.scans) {
+    // Past the 5-day ross_cameron horizon, inside the 90-day league/breakdown window.
+    scan.scannedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+  }
+  fs.writeFileSync(scratchPath, JSON.stringify(raw, null, 2));
+
+  const marketDataService = require('../src/services/marketDataService');
+  const originalGetStockSnapshot = marketDataService.getStockSnapshot;
+  marketDataService.getStockSnapshot = async (ticker) => {
+    if (ticker === 'SPY') return { price: 500 }; // flat benchmark
+    const match = ticker.match(/^HB(\d+)$/);
+    if (match) {
+      return { price: 100 + deltas[Number(match[1])] };
+    }
+    return { price: 100 }; // LB* tickers: flat
+  };
+
+  await evaluateOutcomes({ now: new Date() });
+  const report = await buildHitRateReport();
+
+  marketDataService.getStockSnapshot = originalGetStockSnapshot;
+  fs.unlinkSync(scratchPath);
+  delete process.env.SCAN_HISTORY_FILE_PATH;
+
+  const highBucket = report.byStrategyAndBucket.byStrategy.ross_cameron['80-100'];
+  const lowBucket = report.byStrategyAndBucket.byStrategy.ross_cameron['40-59'];
+
+  assert.equal(report.byStrategyAndBucket.minSamplesForMeasuredDisplay, 10);
+  assert.equal(highBucket.count, 12);
+  assert.equal(highBucket.medianReturnPct, 4); // sorted deltas, median of 12 values -> avg(3, 5)
+  assert.equal(highBucket.worstReturnPct, -20);
+  assert.equal(highBucket.pctBelowMinus10, 16.7); // 2 of 12 below -10%
+  assert.equal(highBucket.insufficientSamples, false);
+
+  assert.equal(lowBucket.count, 5);
+  assert.equal(lowBucket.insufficientSamples, true);
+});

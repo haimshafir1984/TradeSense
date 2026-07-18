@@ -2,7 +2,7 @@ const { readScanHistory, writeScanHistory } = require('./scanHistoryStore');
 // Called as marketDataService.getStockSnapshot(...) rather than destructured, so tests can
 // monkey-patch the export without needing to reload this module.
 const marketDataService = require('./marketDataService');
-const { round } = require('./mathUtils');
+const { round, median } = require('./mathUtils');
 
 // This is the feedback loop the rest of the scoring logic has no way to validate itself against:
 // without it, opportunityRank/successProbability-style numbers are just formulas that were never
@@ -28,6 +28,12 @@ const OPPORTUNITY_RANK_BUCKETS = [
 // Strategy league window/threshold: see docs/LOGIC_IMPROVEMENTS.md - Strategy League.
 const LEAGUE_WINDOW_DAYS = 90;
 const LEAGUE_MIN_SAMPLES_TO_LEAD = 10;
+
+// Below this many evaluated samples (same 90-day window, same threshold as the league - see
+// docs/SPEC_SHORT_TERM_UPGRADE.md step 3), a strategy+opportunityRank-bucket cell is too thin to
+// show as a measured statistic - the UI falls back to the formula-based rank with an honest label
+// instead of a number that looks more solid than it is.
+const MIN_SAMPLES_FOR_MEASURED_DISPLAY = 10;
 
 async function recordScan({ exchange, strategy, risk, results = [], spyPriceAtScan, strategyTopPicks = {}, source }) {
   if (!Number.isFinite(spyPriceAtScan) || spyPriceAtScan <= 0 || !results.length) {
@@ -162,11 +168,25 @@ function summarize(entries) {
     ? entries.reduce((sum, entry) => sum + entry.outcome.excessReturnPct, 0) / total
     : 0;
 
+  // Absolute stock returns (not vs-benchmark excess) - hitRate/avgExcessReturnPct answer "did this
+  // beat the market", but a trader sizing a risky position needs "how bad can this actually get in
+  // dollar terms", which is what median/worst/pctBelowMinus10 answer. See
+  // docs/SPEC_SHORT_TERM_UPGRADE.md step 3.
+  const stockReturns = entries.map((entry) => entry.outcome.stockReturnPct);
+  const medianReturnPct = total ? round(median(stockReturns), 2) : null;
+  const worstReturnPct = total ? round(Math.min(...stockReturns), 2) : null;
+  const pctBelowMinus10 = total
+    ? round((stockReturns.filter((value) => value < -10).length / total) * 100, 1)
+    : null;
+
   return {
     count: total,
     hits,
     hitRatePct: total ? round((hits / total) * 100, 1) : null,
-    avgExcessReturnPct: round(avgExcessReturnPct, 2)
+    avgExcessReturnPct: round(avgExcessReturnPct, 2),
+    medianReturnPct,
+    worstReturnPct,
+    pctBelowMinus10
   };
 }
 
@@ -197,6 +217,42 @@ function buildLeague(evaluatedEntries) {
     minSamplesToLead: LEAGUE_MIN_SAMPLES_TO_LEAD,
     byStrategy,
     leadingStrategy
+  };
+}
+
+// The cross-tab a single scan result actually needs to decide what to show itself: "for THIS
+// strategy, at THIS opportunityRank bucket, do we have enough measured history (90 days, same
+// window as the league) to show real stats instead of the formula-based rank?" See
+// docs/SPEC_SHORT_TERM_UPGRADE.md step 3 - this is what replaces the old successProbability
+// language with something actually calibrated, once there's enough data.
+function buildStrategyBucketBreakdown(evaluatedEntries) {
+  const cutoffMs = Date.now() - LEAGUE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const recentEntries = evaluatedEntries.filter((entry) => new Date(entry.scannedAt).getTime() >= cutoffMs);
+
+  const byStrategy = {};
+  for (const strategyKey of Object.keys(EVALUATION_HORIZON_DAYS)) {
+    const strategyEntries = recentEntries.filter((entry) => entry.strategy === strategyKey);
+    const byBucket = {};
+
+    for (const bucket of OPPORTUNITY_RANK_BUCKETS) {
+      const bucketEntries = strategyEntries.filter(
+        (entry) => findOpportunityRankBucket(entry.opportunityRank) === bucket.label
+      );
+      const stats = summarize(bucketEntries);
+      byBucket[bucket.label] = {
+        ...stats,
+        insufficientSamples: stats.count < MIN_SAMPLES_FOR_MEASURED_DISPLAY,
+        horizonDays: getHorizonDays(strategyKey)
+      };
+    }
+
+    byStrategy[strategyKey] = byBucket;
+  }
+
+  return {
+    windowDays: LEAGUE_WINDOW_DAYS,
+    minSamplesForMeasuredDisplay: MIN_SAMPLES_FOR_MEASURED_DISPLAY,
+    byStrategy
   };
 }
 
@@ -231,6 +287,7 @@ async function buildHitRateReport() {
     overall: summarize(evaluated),
     byStrategy,
     byOpportunityRankBucket,
+    byStrategyAndBucket: buildStrategyBucketBreakdown(evaluated),
     league: buildLeague(evaluated),
     evaluatedCount: evaluated.length,
     pendingCount

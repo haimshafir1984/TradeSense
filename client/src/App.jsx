@@ -98,6 +98,19 @@ const numberFormatter = new Intl.NumberFormat('he-IL', {
   maximumFractionDigits: 2
 });
 
+// Mirrors OPPORTUNITY_RANK_BUCKETS in server/src/services/scanHistoryService.js - kept in sync by
+// hand since it's just the display logic reading the server's own breakdown, not scoring itself.
+const OPPORTUNITY_RANK_BUCKETS = [
+  { label: '0-39', min: 0, max: 39 },
+  { label: '40-59', min: 40, max: 59 },
+  { label: '60-79', min: 60, max: 79 },
+  { label: '80-100', min: 80, max: 100 }
+];
+
+function findOpportunityRankBucketLabel(opportunityRank) {
+  return OPPORTUNITY_RANK_BUCKETS.find((bucket) => opportunityRank >= bucket.min && opportunityRank <= bucket.max)?.label;
+}
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 function App() {
@@ -116,6 +129,11 @@ function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
   const [strategyLeague, setStrategyLeague] = useState(null);
+  // Measured hit-rate/risk-profile stats per strategy+opportunityRank bucket (docs/SPEC_SHORT_TERM_UPGRADE.md
+  // step 3) - lets each result show real, measured history instead of only the formula-based rank
+  // once there's enough data. null until loaded / if the request fails - falls back to the
+  // formula-only label, same as before this feature existed.
+  const [hitRateReport, setHitRateReport] = useState(null);
   const [showTomorrowWatchlist, setShowTomorrowWatchlist] = useState(true);
   const [tomorrowWatchlist, setTomorrowWatchlist] = useState([]);
   const [tomorrowWatchlistGeneratedAt, setTomorrowWatchlistGeneratedAt] = useState(null);
@@ -173,6 +191,27 @@ function App() {
       .catch(() => {
         if (!cancelled) {
           setStrategyLeague(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`${API_BASE_URL}/api/scan-history/outcomes`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) {
+          setHitRateReport(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHitRateReport(null);
         }
       });
 
@@ -842,6 +881,11 @@ function App() {
                         <span className={`metric-pill ${probabilityClassName(result.opportunityRank)}`}>
                           {result.opportunityRank}
                         </span>
+                        <MeasuredOpportunityNote
+                          strategy={form.strategy}
+                          opportunityRank={result.opportunityRank}
+                          hitRateReport={hitRateReport}
+                        />
                       </td>
                       <td>{result.estimatedUpsideRange}</td>
                       <td>
@@ -1040,6 +1084,26 @@ function ActualOpenCell({ outcome, inputValue, busy, onChange, onSave }) {
       >
         {busy ? 'שומר...' : 'שמור'}
       </button>
+    </div>
+  );
+}
+
+// Replaces the old "success probability" framing with an honest split (docs/SPEC_SHORT_TERM_UPGRADE.md
+// step 3): once there's enough measured scan history (>=10 evaluated samples in the last 90 days,
+// same strategy + opportunityRank bucket as this result), show the actual measured hit-rate and
+// risk profile instead of only the formula-based relative rank.
+function MeasuredOpportunityNote({ strategy, opportunityRank, hitRateReport }) {
+  const bucketLabel = findOpportunityRankBucketLabel(opportunityRank);
+  const cell = hitRateReport?.byStrategyAndBucket?.byStrategy?.[strategy]?.[bucketLabel];
+
+  if (!cell || cell.insufficientSamples) {
+    return <div className="cell-subtext">מבוסס נוסחה, טרם נמדד מספיק</div>;
+  }
+
+  return (
+    <div className="cell-subtext">
+      נמדד: {cell.hits} מתוך {cell.count} עלו מעל ה-benchmark תוך {cell.horizonDays} ימים · חציון {cell.medianReturnPct}% ·
+      הגרוע ביותר {cell.worstReturnPct}% · {cell.pctBelowMinus10}% ירדו מעל 10%
     </div>
   );
 }
