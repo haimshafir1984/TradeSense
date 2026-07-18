@@ -840,6 +840,13 @@ FMP_API_KEY=your_fmp_key_here
 מקום שמשתמש ב-Alpaca (universe הרגיל, `small_cap_breakout`, ה-funnel של
 "רשימת המעקב למחר"). ראו `server/src/services/providers/finnhubService.js`.
 
+מאז docs/SPEC_SHORT_TERM_UPGRADE.md שלב 5, גם מקור ראשון (FMP כגיבוי) עבור
+Top-10 הפינליסטים של אסטרטגיות קצרות (`ross_cameron`/`swing_momentum`/
+`small_cap_breakout`) ב-`POST /api/analyze`: מספר מניות בפועל (shareOutstanding
+- לא "פרי-פלואט" מדויק, ששום ספק בחינם לא חושף - ראו `shareCountService.js`)
+במקום פרוקסי שווי-שוק ב-`ross_cameron`, ודגלי "דוח בקרוב"/"חדשות אחרונות
+(48 שעות)" - אחרונים אלה תצוגתיים בלבד ואינם נכנסים לניקוד אף אסטרטגיה.
+
 דוגמה:
 
 ```env

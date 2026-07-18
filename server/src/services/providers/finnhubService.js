@@ -78,8 +78,13 @@ async function getEarningsSoon(ticker, lookaheadDays = 2) {
   return entries.some((entry) => entry?.symbol === ticker);
 }
 
-// Returns { companyName, sector, marketCap } or null if unavailable. marketCap is converted from
-// Finnhub's millions-denominated field to raw dollars, matching every other provider's convention.
+// Returns { companyName, sector, marketCap, shareOutstanding } or null if unavailable. marketCap
+// and shareOutstanding are converted from Finnhub's millions-denominated fields to raw
+// dollars/shares, matching every other provider's convention. shareOutstanding is total shares
+// outstanding, not the narrower "free float" (shares actually available to trade, excluding
+// insider/institutional locks) - no free-tier provider exposes true float, but this is a real
+// figure rather than the market-cap-tier guess in strategies.js#scoreFloatProxy. See
+// docs/SPEC_SHORT_TERM_UPGRADE.md step 5.
 async function getCompanyProfile(ticker) {
   if (!isConfigured()) {
     return null;
@@ -94,16 +99,46 @@ async function getCompanyProfile(ticker) {
   }
 
   const marketCapMillions = Number(data.marketCapitalization);
+  const shareOutstandingMillions = Number(data.shareOutstanding);
 
   return {
     companyName: data.name,
     sector: data.finnhubIndustry || null,
-    marketCap: Number.isFinite(marketCapMillions) ? marketCapMillions * 1000000 : null
+    marketCap: Number.isFinite(marketCapMillions) ? marketCapMillions * 1000000 : null,
+    shareOutstanding: Number.isFinite(shareOutstandingMillions) ? shareOutstandingMillions * 1000000 : null
   };
+}
+
+// Company-news headline count in the last 48h - a flag only, never scored (see
+// docs/SPEC_SHORT_TERM_UPGRADE.md step 5: "יש אירוע חדשותי - בדוק לפני החלטה", not a signal that
+// feeds any strategy's score). Returns null when unknown (not configured or the request failed) -
+// callers must not treat null as "confirmed zero news".
+const NEWS_LOOKBACK_HOURS = 48;
+
+async function getRecentNewsCount(ticker) {
+  if (!isConfigured()) {
+    return null;
+  }
+
+  const apiKey = process.env.FINNHUB_API_KEY;
+  const today = new Date();
+  // Requests a slightly wider window than the lookback itself (Finnhub's `from`/`to` are
+  // date-only, not timestamps), then filters precisely by `datetime` below.
+  const from = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const url = `${BASE_URL}/company-news?symbol=${ticker}&from=${formatDate(from)}&to=${formatDate(today)}&token=${apiKey}`;
+  const data = await fetchFinnhub(url, `getRecentNewsCount:${ticker}`);
+
+  if (!Array.isArray(data)) {
+    return null;
+  }
+
+  const cutoffMs = Date.now() - NEWS_LOOKBACK_HOURS * 60 * 60 * 1000;
+  return data.filter((item) => Number.isFinite(item?.datetime) && item.datetime * 1000 >= cutoffMs).length;
 }
 
 module.exports = {
   isConfigured,
   getEarningsSoon,
-  getCompanyProfile
+  getCompanyProfile,
+  getRecentNewsCount
 };

@@ -162,3 +162,54 @@ test('without wideScan, behavior is unchanged (regular universe, no wide-scan fi
   assert.equal(response.meta.wideScanUsed, false);
   assert.ok(!response.analysis.dataQuality.issues.some((issue) => issue.includes('סריקה רחבה')));
 });
+
+test('catalyst flags (earnings/news) are attempted for a short-horizon strategy, left null for a long-horizon one', async () => {
+  delete process.env.FMP_API_KEY;
+  delete process.env.FINNHUB_API_KEY;
+
+  const shortResponse = await analyzeMarket({
+    exchange: 'NASDAQ',
+    strategy: 'swing_momentum',
+    risk: 'medium',
+    filters: {}
+  });
+  const longResponse = await analyzeMarket({
+    exchange: 'NASDAQ',
+    strategy: 'micha_stocks',
+    risk: 'medium',
+    filters: {}
+  });
+
+  // Without any provider keys, an *attempted* lookup for a short-horizon strategy resolves to a
+  // real (negative) answer (false), not null - only a long-horizon strategy (never enriched at
+  // all) leaves the field as null ("not attempted").
+  assert.ok(shortResponse.results.length > 0);
+  assert.ok(shortResponse.results.every((result) => result.hasEarningsSoon === false));
+  assert.ok(longResponse.results.length > 0);
+  assert.ok(longResponse.results.every((result) => result.hasEarningsSoon === null));
+  assert.ok(longResponse.results.every((result) => result.hasRecentNews === null));
+});
+
+test('ross_cameron finalists get re-scored with a real share count when the lookup succeeds', async () => {
+  delete process.env.FMP_API_KEY;
+  delete process.env.FINNHUB_API_KEY;
+
+  const shareCountService = require('../src/services/shareCountService');
+  const originalResolveShareOutstanding = shareCountService.resolveShareOutstanding;
+
+  const baseline = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'ross_cameron', risk: 'medium', filters: {} });
+
+  shareCountService.resolveShareOutstanding = async () => 15000000; // 15M shares -> best float tier
+  const withRealFloat = await analyzeMarket({ exchange: 'NASDAQ', strategy: 'ross_cameron', risk: 'medium', filters: {} });
+
+  shareCountService.resolveShareOutstanding = originalResolveShareOutstanding;
+
+  assert.ok(baseline.results.length > 0);
+  assert.equal(withRealFloat.results.length, baseline.results.length);
+  // Same demo universe/tickers both times - a real (best-tier) float should raise matchScore for
+  // at least one finalist that scored on the market-cap proxy's worse tier before.
+  const baselineByTicker = new Map(baseline.results.map((result) => [result.ticker, result.matchScore]));
+  assert.ok(
+    withRealFloat.results.some((result) => result.matchScore > (baselineByTicker.get(result.ticker) ?? -Infinity))
+  );
+});

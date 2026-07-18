@@ -115,6 +115,10 @@ function findOpportunityRankBucketLabel(opportunityRank) {
 // excluded there deliberately (see docs/SPEC_SHORT_TERM_UPGRADE.md "סטיות מהתכנון").
 const WIDE_SCAN_STRATEGIES = ['swing_momentum', 'ross_cameron'];
 
+// Mirrors SHORT_TERM_STRATEGIES in server/src/services/scannerService.js - only these strategies'
+// results carry (attempted, possibly-false) catalyst flags; other strategies leave them null.
+const SHORT_TERM_STRATEGIES = ['ross_cameron', 'swing_momentum', 'small_cap_breakout'];
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 function App() {
@@ -168,6 +172,7 @@ function App() {
   });
 
   const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
+  const showCatalystColumn = SHORT_TERM_STRATEGIES.includes(form.strategy);
 
   const handleMaxRiskPerTradeChange = (value) => {
     setMaxRiskPerTrade(value);
@@ -877,6 +882,7 @@ function App() {
                   <th>תשואה משוקללת</th>
                   <th>מסגור סיכון (טכני)</th>
                   {showIndiColumn ? <th>התאמה ל-Indi</th> : null}
+                  {showCatalystColumn ? <th>קטליזטור/סיכון</th> : null}
                   <th>אסטרטגיה</th>
                   <th>הסבר קצר</th>
                   <th>פתיחה</th>
@@ -886,7 +892,12 @@ function App() {
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan={(showIndiColumn ? 11 : 10) + (vibeTradingEnabled ? 1 : 0)} className="empty-state">
+                    <td
+                      colSpan={
+                        (showIndiColumn ? 11 : 10) + (showCatalystColumn ? 1 : 0) + (vibeTradingEnabled ? 1 : 0)
+                      }
+                      className="empty-state"
+                    >
                       {emptyStateMessage}
                     </td>
                   </tr>
@@ -917,6 +928,15 @@ function App() {
                       {showIndiColumn ? (
                         <td>
                           <IndiFitCell indiFit={result.indiFit} />
+                        </td>
+                      ) : null}
+                      {showCatalystColumn ? (
+                        <td>
+                          <CatalystCell
+                            hasEarningsSoon={result.hasEarningsSoon}
+                            hasRecentNews={result.hasRecentNews}
+                            recentNewsCount={result.recentNewsCount}
+                          />
                         </td>
                       ) : null}
                       <td>
@@ -1123,6 +1143,28 @@ function MeasuredOpportunityNote({ strategy, opportunityRank, hitRateReport }) {
     <div className="cell-subtext">
       נמדד: {cell.hits} מתוך {cell.count} עלו מעל ה-benchmark תוך {cell.horizonDays} ימים · חציון {cell.medianReturnPct}% ·
       הגרוע ביותר {cell.worstReturnPct}% · {cell.pctBelowMinus10}% ירדו מעל 10%
+    </div>
+  );
+}
+
+// Both flags are informational only - neither feeds any strategy's score
+// (docs/SPEC_SHORT_TERM_UPGRADE.md step 5). null means "not checked" (e.g. no provider key
+// configured), shown differently from a confirmed "no" so the user isn't given false confidence.
+function CatalystCell({ hasEarningsSoon, hasRecentNews, recentNewsCount }) {
+  if (hasEarningsSoon === null && hasRecentNews === null) {
+    return <span className="cell-subtext">לא נבדק</span>;
+  }
+
+  return (
+    <div>
+      {hasEarningsSoon ? (
+        <span className="metric-pill medium">קטליזטור/סיכון: דוח בקרוב</span>
+      ) : (
+        <div className="cell-subtext">אין דוח קרוב ידוע</div>
+      )}
+      {hasRecentNews ? (
+        <div className="cell-subtext">יש אירוע חדשותי ({recentNewsCount}) - בדוק לפני החלטה</div>
+      ) : null}
     </div>
   );
 }

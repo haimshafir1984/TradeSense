@@ -35,6 +35,12 @@ const {
 } = require('./opportunityScoringService');
 const { assessIndiFit } = require('./indiOverlayService');
 const { computeRiskFraming } = require('./riskFramingService');
+// shareCountService/watchlistScoring/finnhubService are called as namespace.method(...) rather
+// than destructured, so tests can monkey-patch the export without needing to reload this module
+// (same convention as marketDataService in scanHistoryService.js).
+const shareCountService = require('./shareCountService');
+const watchlistScoring = require('./watchlistScoring');
+const finnhubService = require('./providers/finnhubService');
 const { QUALITY_SCORE_THRESHOLD, RISK_FIT_THRESHOLDS } = require('../config/scoringConfig');
 const { recordScan, getLeagueSnapshot } = require('./scanHistoryService');
 
@@ -43,6 +49,11 @@ const { recordScan, getLeagueSnapshot } = require('./scanHistoryService');
 // already gets its own dedicated, real-market-cap wide-ish universe regardless of this flag, and
 // its eligibility gate hard-requires market_cap, which the (deliberately cheap) wide scan doesn't fetch.
 const WIDE_SCAN_STRATEGIES = ['swing_momentum', 'ross_cameron'];
+
+// Short-horizon strategies eligible for the Top-10-only catalyst enrichment (earnings/news flags)
+// in docs/SPEC_SHORT_TERM_UPGRADE.md step 5 - the long-horizon strategies (micha_stocks,
+// mark_minervini) aren't as sensitive to a single upcoming print/headline.
+const SHORT_TERM_STRATEGIES = ['ross_cameron', 'swing_momentum', 'small_cap_breakout'];
 
 async function analyzeMarket(request = {}) {
   const exchange = request.exchange || 'NASDAQ';
@@ -92,11 +103,21 @@ async function analyzeMarket(request = {}) {
   const marketContext = { benchmarkReturn3m: Number(spyBenchmark?.return_3m || 0) };
   const filteredStocks = stocks.filter((stock) => applyFilters(stock, filters));
   const scoreDistributions = buildStrategyScoreDistributions(filteredStocks, marketContext);
-  const scoredStocks = filteredStocks
+  let scoredStocks = filteredStocks
     .map((stock) => scoreStockByStrategy(strategy, stock, marketContext))
     .map((stock) => applyRiskFitPenalty(stock, risk))
     .sort((left, right) => right.score - left.score)
     .slice(0, 10);
+
+  // Real shares-outstanding for ross_cameron's Top-10 finalists (docs/SPEC_SHORT_TERM_UPGRADE.md
+  // step 5) - re-scores just these already-selected finalists, doesn't reorder against the wider
+  // universe (same "enrich finalists only" shape as funnelScanService's stage 3).
+  if (strategy === 'ross_cameron') {
+    scoredStocks = (await enrichRossCameronFloat(scoredStocks, marketContext, risk)).sort(
+      (left, right) => right.score - left.score
+    );
+  }
+
   // Returning the "best" 10 stocks even when every one of them is a weak match misrepresents a
   // scan with nothing worth acting on as if it found opportunities. Below this score, a stock
   // isn't shown as a recommendation - see docs/LOGIC_IMPROVEMENTS.md 3.8.
@@ -125,6 +146,13 @@ async function analyzeMarket(request = {}) {
     league: leagueSnapshot
   });
   const adjustedConfidenceScore = computeRegimeAdjustedConfidence(confidenceScore, marketRegime);
+
+  // Catalyst flags (earnings-soon, recent news) for the short-horizon strategies' finalists only
+  // (docs/SPEC_SHORT_TERM_UPGRADE.md step 5) - informational, never fed into any strategy's score.
+  const catalystsByTicker = SHORT_TERM_STRATEGIES.includes(strategy)
+    ? await resolveCatalystsForFinalists(qualityStocks)
+    : new Map();
+
   const results = qualityStocks.map((stock) => {
     const matchScore = Math.round(stock.score * 100);
     const deterministicExplanation = stock.explanation;
@@ -158,6 +186,7 @@ async function analyzeMarket(request = {}) {
       marketRegime
     });
     const riskFraming = computeRiskFraming({ stock, estimatedUpside: opportunity.estimatedUpside });
+    const catalysts = catalystsByTicker.get(stock.ticker) || null;
 
     return {
       ticker: stock.ticker,
@@ -184,6 +213,9 @@ async function analyzeMarket(request = {}) {
       opportunity,
       indiFit,
       riskFraming,
+      hasEarningsSoon: catalysts?.hasEarningsSoon ?? null,
+      hasRecentNews: catalysts?.hasRecentNews ?? null,
+      recentNewsCount: catalysts?.recentNewsCount ?? null,
       opportunityRank: opportunity.opportunityRank,
       estimatedUpsideRange: opportunity.estimatedUpside.label,
       expectedReturnPct: opportunity.expectedReturnPct,
@@ -275,6 +307,66 @@ async function analyzeMarket(request = {}) {
       groups
     }
   };
+}
+
+// Enriches ross_cameron's already-selected Top-10 with a real shares-outstanding figure
+// (docs/SPEC_SHORT_TERM_UPGRADE.md step 5) and re-scores just those finalists - never re-run
+// against the wider universe, so this can't change *which* stocks made the top 10, only their
+// relative order within it. A lookup failure/no data for a given stock leaves it unchanged
+// (falls back to scoreFloatProxy inside strategies.js, exactly as before this feature existed).
+async function enrichRossCameronFloat(stocks, marketContext, risk) {
+  const apiKey = process.env.FMP_API_KEY;
+
+  return Promise.all(
+    stocks.map(async (stock) => {
+      try {
+        const shareOutstanding = await shareCountService.resolveShareOutstanding(stock.ticker, apiKey);
+        if (!Number.isFinite(shareOutstanding)) {
+          return stock;
+        }
+
+        const rescored = scoreStockByStrategy('ross_cameron', { ...stock, shareOutstanding }, marketContext);
+        return applyRiskFitPenalty(rescored, risk);
+      } catch (error) {
+        console.warn(`[analyze] Float enrichment failed for ${stock.ticker}: ${error.message}`);
+        return stock;
+      }
+    })
+  );
+}
+
+// Earnings-soon + recent-news flags for the short-horizon strategies' finalists only - both
+// informational, neither feeds any strategy's score (docs/SPEC_SHORT_TERM_UPGRADE.md step 5).
+// A lookup failure for a given ticker leaves its flags as null ("unknown"), never a fabricated
+// false, and never fails the rest of the scan.
+async function resolveCatalystsForFinalists(stocks) {
+  const apiKey = process.env.FMP_API_KEY;
+
+  const entries = await Promise.all(
+    stocks.map(async (stock) => {
+      const [hasEarningsSoon, recentNewsCount] = await Promise.all([
+        watchlistScoring.resolveEarningsSoon(stock.ticker, apiKey).catch((error) => {
+          console.warn(`[analyze] Earnings-soon lookup failed for ${stock.ticker}: ${error.message}`);
+          return null;
+        }),
+        finnhubService.getRecentNewsCount(stock.ticker).catch((error) => {
+          console.warn(`[analyze] Recent-news lookup failed for ${stock.ticker}: ${error.message}`);
+          return null;
+        })
+      ]);
+
+      return [
+        stock.ticker,
+        {
+          hasEarningsSoon,
+          hasRecentNews: Number.isFinite(recentNewsCount) ? recentNewsCount > 0 : null,
+          recentNewsCount: Number.isFinite(recentNewsCount) ? recentNewsCount : null
+        }
+      ];
+    })
+  );
+
+  return new Map(entries);
 }
 
 // Picks which universe a scan actually runs on: the dedicated small-cap universe for that one

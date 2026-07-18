@@ -112,13 +112,20 @@ function scoreRossStrategy(stock) {
   const momentum = normalize(stock.daily_change, 5, 12);
   const volume = normalize(stock.volumeRatio, 2, 4);
   const breakout = normalize(stock.price_near_daily_high, 0.92, 1);
-  const floatScore = scoreFloatProxy(stock.market_cap);
+  // Real shares-outstanding (enriched for Top-10 finalists only - see
+  // docs/SPEC_SHORT_TERM_UPGRADE.md step 5 and shareCountService.js) replaces the market-cap-tier
+  // proxy when available; falls back to the proxy otherwise so scoring is unchanged for every
+  // other stock in the universe that never gets enriched.
+  const realShareCountScore = scoreShareCount(stock.shareOutstanding);
+  const floatScore = realShareCountScore !== null ? realShareCountScore : scoreFloatProxy(stock.market_cap);
+  const floatSource = realShareCountScore !== null ? 'real' : 'proxy';
 
   const wRoss = STRATEGY_WEIGHTS.ross_cameron;
   const score = momentum * wRoss.momentum + volume * wRoss.volume + breakout * wRoss.breakout + floatScore * wRoss.float;
 
   return {
     ...stock,
+    floatSource,
     score: clamp(score),
     explanation: createRossExplanation(stock)
   };
@@ -304,6 +311,26 @@ function scoreFloatProxy(marketCap) {
   }
 
   if (marketCap <= 10000000000) {
+    return 0.65;
+  }
+
+  return 0.25;
+}
+
+// Real shares-outstanding tiers (docs/SPEC_SHORT_TERM_UPGRADE.md step 5) - same shape as
+// scoreFloatProxy's market-cap tiers, just fed by an actual figure when one was fetched for this
+// finalist. Returns null (not 0) when there's no real data, so the caller can tell "known, large
+// float" apart from "unknown" and fall back to the proxy.
+function scoreShareCount(shareOutstanding) {
+  if (!Number.isFinite(shareOutstanding) || shareOutstanding <= 0) {
+    return null;
+  }
+
+  if (shareOutstanding <= 20000000) {
+    return 1;
+  }
+
+  if (shareOutstanding <= 100000000) {
     return 0.65;
   }
 
