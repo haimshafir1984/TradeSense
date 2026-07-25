@@ -291,6 +291,27 @@ test('getSnapshots returns a Map keyed by symbol, skipping entries Alpaca left n
   assert.equal(result.has('MSFT'), false);
 });
 
+test('getDailyBars sends feed=iex by default, and honors an explicit feed override', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  const requestedFeeds = [];
+  global.fetch = withClock(async (url) => {
+    requestedFeeds.push(new URL(url).searchParams.get('feed'));
+    return jsonResponse({ bars: {}, next_page_token: null });
+  });
+
+  await alpacaService.getDailyBars({ symbols: ['AAA'] });
+  await alpacaService.getDailyBars({ symbols: ['AAA'], feed: 'delayed_sip' });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.deepEqual(requestedFeeds, ['iex', 'delayed_sip']);
+});
+
 test('getSnapshots returns an empty map when the request fails', async () => {
   process.env.ALPACA_API_KEY_ID = 'key';
   process.env.ALPACA_API_SECRET_KEY = 'secret';

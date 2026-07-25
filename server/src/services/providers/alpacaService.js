@@ -142,7 +142,10 @@ function chunk(items, size) {
 // GET /v2/stocks/bars - daily OHLCV bars for up to `days` calendar days back, for every symbol
 // given. Returns Map<symbol, bar[]> sorted oldest-to-newest per symbol, exactly as the API's
 // sort=asc gives us (merged across pagination and chunk boundaries).
-async function getDailyBars({ symbols = [], days = DEFAULT_HISTORY_DAYS } = {}) {
+// `feed` defaults to 'iex' (the free-tier feed every existing caller already relied on implicitly)
+// so this param is purely additive - no caller that omits it changes behavior. Added for
+// docs/SPEC_ANOMALY_MINING.md, which needs to try 'delayed_sip' for more representative volume.
+async function getDailyBars({ symbols = [], days = DEFAULT_HISTORY_DAYS, feed = 'iex' } = {}) {
   const result = new Map();
 
   if (!Array.isArray(symbols) || symbols.length === 0) {
@@ -166,7 +169,7 @@ async function getDailyBars({ symbols = [], days = DEFAULT_HISTORY_DAYS } = {}) 
         start: startDate,
         limit: '10000',
         adjustment: 'split',
-        feed: 'iex',
+        feed,
         sort: 'asc'
       });
 

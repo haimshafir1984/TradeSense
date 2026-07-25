@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "research:mine": "node scripts/mineAnomalies.js",
+    "research:match": "node scripts/matchAnomalies.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

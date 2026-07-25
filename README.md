@@ -18,6 +18,8 @@ TradeSense היא מערכת סריקת מניות עם ממשק משתמש ב־
 >
 > **רוצה לבדוק אסטרטגיה מול נתונים היסטוריים?** [docs/SPEC_VIBE_TRADING_INTEGRATION.md](docs/SPEC_VIBE_TRADING_INTEGRATION.md) — תוסף מקומי-בלבד (כבוי כברירת מחדל, לא קיים ב-Render) שמריץ בדיקה היסטורית בלחיצת כפתור דרך כלי חיצוני; הרקע והמגבלות ב-[docs/BACKTEST_FINDINGS.md](docs/BACKTEST_FINDINGS.md).
 >
+> **רוצה לגלות חוקים מהנתונים עצמם, לא לאמת חוק שהובא מבחוץ?** [docs/SPEC_ANOMALY_MINING.md](docs/SPEC_ANOMALY_MINING.md) — כלי CLI נפרד (לא endpoint, לא ב-Render) שסורק שנה של מניות NASDAQ ומחפש תבניות שקדמו לקפיצה של 12%+ ביום בודד; תוצאות ומגבלות ב-[docs/ANOMALY_FINDINGS.md](docs/ANOMALY_FINDINGS.md).
+>
 > **פותח שיחה חדשה עם Claude על הפרויקט?** [CLAUDE.md](CLAUDE.md) — מפת התמצאות קצרה לכל המסמכים והמוסכמות.
 >
 > **רוצה להסביר למישהו אחר מה המערכת עושה?** [docs/EXPLAINER.html](docs/EXPLAINER.html) — מסמך הסבר אינטראקטיבי בשפה פשוטה (לפתוח בדפדפן).
@@ -39,6 +41,7 @@ TradeSense היא מערכת סריקת מניות עם ממשק משתמש ב־
 - [מבנה התשובה מה-API](#מבנה-התשובה-מה-api)
 - [Endpoints נוספים](#endpoints-נוספים)
 - [כלים לבדיקה ידנית מול כסף אמיתי](#כלים-לבדיקה-ידנית-מול-כסף-אמיתי)
+- [כלי כריית אנומליות (CLI)](#כלי-כריית-אנומליות-cli)
 - [משתני סביבה](#משתני-סביבה)
 - [הרצה מקומית](#הרצה-מקומית)
 - [לוגים ודיבוג](#לוגים-ודיבוג)
@@ -787,6 +790,25 @@ Content-Type: application/json
 "שמור", והופכת לאחר השמירה ל-pill צבעוני עם `gapAccuracyPct` (ניתן לעריכה
 מחדש).
 
+## כלי כריית אנומליות (CLI)
+
+תיעוד מלא: [`docs/SPEC_ANOMALY_MINING.md`](docs/SPEC_ANOMALY_MINING.md). כלי CLI עצמאי, נפרד לגמרי מהאפליקציה הרצה - **אין endpoint, אין scheduler, לא קיים ב-Render**. תלות חד-כיוונית: `server/src/services/research/` מייבא מהקוד הקיים, אף מודול קיים לא מייבא ממנו.
+
+**המטרה:** בניגוד לחמש האסטרטגיות ב-`strategies.js` (שכולן חוקים שהובאו מבחוץ ואומתו בדיעבד), הכלי הזה מגלה חוקים מהנתונים עצמם - סורק שנה אחורה על מניות NASDAQ בטווח שווי שוק בינוני-קטן, מאתר ימים עם קפיצה של 12%+ ביום בודד (close-to-close), ובודק שיטתית אילו תנאים ביום שקדם לקפיצה חוזים אותה טוב יותר מהמקרה (`lift` מול base rate - לא רק "מה הופיע לפני קפיצות", שזו טעות מתודולוגית נפוצה).
+
+**המגן המרכזי נגד overfitting:** חלוקה כרונולוגית - גילוי תבניות רק על החודשים הראשונים בחלון (in-sample), אימות פעם אחת על החודשים האחרונים (holdout) שלא נגעו בהם בשלב הגילוי. תבנית שלא שורדת holdout מוצגת בדוח כ"נפלה", לא מוסתרת - זו העדות המרכזית למידת ה-overfitting בפועל.
+
+**הרצה:**
+
+```bash
+npm run research:mine --workspace server -- --exchange=NASDAQ --refresh-bars
+npm run research:match --workspace server
+```
+
+`research:mine` בונה/מרענן את [`docs/ANOMALY_FINDINGS.md`](docs/ANOMALY_FINDINGS.md) (נדרס בכל ריצה) ואת `server/src/data/anomalyPatterns.json` (לא ב-git, קאש הברים הגולמיים ב-`server/src/data/researchBars.json` גם לא ב-git). `research:match` מדפיס אילו מניות עומדות **היום** בתבניות ששרדו - רשימה בלבד, ללא דירוג וללא "מומלץ ביותר". דורש `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` מוגדרים ו-universe לילי תקין (`universeStore`, ראו [שכבת הנתונים](#שכבת-הנתונים)) - נכשל בהודעה ברורה בלעדיהם.
+
+**מגבלות עיקריות (מפורטות בדוח ובספק):** נפח מ-`feed=iex` (חלקי, ~2-3% מהשוק - הכלי מנסה `delayed_sip` קודם ונופל אוטומטית ל-`iex`), הטיית שרידות (מניות שנמחקו מהמסחר לא במדגם), הטיית שווי-שוק לא-point-in-time (הסינון מבוסס שווי השוק של היום), הדרת הנפקות טריות. עבר אינו מבטיח עתיד - זו אינה המלצת השקעה.
+
 ## משתני סביבה
 
 המערכת טוענת `.env` מתוך שורש הפרויקט.
@@ -1021,6 +1043,24 @@ FUNNEL_FINALISTS=20
 
 ```env
 WIDE_SCAN_STAGE2_SIZE=300
+```
+
+#### RESEARCH_* (כלי כריית האנומליות, CLI בלבד)
+
+משתנים לכלי `npm run research:mine`/`research:match` (ראו [כלי כריית אנומליות](#כלי-כריית-אנומליות-cli) ו-[docs/SPEC_ANOMALY_MINING.md](docs/SPEC_ANOMALY_MINING.md)). כולם אופציונליים עם ברירת מחדל בקוד - לא נדרשים להרצה רגילה של האפליקציה.
+
+```env
+RESEARCH_EVENT_THRESHOLD_PCT=12
+RESEARCH_MIN_MARKET_CAP=300000000
+RESEARCH_MAX_MARKET_CAP=10000000000
+RESEARCH_MIN_PRICE=2
+RESEARCH_MAX_PRICE=500
+RESEARCH_MIN_DOLLAR_VOLUME=1000000
+RESEARCH_HISTORY_DAYS=680
+RESEARCH_INSAMPLE_RATIO=0.667
+RESEARCH_MAX_PATTERNS=20
+RESEARCH_BARS_FILE_PATH=server/src/data/researchBars.json
+RESEARCH_PATTERNS_FILE_PATH=server/src/data/anomalyPatterns.json
 ```
 
 ### דוגמת .env מומלצת ל-FMP
