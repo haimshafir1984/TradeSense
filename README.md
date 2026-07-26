@@ -792,7 +792,7 @@ Content-Type: application/json
 
 ## כלי כריית אנומליות (CLI)
 
-תיעוד מלא: [`docs/SPEC_ANOMALY_MINING.md`](docs/SPEC_ANOMALY_MINING.md). כלי CLI עצמאי, נפרד לגמרי מהאפליקציה הרצה - **אין endpoint, אין scheduler, לא קיים ב-Render**. תלות חד-כיוונית: `server/src/services/research/` מייבא מהקוד הקיים, אף מודול קיים לא מייבא ממנו.
+תיעוד מלא: [`docs/SPEC_ANOMALY_MINING.md`](docs/SPEC_ANOMALY_MINING.md). **הכרייה** (גילוי התבניות) היא CLI עצמאי, נפרד לגמרי מהאפליקציה הרצה, **לעולם לא רץ אוטומטית**. תלות חד-כיוונית: `server/src/services/research/` מייבא מהקוד הקיים, אף מודול קיים לא מייבא ממנו - **חוץ מ**-`routes/anomalyMatch.js` (ראו למטה), שהיא חריגה מודעת ויחידה שנוספה כדי להציג את התוצאות בטבלת הסריקה.
 
 **המטרה:** בניגוד לחמש האסטרטגיות ב-`strategies.js` (שכולן חוקים שהובאו מבחוץ ואומתו בדיעבד), הכלי הזה מגלה חוקים מהנתונים עצמם - סורק שנה אחורה על מניות NASDAQ בטווח שווי שוק בינוני-קטן, מאתר ימים עם קפיצה של 12%+ ביום בודד (close-to-close), ובודק שיטתית אילו תנאים ביום שקדם לקפיצה חוזים אותה טוב יותר מהמקרה (`lift` מול base rate - לא רק "מה הופיע לפני קפיצות", שזו טעות מתודולוגית נפוצה).
 
@@ -805,9 +805,18 @@ npm run research:mine --workspace server -- --exchange=NASDAQ --refresh-bars
 npm run research:match --workspace server
 ```
 
-`research:mine` בונה/מרענן את [`docs/ANOMALY_FINDINGS.md`](docs/ANOMALY_FINDINGS.md) (נדרס בכל ריצה) ואת `server/src/data/anomalyPatterns.json` (לא ב-git, קאש הברים הגולמיים ב-`server/src/data/researchBars.json` גם לא ב-git). `research:match` מדפיס אילו מניות עומדות **היום** בתבניות ששרדו - רשימה בלבד, ללא דירוג וללא "מומלץ ביותר". דורש `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` מוגדרים ו-universe לילי תקין (`universeStore`, ראו [שכבת הנתונים](#שכבת-הנתונים)) - נכשל בהודעה ברורה בלעדיהם.
+`research:mine` בונה/מרענן את [`docs/ANOMALY_FINDINGS.md`](docs/ANOMALY_FINDINGS.md) (נדרס בכל ריצה) ואת `server/src/data/anomalyPatterns.json` (**כן ב-git** - ראו "אינטגרציית טבלת הסריקה" למטה; קאש הברים הגולמיים ב-`server/src/data/researchBars.json` לא ב-git, נחוץ רק לריצות כרייה חוזרות). `research:match` מדפיס אילו מניות עומדות **היום** בתבניות ששרדו - רשימה בלבד, ללא דירוג וללא "מומלץ ביותר". דורש `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY` מוגדרים ו-universe לילי תקין (`universeStore`, ראו [שכבת הנתונים](#שכבת-הנתונים)) - נכשל בהודעה ברורה בלעדיהם.
 
 **מגבלות עיקריות (מפורטות בדוח ובספק):** נפח מ-`feed=iex` (חלקי, ~2-3% מהשוק - הכלי מנסה `delayed_sip` קודם ונופל אוטומטית ל-`iex`), הטיית שרידות (מניות שנמחקו מהמסחר לא במדגם), הטיית שווי-שוק לא-point-in-time (הסינון מבוסס שווי השוק של היום), הדרת הנפקות טריות. עבר אינו מבטיח עתיד - זו אינה המלצת השקעה.
+
+### אינטגרציית טבלת הסריקה (`GET/POST /api/anomaly-match`)
+
+תוסף מאחורי `ANOMALY_MATCH_ENABLED` (כבוי כברירת מחדל) שמציג את תוצאות הכרייה ישירות בטבלת תוצאות הסריקה, בטאב "סריקת שוק". **בניגוד לתוסף Vibe-Trading** (מקומי-בלבד, ראו למעלה), זה **נועד לעבוד גם ב-Render** - ולכן `anomalyPatterns.json` יוצא מ-`.gitignore` ומחויב ל-git (תמונת מצב שמתעדכנת ידנית בכל פעם שמריצים מחדש `research:mine` ודוחפים, בדיוק כמו `docs/ANOMALY_FINDINGS.md`).
+
+- `GET /api/anomaly-match/status` - `{ enabled: boolean }`.
+- `POST /api/anomaly-match/check` - body `{ tickers: string[] }`. קורא את התבניות השמורות מ-`anomalyPatterns.json`, מושך bar אחרון (קריאה מרוכזת אחת ל-Alpaca) לטיקרים המבוקשים בלבד, ומחזיר לכל טיקר אילו תבניות שרדו הוא עומד בהן כרגע - `{ available, generatedAt, results: { [ticker]: { matches: [...] } } }`. **לא קורא ל-`discoverPatterns`/`runResearch` בכלל** - רק קריאה של תבניות שכבר נכרו.
+
+בלקוח: ברגע שתוצאות סריקה מתקבלות, `App.jsx` יורה אוטומטית (ללא לחיצה) בקשה נפרדת ל-`POST /api/anomaly-match/check` עם עד 10 הטיקרים שהתקבלו - לא חלק מ-`POST /api/analyze` עצמו. עמודה חדשה ("תבנית אנומליה") מוצגת רק כש-`ANOMALY_MATCH_ENABLED=true`, עם הסתייגות קבועה ב-tooltip שזה ממצא מחקרי ולא המלצה.
 
 ## משתני סביבה
 
@@ -1061,6 +1070,14 @@ RESEARCH_INSAMPLE_RATIO=0.667
 RESEARCH_MAX_PATTERNS=20
 RESEARCH_BARS_FILE_PATH=server/src/data/researchBars.json
 RESEARCH_PATTERNS_FILE_PATH=server/src/data/anomalyPatterns.json
+```
+
+#### ANOMALY_MATCH_ENABLED
+
+מדליק את עמודת "תבנית אנומליה" בטבלת תוצאות הסריקה ואת `GET/POST /api/anomaly-match` (ראו [אינטגרציית טבלת הסריקה](#אינטגרציית-טבלת-הסריקה-getpost-apianomaly-match)). כבוי כברירת מחדל. **בניגוד ל-`VIBE_TRADING_ENABLED`, מיועד לעבודה גם ב-Render** - דורש רק ש-`server/src/data/anomalyPatterns.json` יהיה קיים (מחויב ל-git) ומפתחות Alpaca מוגדרים.
+
+```env
+ANOMALY_MATCH_ENABLED=false
 ```
 
 ### דוגמת .env מומלצת ל-FMP

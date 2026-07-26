@@ -20,7 +20,7 @@
 - `SPEC_VIBE_TRADING_LAB.md`, `BACKTEST_STRATEGY_DEFINITIONS.md`, `BACKTEST_FINDINGS.md` - מעבדת ה-backtest הנפרדת (ראו למטה).
 - `SPEC_VIBE_TRADING_INTEGRATION.md` - האינטגרציה בפועל בתוך TradeSense (ראו למטה).
 - `SPEC_SHORT_TERM_UPGRADE.md` - **הושלם (2026-07-18)**: שדרוג טווח-קצר/high-risk ב-9 שלבים, כל שלב ב-commit נפרד. תקציר התוצאה: הקלטת-צל לילית, מסגור R, כיול hit-rate נמדד, סריקה רחבה, float/קטליזטורים אמיתיים, regime מוחלק, דירוג-מחדש פרה-מרקט, universe שיטתי ל-Vibe-Trading, ותיעוד (ראו סעיף 7.9 ב-`LOGIC_IMPROVEMENTS.md` לפירוט מלא לפי שלב).
-- `SPEC_ANOMALY_MINING.md` - **הושלם (2026-07-25)**: כלי CLI נפרד (לא endpoint, לא ב-Render) שגילה חוקים מהנתונים במקום לייבא אותם מבחוץ - סורק שנה של stock-days ב-NASDAQ ומחפש תבניות שקדמו לקפיצה של 12%+ ביום בודד, נבדקות מול base rate ומאומתות ב-holdout כרונולוגי. תוצאות ומגבלות ב-`docs/ANOMALY_FINDINGS.md` (נוצר מחדש בכל ריצה).
+- `SPEC_ANOMALY_MINING.md` - **הושלם (2026-07-25), הורחב באותו יום**: כלי CLI (הכרייה עצמה - CLI ידני בלבד, לעולם לא אוטומטי) שגילה חוקים מהנתונים במקום לייבא אותם מבחוץ - סורק שנה של stock-days ב-NASDAQ ומחפש תבניות שקדמו לקפיצה של 12%+ ביום בודד, נבדקות מול base rate ומאומתות ב-holdout כרונולוגי. תוצאות ומגבלות ב-`docs/ANOMALY_FINDINGS.md` (נוצר מחדש בכל ריצה). התוצאות **גם מוצגות בטבלת הסריקה** (endpoint חדש, ראו למטה) - חריגה מודעת מהתכנון המקורי, ראו סעיף 11 בספק.
 
 ## התוסף Vibe-Trading (נוסף 2026-07-18)
 
@@ -35,13 +35,15 @@
 
    **מוסתר לגמרי כברירת מחדל ולא קיים ב-Render** - דורש `VIBE_TRADING_ENABLED=true` + `VIBE_TRADING_LAB_PATH=...` ב-`.env` המקומי (לא מוגדר ולא צריך להיות מוגדר בפריסה). שום קוד קיים לא קורא ל-`vibeTradingService` מלבד שני ה-endpoints האלה.
 
-## כלי כריית אנומליות (נוסף 2026-07-25)
+## כלי כריית אנומליות (נוסף 2026-07-25, הורחב לטבלת הסריקה באותו יום)
 
-CLI עצמאי, **לא endpoint, לא scheduler, לא קיים ב-Render** - `server/src/services/research/` (תלות חד-כיוונית: research → קוד קיים, אף מודול קיים לא מייבא ממנו). מטרתו לגלות חוקים מהנתונים עצמם (בניגוד לחמש האסטרטגיות ב-`strategies.js`, שכולן חוקים שהובאו מבחוץ ואומתו): סורק שנה אחורה על ~670 מניות NASDAQ בטווח שווי שוק 300M-10B, מחפש ימים עם קפיצה של 12%+ (close-to-close), ובודק שיטתית אילו תנאים ביום שקדם לקפיצה חוזים אותה טוב יותר מהמקרה (`lift` מול base rate, לא רק "מה קדם לקפיצות").
+הכרייה עצמה היא CLI עצמאי, **לעולם לא רץ אוטומטית** - `server/src/services/research/` (תלות חד-כיוונית: research → קוד קיים; היוצא-מן-הכלל היחיד: `matchSymbols` נקרא מ-`routes/anomalyMatch.js`, ראו למטה). מטרתו לגלות חוקים מהנתונים עצמם (בניגוד לחמש האסטרטגיות ב-`strategies.js`, שכולן חוקים שהובאו מבחוץ ואומתו): סורק שנה אחורה על ~670 מניות NASDAQ בטווח שווי שוק 300M-10B, מחפש ימים עם קפיצה של 12%+ (close-to-close), ובודק שיטתית אילו תנאים ביום שקדם לקפיצה חוזים אותה טוב יותר מהמקרה (`lift` מול base rate, לא רק "מה קדם לקפיצות").
 
 **המגן הכי חשוב:** חלוקה כרונולוגית - גילוי תבניות רק על 8 החודשים הראשונים (in-sample), אימות פעם אחת על 4 החודשים האחרונים (holdout) שלא נגעו בהם בשלב הגילוי. תבנית שלא שורדת holdout נזרקת ומוצגת בדוח כ"נפלה" (לא מוסתרת) - זו העדות המרכזית נגד overfitting. הרצה אמיתית (2026-07-25): 115 תבניות עברו את שלב הגילוי, 101 שרדו holdout, 14 נפלו.
 
-הרצה: `npm run research:mine --workspace server` (בונה/מרענן `docs/ANOMALY_FINDINGS.md` + `server/src/data/anomalyPatterns.json`, לא ב-git) ואז `npm run research:match --workspace server` (מציג אילו מניות עומדות היום בתבניות ששרדו - **רשימה בלבד, לא המלצה, לא דירוג** - ראה סעיף 0.4 ב-`SPEC_ANOMALY_MINING.md`). דורש מפתחות Alpaca מוגדרים ו-universe לילי תקין (`universeStore`).
+**הרצת הכרייה** (ידנית בלבד): `npm run research:mine --workspace server` (בונה/מרענן `docs/ANOMALY_FINDINGS.md` + `server/src/data/anomalyPatterns.json` - **בניגוד לשאר קבצי ה-data, זה כן ב-git**, ראו למטה) ואז `npm run research:match --workspace server` (CLI, מציג אילו מניות עומדות היום בתבניות ששרדו).
+
+**אינטגרציית טבלת הסריקה** (`GET/POST /api/anomaly-match`, מאחורי `ANOMALY_MATCH_ENABLED`): עמודה בטבלת תוצאות הסריקה שבודקת אוטומטית (לא לחיצה) האם כל אחת מהתוצאות עומדת כרגע בתבנית ששרדה - קריאה נפרדת מ-`/api/analyze`, לא חלק ממנו. **בכוונה, בניגוד ל-Vibe-Trading, נועד לעבוד גם ב-Render** (לכן `anomalyPatterns.json` מחויב ל-git - מתעדכן ידנית כשמריצים מחדש `research:mine` ודוחפים; `researchBars.json` נשאר לא ב-git, לא נחוץ ל-runtime). **רשימה עובדתית בלבד - לא המלצה, לא דירוג** (ראה סעיף 0.4 ב-`SPEC_ANOMALY_MINING.md`). קבצים: `anomalyResearchService.js#matchSymbols`/`#isEnabled`, `routes/anomalyMatch.js`, `client/src/App.jsx` (`AnomalyMatchCell`).
 
 ## מוסכמות עבודה בריפו הזה
 

@@ -7,6 +7,7 @@ const strategyLeagueRouter = require('./routes/strategyLeague');
 const watchlistRouter = require('./routes/watchlist');
 const watchlistOutcomesRouter = require('./routes/watchlistOutcomes');
 const backtestRouter = require('./routes/backtest');
+const anomalyMatchRouter = require('./routes/anomalyMatch');
 
 const app = express();
 
@@ -34,5 +35,9 @@ app.use('/api/watchlist/outcomes', watchlistOutcomesRouter);
 app.use('/api/watchlist', watchlistRouter);
 // On-demand only (never called by any scan) - see docs/SPEC_VIBE_TRADING_INTEGRATION.md.
 app.use('/api/backtest', backtestRouter);
+// Not part of /api/analyze itself - the client calls this separately once scan results are in
+// hand. Only reads patterns a previous `research:mine` CLI run already saved - see
+// docs/SPEC_ANOMALY_MINING.md section 11.
+app.use('/api/anomaly-match', anomalyMatchRouter);
 
 module.exports = app;

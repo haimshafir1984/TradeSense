@@ -1,8 +1,11 @@
 // Orchestration for anomaly mining (docs/SPEC_ANOMALY_MINING.md). Wires together the pure pieces
 // (asOfFeatures, eventLabeler, patternMiner) with the data layer (universeStore, alpacaService,
-// historicalBarsStore, patternStore). CLI-only - server/scripts/mineAnomalies.js and
-// matchAnomalies.js are the only callers. No route, no scheduler, nothing here is reachable from
-// the running Express app (section 5.1: research → existing code is a one-way dependency).
+// historicalBarsStore, patternStore). The mining itself (runResearch) stays CLI-only -
+// server/scripts/mineAnomalies.js / matchAnomalies.js are its only callers, and it never runs
+// automatically. matchSymbols() below is the one deliberate exception to the original "research →
+// existing code, one-way only" rule (spec section 5.1/11): server/src/routes/anomalyMatch.js calls
+// it to check specific scan-result tickers against ALREADY-MINED patterns in real time - no mining
+// happens on that path, just a read of patternStore + a live bars fetch for a handful of symbols.
 const universeStore = require('../universeStore');
 const alpacaService = require('../providers/alpacaService');
 const historicalBarsStore = require('./historicalBarsStore');
@@ -259,6 +262,57 @@ async function runMatch(rawOptions = {}) {
   return { patterns: matches, generatedAt: stored.generatedAt, exchange: stored.exchange };
 }
 
+// Feature flag for the live scan-result matching integration - same pattern as
+// vibeTradingService.isEnabled (server/src/services/vibeTradingService.js): strict string equality,
+// off by default.
+function isEnabled() {
+  return process.env.ANOMALY_MATCH_ENABLED === 'true';
+}
+
+// Checks a specific, caller-supplied list of tickers (the current scan's results - typically <=10)
+// against whatever patterns are currently saved in patternStore. Deliberately does NOT go through
+// universeStore/selectUniverseSymbols - the caller already knows exactly which symbols it wants
+// checked, so this stays a single batched bars fetch for just those symbols, independent of the
+// mining universe's market-cap band (a result outside that band can still be checked; the report's
+// caveat about the validated range still applies, but nothing here silently drops it).
+async function matchSymbols(tickers) {
+  const stored = await patternStore.readPatterns();
+  if (!stored || !Array.isArray(stored.patterns) || !stored.patterns.length) {
+    return { available: false, message: 'No saved anomaly patterns yet - run research:mine first.' };
+  }
+
+  if (!alpacaService.isConfigured()) {
+    return { available: false, message: 'Alpaca is not configured - anomaly matching needs bars to compute current features.' };
+  }
+
+  const barsBySymbol = await alpacaService.getDailyBars({ symbols: tickers, days: DEFAULTS.historyDays, feed: stored.feed || 'iex' });
+  const matchesByPattern = matchLatest(stored.patterns, stored.boundaries, barsBySymbol);
+
+  // Reshape pattern-major (matchLatest's natural output) to symbol-major, which is what the client
+  // needs to look up "does THIS row's ticker match anything" cheaply per table row.
+  const results = {};
+  for (const ticker of tickers) {
+    results[ticker] = { matches: [] };
+  }
+  for (const { pattern, matchingSymbols } of matchesByPattern) {
+    for (const match of matchingSymbols) {
+      if (results[match.symbol]) {
+        results[match.symbol].matches.push({
+          label: pattern.label,
+          holdout: { n: pattern.holdout.n, p: pattern.holdout.p, lift: pattern.holdout.lift }
+        });
+      }
+    }
+  }
+
+  return {
+    available: true,
+    generatedAt: stored.generatedAt,
+    universeParams: stored.universeParams,
+    results
+  };
+}
+
 function pct(value, digits = 2) {
   return Number.isFinite(value) ? `${(value * 100).toFixed(digits)}%` : 'n/a';
 }
@@ -378,5 +432,7 @@ module.exports = {
   renderReport,
   runResearch,
   persistPatterns,
-  runMatch
+  runMatch,
+  isEnabled,
+  matchSymbols
 };

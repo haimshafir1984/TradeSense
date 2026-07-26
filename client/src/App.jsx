@@ -165,6 +165,11 @@ function App() {
   const [backtestBusyTicker, setBacktestBusyTicker] = useState(null);
   const [backtestTheoryBusy, setBacktestTheoryBusy] = useState(false);
   const [backtestModal, setBacktestModal] = useState(null); // { title, ok, report, message } | null
+  // Anomaly-mining match integration (docs/SPEC_ANOMALY_MINING.md section 11) - reads patterns a
+  // previous `research:mine` CLI run already saved. Checked automatically once scan results are in
+  // hand, via a separate request - never part of /api/analyze itself.
+  const [anomalyMatchEnabled, setAnomalyMatchEnabled] = useState(false);
+  const [anomalyMatches, setAnomalyMatches] = useState({ status: 'idle', available: false, byTicker: {} });
   // Risk framing (docs/SPEC_SHORT_TERM_UPGRADE.md step 2): a personal position-sizing input,
   // client-side only - never sent to the server, never affects scoring. Persisted locally so it
   // survives a refresh; empty by default so no quantity is shown until the user opts in.
@@ -255,6 +260,59 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`${API_BASE_URL}/api/anomaly-match/status`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) {
+          setAnomalyMatchEnabled(Boolean(data?.enabled));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnomalyMatchEnabled(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!anomalyMatchEnabled || results.length === 0) {
+      setAnomalyMatches({ status: 'idle', available: false, byTicker: {} });
+      return undefined;
+    }
+
+    setAnomalyMatches({ status: 'loading', available: false, byTicker: {} });
+
+    fetch(`${API_BASE_URL}/api/anomaly-match/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickers: results.map((result) => result.ticker) })
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled) {
+          setAnomalyMatches({ status: 'done', available: Boolean(data?.available), byTicker: data?.results || {} });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnomalyMatches({ status: 'done', available: false, byTicker: {} });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [results, anomalyMatchEnabled]);
 
   const leadingStrategyLabel = strategyLeague?.leadingStrategy
     ? investmentMethodOptions.find((option) => option.value === strategyLeague.leadingStrategy)?.shortLabel
@@ -943,6 +1001,11 @@ function App() {
                   <th>הסבר קצר</th>
                   <th>פתיחה</th>
                   {vibeTradingEnabled ? <th>בדיקה היסטורית</th> : null}
+                  {anomalyMatchEnabled ? (
+                    <th title="מבוסס על ניתוח סטטיסטי של השנה האחרונה (NASDAQ, 300M-10B) - לא המלצה, לא ציון מכויל. ראו docs/ANOMALY_FINDINGS.md">
+                      תבנית אנומליה
+                    </th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -950,7 +1013,10 @@ function App() {
                   <tr>
                     <td
                       colSpan={
-                        (showIndiColumn ? 11 : 10) + (showCatalystColumn ? 1 : 0) + (vibeTradingEnabled ? 1 : 0)
+                        (showIndiColumn ? 11 : 10) +
+                        (showCatalystColumn ? 1 : 0) +
+                        (vibeTradingEnabled ? 1 : 0) +
+                        (anomalyMatchEnabled ? 1 : 0)
                       }
                       className="empty-state"
                     >
@@ -1021,6 +1087,15 @@ function App() {
                           >
                             {backtestBusyTicker === result.ticker ? 'בודק…' : 'בדוק היסטורית'}
                           </button>
+                        </td>
+                      ) : null}
+                      {anomalyMatchEnabled ? (
+                        <td>
+                          <AnomalyMatchCell
+                            status={anomalyMatches.status}
+                            available={anomalyMatches.available}
+                            match={anomalyMatches.byTicker[result.ticker]}
+                          />
                         </td>
                       ) : null}
                     </tr>
@@ -1274,6 +1349,41 @@ function RiskFramingCell({ riskFraming, price, maxRiskPerTrade }) {
       {riskFraming.rewardRiskRatio != null ? <div>יחס סיכוי/סיכון: {riskFraming.rewardRiskRatio}</div> : null}
       {quantity != null ? <div>כמות לפי הסיכון שהוגדר: {quantity}</div> : null}
       <div className="cell-subtext">מרחק סטופ לפי טווח התנודה היומי - חישוב טכני, לא ייעוץ</div>
+    </div>
+  );
+}
+
+// Reads patterns a previous `research:mine` CLI run already saved (docs/SPEC_ANOMALY_MINING.md) -
+// a statistically-derived research finding, not a vetted strategy and not a recommendation.
+// Checked automatically once scan results arrive, via a separate request from /api/analyze itself.
+function AnomalyMatchCell({ status, available, match }) {
+  if (status === 'loading') {
+    return <span className="cell-subtext">בודק…</span>;
+  }
+  if (!available) {
+    return <span className="cell-subtext">לא זמין</span>;
+  }
+  if (!match || match.matches.length === 0) {
+    return (
+      <span className="cell-subtext" title="לא עומדת כרגע באף תבנית ששרדה">
+        -
+      </span>
+    );
+  }
+
+  return (
+    <div>
+      <span
+        className="metric-pill high"
+        title="מבוסס על ניתוח סטטיסטי של השנה האחרונה (NASDAQ, 300M-10B) - לא המלצה, לא ציון מכויל. ראו docs/ANOMALY_FINDINGS.md"
+      >
+        {match.matches.length} {match.matches.length === 1 ? 'תבנית' : 'תבניות'}
+      </span>
+      {match.matches.map((patternMatch) => (
+        <div key={patternMatch.label} className="cell-subtext">
+          {patternMatch.label} (holdout: {(patternMatch.holdout.p * 100).toFixed(1)}%, lift {patternMatch.holdout.lift.toFixed(2)})
+        </div>
+      ))}
     </div>
   );
 }
