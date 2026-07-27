@@ -1356,6 +1356,56 @@ function RiskFramingCell({ riskFraming, price, maxRiskPerTrade }) {
 // Reads patterns a previous `research:mine` CLI run already saved (docs/SPEC_ANOMALY_MINING.md) -
 // a statistically-derived research finding, not a vetted strategy and not a recommendation.
 // Checked automatically once scan results arrive, via a separate request from /api/analyze itself.
+// Plain-Hebrew names for the 16 as-of-day features (docs/SPEC_ANOMALY_MINING.md section 4) - the
+// server only knows them by their code identifiers (e.g. "gapCount10d"), which means nothing to a
+// non-technical user. Presentation-only mapping, kept client-side since it never affects matching.
+const ANOMALY_FEATURE_LABELS = {
+  volumeRatio1d: 'נפח מסחר יומי (יחסית לממוצע)',
+  volumeRatio3d: 'נפח מסחר ב-3 ימים (יחסית לממוצע)',
+  volumeTrend5d: 'מגמת נפח (5 ימים אחרונים)',
+  adrPct20d: 'רמת תנודתיות יומית',
+  adrContraction: 'התכווצות תנודתיות',
+  consolidationScore: 'רמת התכנסות המחיר',
+  highProximity60d: 'קרבה לשיא 60 יום',
+  distFromLow60d: 'מרחק מהשפל ב-60 יום',
+  return5d: 'תשואה ב-5 ימים אחרונים',
+  return20d: 'תשואה ב-20 ימים אחרונים',
+  ma50Slope: 'שיפוע ממוצע 50 יום',
+  priceVsMa50: 'מחיר מול ממוצע 50 יום',
+  priceVsMa200: 'מחיר מול ממוצע 200 יום',
+  rangePosition20d: 'מיקום בטווח המחיר (20 יום)',
+  gapCount10d: 'מספר גאפים ב-10 ימים אחרונים',
+  dailyChange: 'שינוי מחיר יומי'
+};
+
+const ANOMALY_GAP_COUNT_LABELS = { 0: 'ללא גאפים', 1: 'גאפ אחד', 2: 'שני גאפים', 3: '3 גאפים ומעלה' };
+const ANOMALY_QUARTILE_LABELS = { 0: 'נמוך', 1: 'בינוני-נמוך', 2: 'בינוני-גבוה', 3: 'גבוה' };
+
+function describeAnomalyCondition(condition) {
+  const featureLabel = ANOMALY_FEATURE_LABELS[condition.feature] || condition.feature;
+  const valueLabel =
+    condition.feature === 'gapCount10d' ? ANOMALY_GAP_COUNT_LABELS[condition.bin] : ANOMALY_QUARTILE_LABELS[condition.bin];
+  return `${featureLabel}: ${valueLabel ?? condition.bin}`;
+}
+
+function describeAnomalyPatternMatch(patternMatch) {
+  const conditionsText = (patternMatch.conditions || []).map(describeAnomalyCondition).join(' + ');
+  const { p, lift, n } = patternMatch.holdout;
+  return `${conditionsText} — היסטורית: ${(p * 100).toFixed(1)}% מהמקרים הובילו לקפיצה (פי ${lift.toFixed(1)} מהרגיל, ${n} מקרים)`;
+}
+
+function anomalyLiftClassName(lift) {
+  if (lift >= 4) return 'high';
+  if (lift >= 2) return 'medium';
+  return 'low';
+}
+
+// Deliberately a single-line pill, not a stacked list of raw pattern strings (e.g.
+// "distFromLow60d in [0.358, +inf) AND gapCount10d >= 3") - that reads as noise to a
+// non-technical user and made result rows very tall. The full plain-Hebrew breakdown of every
+// matched pattern lives in the native tooltip instead, available on hover without costing table
+// height. See docs/SPEC_ANOMALY_MINING.md section 0.4 - this is a factual signal, not a
+// recommendation, hence the disclaimer repeated in the tooltip itself.
 function AnomalyMatchCell({ status, available, match }) {
   if (status === 'loading') {
     return <span className="cell-subtext">בודק…</span>;
@@ -1371,20 +1421,20 @@ function AnomalyMatchCell({ status, available, match }) {
     );
   }
 
+  const sortedMatches = [...match.matches].sort((a, b) => b.holdout.lift - a.holdout.lift);
+  const strongest = sortedMatches[0];
+  const tooltip = [
+    'מבוסס על ניתוח סטטיסטי של השנה האחרונה (NASDAQ, 300M-10B) - עובדה נמדדת, לא המלצה ולא ציון מכויל.',
+    '',
+    ...sortedMatches.map((patternMatch, index) => `${index + 1}. ${describeAnomalyPatternMatch(patternMatch)}`),
+    '',
+    'פירוט מלא: docs/ANOMALY_FINDINGS.md'
+  ].join('\n');
+
   return (
-    <div>
-      <span
-        className="metric-pill high"
-        title="מבוסס על ניתוח סטטיסטי של השנה האחרונה (NASDAQ, 300M-10B) - לא המלצה, לא ציון מכויל. ראו docs/ANOMALY_FINDINGS.md"
-      >
-        {match.matches.length} {match.matches.length === 1 ? 'תבנית' : 'תבניות'}
-      </span>
-      {match.matches.map((patternMatch) => (
-        <div key={patternMatch.label} className="cell-subtext">
-          {patternMatch.label} (holdout: {(patternMatch.holdout.p * 100).toFixed(1)}%, lift {patternMatch.holdout.lift.toFixed(2)})
-        </div>
-      ))}
-    </div>
+    <span className={`metric-pill ${anomalyLiftClassName(strongest.holdout.lift)}`} title={tooltip}>
+      {sortedMatches.length === 1 ? 'תבנית 1' : `${sortedMatches.length} תבניות`} · פי {strongest.holdout.lift.toFixed(1)}
+    </span>
   );
 }
 

@@ -299,6 +299,7 @@ async function matchSymbols(tickers) {
       if (results[match.symbol]) {
         results[match.symbol].matches.push({
           label: pattern.label,
+          conditions: pattern.conditions.map((c) => ({ feature: c.feature, bin: c.bin })),
           holdout: { n: pattern.holdout.n, p: pattern.holdout.p, lift: pattern.holdout.lift }
         });
       }

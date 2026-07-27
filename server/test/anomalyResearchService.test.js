@@ -277,6 +277,7 @@ test('matchSymbols correctly identifies which of several tickers currently satis
   assert.equal(result.available, true);
   assert.equal(result.results.AAA.matches.length, 1);
   assert.equal(result.results.AAA.matches[0].label, 'dailyChange top quartile');
+  assert.deepEqual(result.results.AAA.matches[0].conditions, [{ feature: 'dailyChange', bin: 3 }]);
   assert.equal(result.results.BBB.matches.length, 0);
 });
 
