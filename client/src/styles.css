@@ -975,3 +975,285 @@ th {
   margin: 0.9rem 1.25rem 1.25rem;
   color: #b3261e;
 }
+
+/* --- Results list (replaces the old wide results table) ------------------- */
+/* The collapsed card carries only identity / why / score / trade plan; the rest
+   lives behind the "למה המניה הזו?" toggle. See ResultCard in App.jsx. */
+
+.result-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.result-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.result-card.expanded {
+  border-color: var(--accent);
+}
+
+.result-card-main {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(14rem, 2fr) auto minmax(9rem, auto) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.9rem 1.1rem;
+}
+
+.result-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.result-ticker {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.result-company {
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-price {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-why {
+  min-width: 0;
+}
+
+.result-why-headline {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.result-why-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.why-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(11, 143, 106, 0.09);
+  border: 1px solid rgba(11, 143, 106, 0.22);
+  font-size: 0.78rem;
+}
+
+.why-pill b {
+  font-weight: 600;
+}
+
+.why-pill span {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.result-score {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.result-score-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-strong);
+}
+
+.result-score-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.trade-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.trade-plan-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.trade-plan-key {
+  color: var(--muted);
+}
+
+.trade-plan-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.result-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.details-toggle {
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.details-toggle:hover {
+  background: rgba(11, 143, 106, 0.08);
+}
+
+.details-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.result-details {
+  border-top: 1px solid var(--border);
+  background: rgba(26, 35, 51, 0.015);
+  padding: 1rem 1.1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1.5rem;
+}
+
+.result-details-block h4 {
+  margin: 0 0 0.7rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.score-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.score-bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.score-bar-label {
+  font-weight: 600;
+}
+
+.score-bar-points {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.score-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  margin: 0.25rem 0 0.2rem;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.score-bar-detail {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.eligibility-note {
+  margin: 0.8rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: rgba(184, 53, 53, 0.08);
+  color: var(--negative);
+  font-size: 0.82rem;
+}
+
+.detail-pairs {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.detail-pairs > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.detail-pairs dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.detail-pairs dd {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 900px) {
+  .result-card-main {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .result-why {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .result-actions {
+    grid-column: 1 / -1;
+    order: 4;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

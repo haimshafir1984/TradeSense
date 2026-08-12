@@ -137,6 +137,9 @@ function App() {
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
+  // Which result has its details panel open. Only one at a time - the panel is tall, and the
+  // point of the redesign is that the default view stays scannable.
+  const [expandedTicker, setExpandedTicker] = useState(null);
   const [strategyLeague, setStrategyLeague] = useState(null);
   // Measured hit-rate/risk-profile stats per strategy+opportunityRank bucket (docs/SPEC_SHORT_TERM_UPGRADE.md
   // step 3) - lets each result show real, measured history instead of only the formula-based rank
@@ -985,124 +988,37 @@ function App() {
           ) : null}
 
           <div className="results-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>סימול</th>
-                  <th>שם חברה</th>
-                  <th>אחוז התאמה</th>
-                  <th>ציון הזדמנות (יחסי)</th>
-                  <th>פוטנציאל מהלך</th>
-                  <th>תשואה משוקללת</th>
-                  <th>מסגור סיכון (טכני)</th>
-                  {showIndiColumn ? <th>התאמה ל-Indi</th> : null}
-                  {showCatalystColumn ? <th>קטליזטור/סיכון</th> : null}
-                  <th>אסטרטגיה</th>
-                  <th>הסבר קצר</th>
-                  <th>פתיחה</th>
-                  {vibeTradingEnabled ? <th>בדיקה היסטורית</th> : null}
-                  {anomalyMatchEnabled ? (
-                    <th title="מבוסס על ניתוח סטטיסטי של השנה האחרונה (NASDAQ, 300M-10B) - לא המלצה, לא ציון מכויל. ראו docs/ANOMALY_FINDINGS.md">
-                      תבנית אנומליה
-                    </th>
-                  ) : null}
-                </tr>
-              </thead>
-              <tbody>
-                {results.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={
-                        (showIndiColumn ? 11 : 10) +
-                        (showCatalystColumn ? 1 : 0) +
-                        (vibeTradingEnabled ? 1 : 0) +
-                        (anomalyMatchEnabled ? 1 : 0)
-                      }
-                      className="empty-state"
-                    >
-                      {emptyStateMessage}
-                    </td>
-                  </tr>
-                ) : (
-                  results.map((result) => (
-                    <tr key={result.ticker}>
-                      <td>{result.ticker}</td>
-                      <td>{result.companyName}</td>
-                      <td>{result.matchScore}%</td>
-                      <td>
-                        <span className={`metric-pill ${probabilityClassName(result.opportunityRank)}`}>
-                          {result.opportunityRank}
-                        </span>
-                        <MeasuredOpportunityNote
-                          strategy={form.strategy}
-                          opportunityRank={result.opportunityRank}
-                          hitRateReport={hitRateReport}
-                        />
-                      </td>
-                      <td>{result.estimatedUpsideRange}</td>
-                      <td>
-                        <div className="value-tone positive">{result.expectedReturnPct}%</div>
-                        <div className="cell-subtext">{result.opportunity?.recommendationLabel}</div>
-                      </td>
-                      <td>
-                        <RiskFramingCell riskFraming={result.riskFraming} price={result.price} maxRiskPerTrade={maxRiskPerTrade} />
-                      </td>
-                      {showIndiColumn ? (
-                        <td>
-                          <IndiFitCell indiFit={result.indiFit} />
-                        </td>
-                      ) : null}
-                      {showCatalystColumn ? (
-                        <td>
-                          <CatalystCell
-                            hasEarningsSoon={result.hasEarningsSoon}
-                            hasRecentNews={result.hasRecentNews}
-                            recentNewsCount={result.recentNewsCount}
-                          />
-                        </td>
-                      ) : null}
-                      <td>
-                        <div>{result.strategyName}</div>
-                        <div className="cell-subtext">ראשי: {result.expertSupport?.primary?.shortName || 'האסטרטגיה הנבחרת'}</div>
-                      </td>
-                      <td>
-                        <div>{result.explanation}</div>
-                        <ExpertSupportSummary expertSupport={result.expertSupport} />
-                      </td>
-                      <td className="broker-menu-cell">
-                        <BrokerMenu
-                          isOpen={openBrokerMenu === result.ticker}
-                          onToggle={() => setOpenBrokerMenu((current) => (current === result.ticker ? null : result.ticker))}
-                          onClose={() => setOpenBrokerMenu(null)}
-                        />
-                      </td>
-                      {vibeTradingEnabled ? (
-                        <td>
-                          <button
-                            type="button"
-                            className="vibe-trading-stock-button"
-                            onClick={() => handleCheckStockHistory(result.ticker)}
-                            disabled={backtestBusyTicker === result.ticker}
-                            title="בודק מה המניה הזו עשתה בעבר בתבניות דומות (Vibe-Trading + DeepSeek, בלחיצה בלבד)"
-                          >
-                            {backtestBusyTicker === result.ticker ? 'בודק…' : 'בדוק היסטורית'}
-                          </button>
-                        </td>
-                      ) : null}
-                      {anomalyMatchEnabled ? (
-                        <td>
-                          <AnomalyMatchCell
-                            status={anomalyMatches.status}
-                            available={anomalyMatches.available}
-                            match={anomalyMatches.byTicker[result.ticker]}
-                          />
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            {results.length === 0 ? (
+              <p className="empty-state">{emptyStateMessage}</p>
+            ) : (
+              <ol className="result-list">
+                {results.map((result) => (
+                  <ResultCard
+                    key={result.ticker}
+                    result={result}
+                    strategy={form.strategy}
+                    hitRateReport={hitRateReport}
+                    maxRiskPerTrade={maxRiskPerTrade}
+                    isExpanded={expandedTicker === result.ticker}
+                    onToggleExpand={() =>
+                      setExpandedTicker((current) => (current === result.ticker ? null : result.ticker))
+                    }
+                    showIndiFit={showIndiColumn}
+                    showCatalyst={showCatalystColumn}
+                    brokerMenuOpen={openBrokerMenu === result.ticker}
+                    onToggleBrokerMenu={() =>
+                      setOpenBrokerMenu((current) => (current === result.ticker ? null : result.ticker))
+                    }
+                    onCloseBrokerMenu={() => setOpenBrokerMenu(null)}
+                    vibeTradingEnabled={vibeTradingEnabled}
+                    backtestBusy={backtestBusyTicker === result.ticker}
+                    onCheckHistory={() => handleCheckStockHistory(result.ticker)}
+                    anomalyMatchEnabled={anomalyMatchEnabled}
+                    anomalyMatches={anomalyMatches}
+                  />
+                ))}
+              </ol>
+            )}
           </div>
         </section>
         </div>
@@ -1113,6 +1029,240 @@ function App() {
 
       {backtestModal ? <BacktestReportModal modal={backtestModal} onClose={() => setBacktestModal(null)} /> : null}
     </div>
+  );
+}
+
+// One scan result.
+//
+// The collapsed view answers only three questions: what is it, why is it here, and what would the
+// trade look like. Everything else moved into the details panel - the previous layout put 10-14
+// columns on screen at once, which emphasised nothing and left "why is this stock recommended"
+// unanswered. Nothing was removed, only re-prioritised.
+function ResultCard({
+  result,
+  strategy,
+  hitRateReport,
+  maxRiskPerTrade,
+  isExpanded,
+  onToggleExpand,
+  showIndiFit,
+  showCatalyst,
+  brokerMenuOpen,
+  onToggleBrokerMenu,
+  onCloseBrokerMenu,
+  vibeTradingEnabled,
+  backtestBusy,
+  onCheckHistory,
+  anomalyMatchEnabled,
+  anomalyMatches
+}) {
+  const breakdown = result.scoreBreakdown || [];
+  const topFactors = breakdown.slice(0, 2);
+
+  return (
+    <li className={`result-card${isExpanded ? ' expanded' : ''}`}>
+      <div className="result-card-main">
+        <div className="result-identity">
+          <span className="result-ticker">{result.ticker}</span>
+          <span className="result-company">{result.companyName}</span>
+          <span className="result-price">${result.price}</span>
+        </div>
+
+        <div className="result-why">
+          <p className="result-why-headline">{result.explanation}</p>
+          <div className="result-why-factors">
+            {topFactors.map((factor) => (
+              <span key={factor.key} className="why-pill">
+                <b>{factor.label}</b>
+                {factor.detail ? <span>{factor.detail}</span> : null}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="result-score">
+          <div className="result-score-value">{result.matchScore}%</div>
+          <div className="result-score-label">התאמה לאסטרטגיה</div>
+          <span className={`metric-pill ${probabilityClassName(result.opportunityRank)}`}>{result.opportunityRank}</span>
+        </div>
+
+        <TradePlan riskFraming={result.riskFraming} price={result.price} maxRiskPerTrade={maxRiskPerTrade} />
+
+        <div className="result-actions">
+          <button type="button" className="details-toggle" onClick={onToggleExpand} aria-expanded={isExpanded}>
+            {isExpanded ? 'הסתר פירוט' : 'למה המניה הזו?'}
+          </button>
+          <BrokerMenu isOpen={brokerMenuOpen} onToggle={onToggleBrokerMenu} onClose={onCloseBrokerMenu} />
+          {vibeTradingEnabled ? (
+            <button
+              type="button"
+              className="vibe-trading-stock-button"
+              onClick={onCheckHistory}
+              disabled={backtestBusy}
+              title="בודק מה המניה הזו עשתה בעבר בתבניות דומות (Vibe-Trading + DeepSeek, בלחיצה בלבד)"
+            >
+              {backtestBusy ? 'בודק…' : 'בדוק היסטורית'}
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {isExpanded ? (
+        <div className="result-details">
+          <div className="result-details-block">
+            <h4>ממה מורכב הציון</h4>
+            <ScoreBreakdownBars breakdown={breakdown} />
+            {result.eligibility && !result.eligibility.passed ? (
+              <p className="eligibility-note">לא עברה את סף הכניסה: {result.eligibility.reason}</p>
+            ) : null}
+          </div>
+
+          <div className="result-details-block">
+            <h4>הערכות נוספות</h4>
+            <dl className="detail-pairs">
+              <div>
+                <dt>פוטנציאל מהלך</dt>
+                <dd>{result.estimatedUpsideRange}</dd>
+              </div>
+              <div>
+                <dt>תשואה משוקללת</dt>
+                <dd>
+                  {result.expectedReturnPct}%
+                  {result.opportunity?.recommendationLabel ? (
+                    <span className="cell-subtext"> ({result.opportunity.recommendationLabel})</span>
+                  ) : null}
+                </dd>
+              </div>
+              <div>
+                <dt>ציון הזדמנות (יחסי)</dt>
+                <dd>
+                  {result.opportunityRank}
+                  <MeasuredOpportunityNote
+                    strategy={strategy}
+                    opportunityRank={result.opportunityRank}
+                    hitRateReport={hitRateReport}
+                  />
+                </dd>
+              </div>
+              <div>
+                <dt>אסטרטגיה</dt>
+                <dd>
+                  {result.strategyName}
+                  <span className="cell-subtext"> · ראשי: {result.expertSupport?.primary?.shortName || 'הנבחרת'}</span>
+                </dd>
+              </div>
+              {showIndiFit ? (
+                <div>
+                  <dt>התאמה ל-Indi</dt>
+                  <dd>
+                    <IndiFitCell indiFit={result.indiFit} />
+                  </dd>
+                </div>
+              ) : null}
+              {showCatalyst ? (
+                <div>
+                  <dt>קטליזטור/סיכון</dt>
+                  <dd>
+                    <CatalystCell
+                      hasEarningsSoon={result.hasEarningsSoon}
+                      hasRecentNews={result.hasRecentNews}
+                      recentNewsCount={result.recentNewsCount}
+                    />
+                  </dd>
+                </div>
+              ) : null}
+              {anomalyMatchEnabled ? (
+                <div>
+                  <dt>תבנית אנומליה</dt>
+                  <dd>
+                    <AnomalyMatchCell
+                      status={anomalyMatches.status}
+                      available={anomalyMatches.available}
+                      match={anomalyMatches.byTicker[result.ticker]}
+                    />
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+            <ExpertSupportSummary expertSupport={result.expertSupport} />
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+// The actionable half of a recommendation: where the stop would sit and how many shares that
+// implies. Kept in the collapsed view deliberately - a pick without an exit isn't a trade, which
+// is the single biggest gap this system had.
+function TradePlan({ riskFraming, price, maxRiskPerTrade }) {
+  if (!riskFraming || riskFraming.stopDistancePct == null) {
+    return (
+      <div className="trade-plan">
+        <span className="cell-subtext">אין מספיק נתוני תנודתיות לחישוב סטופ</span>
+      </div>
+    );
+  }
+
+  const maxRisk = Number(maxRiskPerTrade);
+  const perShareRisk = Number(price) - Number(riskFraming.stopPrice);
+  const quantity =
+    Number.isFinite(maxRisk) && maxRisk > 0 && perShareRisk > 0 ? Math.floor(maxRisk / perShareRisk) : null;
+
+  return (
+    <div className="trade-plan">
+      <div className="trade-plan-row">
+        <span className="trade-plan-key">סטופ</span>
+        <span className="trade-plan-value">
+          ${riskFraming.stopPrice} <span className="cell-subtext">({riskFraming.stopDistancePct}%)</span>
+        </span>
+      </div>
+      {riskFraming.rewardRiskRatio != null ? (
+        <div className="trade-plan-row">
+          <span className="trade-plan-key">סיכוי/סיכון</span>
+          <span className="trade-plan-value">{riskFraming.rewardRiskRatio}</span>
+        </div>
+      ) : null}
+      {quantity != null ? (
+        <div className="trade-plan-row">
+          <span className="trade-plan-key">כמות</span>
+          <span className="trade-plan-value">{quantity}</span>
+        </div>
+      ) : (
+        <div className="trade-plan-row">
+          <span className="cell-subtext">הגדר סיכון מקסימלי לעסקה כדי לקבל כמות</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Renders the per-factor breakdown the server computed (strategies.js#buildBreakdown). Bars are
+// scaled to the strongest factor rather than to 1.0, so the *relative* weight of the reasons stays
+// readable even when the overall score is low. Contribution is shown out of 100 because that's the
+// same scale as the headline match percentage.
+function ScoreBreakdownBars({ breakdown }) {
+  if (!breakdown || breakdown.length === 0) {
+    return <p className="cell-subtext">אין פירוט ניקוד לתוצאה הזו.</p>;
+  }
+
+  const strongest = Math.max(...breakdown.map((factor) => factor.contribution), 0.0001);
+
+  return (
+    <ul className="score-bars">
+      {breakdown.map((factor) => (
+        <li key={factor.key}>
+          <div className="score-bar-head">
+            <span className="score-bar-label">{factor.label}</span>
+            <span className="score-bar-points">{Math.round(factor.contribution * 100)} נק׳</span>
+          </div>
+          <div className="score-bar-track">
+            <div className="score-bar-fill" style={{ width: `${(factor.contribution / strongest) * 100}%` }} />
+          </div>
+          {factor.detail ? <span className="score-bar-detail">{factor.detail}</span> : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
