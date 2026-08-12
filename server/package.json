@@ -7,7 +7,8 @@
     "start": "node src/index.js",
     "test": "node --test test/*.test.js",
     "research:mine": "node scripts/mineAnomalies.js",
-    "research:match": "node scripts/matchAnomalies.js"
+    "research:match": "node scripts/matchAnomalies.js",
+    "research:github": "node scripts/surveyGithub.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

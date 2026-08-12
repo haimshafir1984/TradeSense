@@ -45,6 +45,14 @@
 
 **אינטגרציית טבלת הסריקה** (`GET/POST /api/anomaly-match`, מאחורי `ANOMALY_MATCH_ENABLED`): עמודה בטבלת תוצאות הסריקה שבודקת אוטומטית (לא לחיצה) האם כל אחת מהתוצאות עומדת כרגע בתבנית ששרדה - קריאה נפרדת מ-`/api/analyze`, לא חלק ממנו. **בכוונה, בניגוד ל-Vibe-Trading, נועד לעבוד גם ב-Render** (לכן `anomalyPatterns.json` מחויב ל-git - מתעדכן ידנית כשמריצים מחדש `research:mine` ודוחפים; `researchBars.json` נשאר לא ב-git, לא נחוץ ל-runtime). **רשימה עובדתית בלבד - לא המלצה, לא דירוג** (ראה סעיף 0.4 ב-`SPEC_ANOMALY_MINING.md`). קבצים: `anomalyResearchService.js#matchSymbols`/`#isEnabled`, `routes/anomalyMatch.js`, `client/src/App.jsx` (`AnomalyMatchCell`).
 
+## סקר GitHub ציבורי (נוסף 2026-08-12)
+
+CLI ידני נוסף תחת `server/src/services/research/` (**לעולם לא רץ אוטומטית**), שנועד לענות על "איך אחרים בנו מערכות המלצות מניות": `npm run research:github --workspace server` → כותב `docs/GITHUB_SURVEY.md`. איפיון: `docs/SPEC_GITHUB_SURVEY.md`.
+
+**קורא מטא-דאטה בלבד** (כוכבים/תיאור/תגיות/commit אחרון/רישיון), אף פעם לא קוד - ולכן לא יכול לומר שום דבר על איכות או על lookahead bias. ארכיטקטורה דו-שלבית: קציר רחב לפי `topic:` (חיפוש GitHub לא מחפש ב-README, ולכן שאילתות תיאוריות ארוכות מחזירות 0) ואז סיווג מקומי לפי מילות מפתח לתוך 10 קטגוריות שמוגדרות לפי **הפערים של TradeSense**.
+
+ריצה ראשונה: 352 ריפוזיטוריז. הממצא המרכזי הוא היכן *אין* קוד פתוח - משטר שוק (תוצאה אחת בלבד) וחוקי יציאה ברמת העסקה (23, וכמעט כולן בעצם אופטימיזציית תיק) - בעוד מנועי backtest הם הקטגוריה הצפופה ביותר (98).
+
 ## מוסכמות עבודה בריפו הזה
 
 - טסטים: `node:test` + `node:assert/strict` תחת `server/test/` (`npm test --workspace server`). דפוס נפוץ: `delete require.cache[...]` לטעינה מחדש של מודול + ניקוי env vars ב-setup.
