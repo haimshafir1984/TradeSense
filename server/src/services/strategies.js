@@ -9,6 +9,40 @@ const STRATEGY_LABELS = {
   small_cap_breakout: 'מניות קטנות נפיצות (Small-Cap)'
 };
 
+// Every strategy returns, alongside its 0-1 score, a breakdown of the factors that produced it:
+// what each factor scored (0-1), how much weight it carries, and what it contributed to the final
+// number - plus a human-readable `detail` holding the actual observed value.
+//
+// This exists because a bare score plus a canned sentence doesn't answer "why is this stock here",
+// which is the question the results table is supposed to answer. Sorted by contribution so the
+// dominant reason is always first.
+function buildBreakdown(entries) {
+  return entries
+    .filter((entry) => entry && Number.isFinite(entry.weight))
+    .map(({ key, label, value, weight, detail }) => {
+      const normalized = clamp(Number(value) || 0);
+      return {
+        key,
+        label,
+        value: round(normalized, 3),
+        weight: round(weight, 3),
+        contribution: round(normalized * weight, 3),
+        detail: detail || null
+      };
+    })
+    .sort((left, right) => right.contribution - left.contribution);
+}
+
+// Formatting helpers for the `detail` strings - these carry the raw observed number so the user
+// sees "נפח פי 3.4 מהממוצע" rather than an opaque 0.82.
+function describeMultiple(value) {
+  return Number.isFinite(value) && value > 0 ? `פי ${round(value, 1)} מהממוצע` : 'אין נתון נפח';
+}
+
+function describePct(value, suffix = '') {
+  return Number.isFinite(value) ? `${round(value, 1)}%${suffix}` : 'אין נתון';
+}
+
 function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
   const enrichedStock = enrichStock(stock, marketContext);
 
@@ -70,7 +104,31 @@ function scoreMichaStrategy(stock) {
   return {
     ...stock,
     score: clamp(score),
-    explanation: createMichaExplanation(stock)
+    explanation: createMichaExplanation(stock),
+    scoreBreakdown: buildBreakdown([
+      {
+        key: 'trend',
+        label: 'מגמה ארוכת טווח',
+        value: trend,
+        weight: w.trend,
+        detail: `מחיר ${stock.price > stock.MA200 ? 'מעל' : 'מתחת ל'}־ממוצע 200, ${stock.price > stock.MA50 ? 'מעל' : 'מתחת ל'}־ממוצע 50`
+      },
+      {
+        key: 'growth',
+        label: 'צמיחה וגודל',
+        value: growth,
+        weight: w.growth,
+        detail: `צמיחת הכנסות ${describePct(stock.revenue_growth_pct)}`
+      },
+      {
+        key: 'pullback',
+        label: 'קרבה לשיא השנתי',
+        value: pullback,
+        weight: w.pullback,
+        detail: `${describePct(stock.pullbackFromHigh)} מתחת לשיא`
+      },
+      { key: 'volume', label: 'נפח מסחר', value: volume, weight: w.volume, detail: describeMultiple(stock.volumeRatio) }
+    ])
   };
 }
 
@@ -104,7 +162,31 @@ function scoreMinerviniStrategy(stock) {
     ...stock,
     aboveLow52Pct: round(aboveLow52Pct, 1),
     score: clamp(score),
-    explanation: createMinerviniExplanation(stock, aboveLow52Pct)
+    explanation: createMinerviniExplanation(stock, aboveLow52Pct),
+    scoreBreakdown: buildBreakdown([
+      {
+        key: 'momentum',
+        label: 'מומנטום',
+        value: momentum,
+        weight: wMinervini.momentum,
+        detail: `שינוי יומי ${describePct(stock.daily_change)}, עודף מול המדד ${describePct(stock.excessReturnVsBenchmark)}`
+      },
+      {
+        key: 'trend',
+        label: 'תבנית מגמה',
+        value: trend,
+        weight: wMinervini.trend,
+        detail: `${describePct(aboveLow52Pct)} מעל השפל השנתי, ממוצע 50 ${stock.MA50 > stock.MA200 ? 'מעל' : 'מתחת ל'}־200`
+      },
+      { key: 'volume', label: 'נפח מסחר', value: volume, weight: wMinervini.volume, detail: describeMultiple(stock.volumeRatio) },
+      {
+        key: 'breakout',
+        label: 'קרבה לפריצה',
+        value: breakout,
+        weight: wMinervini.breakout,
+        detail: `${describePct(stock.highProximity * 100)} מהשיא השנתי, התכנסות ${round(Number(stock.consolidation_score || 0), 2)}`
+      }
+    ])
   };
 }
 
@@ -127,7 +209,31 @@ function scoreRossStrategy(stock) {
     ...stock,
     floatSource,
     score: clamp(score),
-    explanation: createRossExplanation(stock)
+    explanation: createRossExplanation(stock),
+    scoreBreakdown: buildBreakdown([
+      {
+        key: 'momentum',
+        label: 'תנועה יומית',
+        value: momentum,
+        weight: wRoss.momentum,
+        detail: describePct(stock.daily_change, ' ביום')
+      },
+      { key: 'volume', label: 'נפח חריג', value: volume, weight: wRoss.volume, detail: describeMultiple(stock.volumeRatio) },
+      {
+        key: 'breakout',
+        label: 'סגירה בשיא היום',
+        value: breakout,
+        weight: wRoss.breakout,
+        detail: `${describePct(stock.price_near_daily_high * 100)} מהשיא היומי`
+      },
+      {
+        key: 'float',
+        label: 'כמות מניות (float)',
+        value: floatScore,
+        weight: wRoss.float,
+        detail: floatSource === 'real' ? 'מבוסס נתון אמיתי' : 'הערכה משווי שוק בלבד'
+      }
+    ])
   };
 }
 
@@ -159,11 +265,75 @@ function scoreSwingMomentumStrategy(stock) {
   const eligible = Number(stock.adr_pct || 0) >= 3.5 && stock.price > stock.MA200;
   const score = eligible ? setupScore : 0;
 
+  // Only the winning sub-setup's factors are reported - showing both would misrepresent how the
+  // score was actually produced, since the two are a max() and not a blend.
+  const breakdown = isBreakoutSetup
+    ? buildBreakdown([
+        {
+          key: 'consolidation',
+          label: 'התכנסות לפני פריצה',
+          value: Number(stock.consolidation_score || 0),
+          weight: w.breakout.consolidation,
+          detail: `ציון התכנסות ${round(Number(stock.consolidation_score || 0), 2)}`
+        },
+        {
+          key: 'highProximity',
+          label: 'קרבה לשיא השנתי',
+          value: normalize(stock.highProximity, 0.85, 1),
+          weight: w.breakout.highProximity,
+          detail: `${describePct(stock.highProximity * 100)} מהשיא`
+        },
+        {
+          key: 'volume',
+          label: 'נפח מסחר',
+          value: normalize(stock.volumeRatio, 1.5, 3),
+          weight: w.breakout.volume,
+          detail: describeMultiple(stock.volumeRatio)
+        },
+        {
+          key: 'relativeStrength',
+          label: 'חוזק יחסי מול השוק',
+          value: stock.relativeStrength,
+          weight: w.breakout.relativeStrength,
+          detail: `עודף תשואה ${describePct(stock.excessReturnVsBenchmark)} מול המדד`
+        },
+        {
+          key: 'trend',
+          label: 'סדר ממוצעים',
+          value: breakoutTrend,
+          weight: w.breakout.trend,
+          detail: breakoutTrend ? 'ממוצע 50 מעל 200 והמחיר מעליו' : 'סדר הממוצעים אינו תומך'
+        }
+      ])
+    : buildBreakdown([
+        {
+          key: 'move',
+          label: 'גאפ/תנועה חדה',
+          value: normalize(gapSignal, 8, 20),
+          weight: w.episodicPivot.move,
+          detail: describePct(gapSignal, ' ביום')
+        },
+        {
+          key: 'volume',
+          label: 'נפח חריג',
+          value: normalize(stock.volumeRatio, 2.5, 5),
+          weight: w.episodicPivot.volume,
+          detail: describeMultiple(stock.volumeRatio)
+        }
+      ]);
+
   return {
     ...stock,
     swingSetup: isBreakoutSetup ? 'breakout' : 'episodic_pivot',
     score: clamp(score),
-    explanation: createSwingMomentumExplanation(isBreakoutSetup, eligible)
+    explanation: createSwingMomentumExplanation(isBreakoutSetup, eligible),
+    eligibility: {
+      passed: eligible,
+      reason: eligible
+        ? null
+        : `נדרש ADR של 3.5% לפחות (בפועל ${describePct(stock.adr_pct)}) ומחיר מעל ממוצע 200 יום`
+    },
+    scoreBreakdown: breakdown
   };
 }
 
@@ -195,7 +365,41 @@ function scoreSmallCapBreakoutStrategy(stock) {
   return {
     ...stock,
     score: clamp(score),
-    explanation: createSmallCapBreakoutExplanation(stock, volumeSurge, momentum, eligible)
+    explanation: createSmallCapBreakoutExplanation(stock, volumeSurge, momentum, eligible),
+    eligibility: {
+      passed: eligible,
+      reason: eligible ? null : 'נדרש שווי שוק מתחת ל-2 מיליארד$, מחיר מעל 2$, ו-ADR של 5% לפחות'
+    },
+    scoreBreakdown: buildBreakdown([
+      {
+        key: 'volumeSurge',
+        label: 'פריצת נפח',
+        value: volumeSurge,
+        weight: w.volumeSurge,
+        detail: describeMultiple(stock.volumeRatio)
+      },
+      {
+        key: 'momentum',
+        label: 'מומנטום/גאפ',
+        value: momentum,
+        weight: w.momentum,
+        detail: describePct(momentumSignal, ' ביום')
+      },
+      {
+        key: 'breakout',
+        label: 'קרבה לשיא והתכנסות',
+        value: breakout,
+        weight: w.breakout,
+        detail: `${describePct(stock.highProximity * 100)} מהשיא השנתי`
+      },
+      {
+        key: 'relativeStrength',
+        label: 'חוזק יחסי מול השוק',
+        value: relativeStrength,
+        weight: w.relativeStrength,
+        detail: `עודף תשואה ${describePct(stock.excessReturnVsBenchmark)} מול המדד`
+      }
+    ])
   };
 }
 

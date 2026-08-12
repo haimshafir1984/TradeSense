@@ -228,6 +228,10 @@ async function analyzeMarket(request = {}) {
       opportunity,
       indiFit,
       riskFraming,
+      // Per-factor "why is this stock here" data (strategies.js#buildBreakdown). Passed straight
+      // through so the results table can show the actual drivers instead of a bare score.
+      scoreBreakdown: stock.scoreBreakdown || [],
+      eligibility: stock.eligibility || null,
       hasEarningsSoon: catalysts?.hasEarningsSoon ?? null,
       hasRecentNews: catalysts?.hasRecentNews ?? null,
       recentNewsCount: catalysts?.recentNewsCount ?? null,
