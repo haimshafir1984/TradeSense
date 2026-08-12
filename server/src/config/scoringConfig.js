@@ -15,7 +15,28 @@ const STRATEGY_WEIGHTS = {
     breakout: { consolidation: 0.25, highProximity: 0.25, volume: 0.2, relativeStrength: 0.2, trend: 0.1 },
     episodicPivot: { move: 0.6, volume: 0.4 }
   },
-  small_cap_breakout: { volumeSurge: 0.3, momentum: 0.3, breakout: 0.25, relativeStrength: 0.15 }
+  small_cap_breakout: { volumeSurge: 0.3, momentum: 0.3, breakout: 0.25, relativeStrength: 0.15 },
+  // The five strategies above are all trend-continuation: they buy strength, near highs, on
+  // expanding volume. The two below deliberately buy weakness instead, which is the structural gap
+  // in the set - when momentum stops working, every one of the five fails together. See
+  // docs/SPEC_NEW_STRATEGIES.md.
+  pullback_uptrend: { trendQuality: 0.3, pullbackDepth: 0.3, maSupport: 0.25, volumeDryUp: 0.15 },
+  mean_reversion_bounce: { oversold: 0.35, sharpDrop: 0.25, volumeClimax: 0.2, trendIntact: 0.2 }
+};
+
+// Entry gates for the two counter-trend strategies. Both refuse to look at a stock that isn't
+// still in a long-term uptrend - the point is buying a dip inside strength, not catching a knife.
+const PULLBACK_THRESHOLDS = {
+  idealDepthPct: 10, // distance below the 52-week high where the setup is most attractive
+  minDepthPct: 4, // shallower than this isn't a pullback, it's just noise
+  maxDepthPct: 25 // deeper than this is a broken trend, not a dip
+};
+
+const MEAN_REVERSION_THRESHOLDS = {
+  oversoldRsi: 30, // full credit at or below this
+  neutralRsi: 50, // no credit at or above this
+  minDropPct: -4, // no credit above this (i.e. a shallower drop than 4%)
+  fullDropPct: -15 // full credit at or below this
 };
 
 // Percentile-within-universe thresholds used by assessCrossStrategyConfluence (see 3.6).
@@ -68,6 +89,8 @@ const RISK_FIT_THRESHOLDS = {
 
 module.exports = {
   STRATEGY_WEIGHTS,
+  PULLBACK_THRESHOLDS,
+  MEAN_REVERSION_THRESHOLDS,
   CONFLUENCE_THRESHOLDS,
   QUALITY_SCORE_THRESHOLD,
   RISK_FIT_THRESHOLDS,

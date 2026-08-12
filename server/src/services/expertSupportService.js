@@ -3,7 +3,9 @@ const STRATEGY_DISPLAY_LABELS = {
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
   ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Linda Bradford Raschke',
   swing_momentum: 'פריצות מומנטום (Swing)',
-  small_cap_breakout: 'מניות קטנות נפיצות (Small-Cap)'
+  small_cap_breakout: 'מניות קטנות נפיצות (Small-Cap)',
+  pullback_uptrend: 'קנייה בתיקון במגמת עלייה (Pullback)',
+  mean_reversion_bounce: 'חזרה לממוצע אחרי נפילה חדה (Mean Reversion)'
 };
 
 const PRIMARY_EXPERTS = {
@@ -32,6 +34,16 @@ const PRIMARY_EXPERTS = {
     id: 'small_cap_breakout_style',
     name: 'סגנון מניות קטנות נפיצות',
     shortName: 'Small-Cap Breakout'
+  },
+  pullback_uptrend: {
+    id: 'pullback_uptrend_style',
+    name: 'סגנון קנייה בתיקון במגמת עלייה',
+    shortName: 'Pullback'
+  },
+  mean_reversion_bounce: {
+    id: 'mean_reversion_style',
+    name: 'סגנון חזרה לממוצע',
+    shortName: 'Mean Reversion'
   }
 };
 

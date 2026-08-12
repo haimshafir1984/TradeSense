@@ -4,7 +4,7 @@
 // technical-indicator math instead of duplicating it. Provider-agnostic: callers pass in their own
 // `dataSource` label and candidate metadata (symbol/companyName/sector/marketCap) since those come
 // from whichever screener/profile source is upstream (Nasdaq, FMP, etc).
-const { average, scoreConsolidation } = require('./mathUtils');
+const { average, scoreConsolidation, computeRsi, computeTrailingReturnPct } = require('./mathUtils');
 
 // bars is oldest-to-newest (alpacaService contract).
 function buildStockFromBars({ exchange, candidate, bars, dataSource }) {
@@ -59,6 +59,18 @@ function buildStockFromBars({ exchange, candidate, bars, dataSource }) {
 
   const return3m = computeReturnPctFromEnd(closes, 63);
 
+  // Mean-reversion inputs (strategies.js#scoreMeanReversionBounceStrategy). Left null rather than
+  // defaulted when there isn't enough history - the strategy treats null as "not measurable" and
+  // refuses to score on it, instead of ranking a stock on a fabricated neutral reading.
+  const rsi14 = computeRsi(closes, 14);
+  const return5d = computeTrailingReturnPct(closes, 5);
+  if (rsi14 === null) {
+    imputedFields.push('rsi_14');
+  }
+  if (return5d === null) {
+    imputedFields.push('return_5d');
+  }
+
   const lastHigh = Number(last?.h);
   const priceNearDailyHigh = Number.isFinite(lastHigh) && lastHigh > 0 ? price / lastHigh : 0.9;
 
@@ -84,6 +96,8 @@ function buildStockFromBars({ exchange, candidate, bars, dataSource }) {
     low_52w: low52w,
     volatility,
     return_3m: Number.isFinite(return3m) ? return3m : 0,
+    rsi_14: rsi14,
+    return_5d: return5d,
     revenue_growth_pct: 0,
     adr_pct: adrPct,
     ma50_slope: ma50Slope,

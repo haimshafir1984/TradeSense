@@ -1,12 +1,19 @@
 const { clamp, round, average } = require('./mathUtils');
-const { STRATEGY_WEIGHTS, SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
+const {
+  STRATEGY_WEIGHTS,
+  SMALL_CAP_THRESHOLDS,
+  PULLBACK_THRESHOLDS,
+  MEAN_REVERSION_THRESHOLDS
+} = require('../config/scoringConfig');
 
 const STRATEGY_LABELS = {
   micha_stocks: 'השקעה לטווח ארוך - Micha Stocks',
   mark_minervini: 'מסחר לטווח קצר - Mark Minervini',
   ross_cameron: 'מומנטום קצר טווח (נתוני סוף יום) - Ross Cameron',
   swing_momentum: 'פריצות מומנטום (Swing)',
-  small_cap_breakout: 'מניות קטנות נפיצות (Small-Cap)'
+  small_cap_breakout: 'מניות קטנות נפיצות (Small-Cap)',
+  pullback_uptrend: 'קנייה בתיקון במגמת עלייה (Pullback)',
+  mean_reversion_bounce: 'חזרה לממוצע אחרי נפילה חדה (Mean Reversion)'
 };
 
 // Every strategy returns, alongside its 0-1 score, a breakdown of the factors that produced it:
@@ -60,6 +67,14 @@ function scoreStockByStrategy(strategyKey, stock, marketContext = {}) {
 
   if (strategyKey === 'small_cap_breakout') {
     return scoreSmallCapBreakoutStrategy(enrichedStock);
+  }
+
+  if (strategyKey === 'pullback_uptrend') {
+    return scorePullbackUptrendStrategy(enrichedStock);
+  }
+
+  if (strategyKey === 'mean_reversion_bounce') {
+    return scoreMeanReversionBounceStrategy(enrichedStock);
   }
 
   return scoreMichaStrategy(enrichedStock);
@@ -398,6 +413,172 @@ function scoreSmallCapBreakoutStrategy(stock) {
         value: relativeStrength,
         weight: w.relativeStrength,
         detail: `עודף תשואה ${describePct(stock.excessReturnVsBenchmark)} מול המדד`
+      }
+    ])
+  };
+}
+
+// Pullback in an established uptrend: buy the retest, not the breakout.
+//
+// Structurally the opposite entry to the five strategies above, which all buy strength near highs.
+// Buying a dip inside a confirmed uptrend gives a much tighter stop (just under MA50) and
+// therefore a better reward/risk on the same move - the failure mode of chasing breakouts is that
+// the stop has to sit far below a price that already ran. UNVALIDATED - see
+// docs/SPEC_NEW_STRATEGIES.md.
+function scorePullbackUptrendStrategy(stock) {
+  const w = STRATEGY_WEIGHTS.pullback_uptrend;
+  const t = PULLBACK_THRESHOLDS;
+
+  // How well established the uptrend is - not just "above MA200" but the full stack in order.
+  const trendQuality = average([
+    stock.MA50 > stock.MA200 ? 1 : 0,
+    stock.price > stock.MA200 ? 1 : 0,
+    normalize(stock.ma50_slope, 0, 0.03)
+  ]);
+
+  // A tent function: peaks at the ideal depth and falls off toward "not a pullback" on one side
+  // and "broken trend" on the other. A plain normalize() would wrongly reward ever-deeper drops.
+  const depth = Number(stock.pullbackFromHigh || 0);
+  const pullbackDepth =
+    depth <= t.minDepthPct || depth >= t.maxDepthPct
+      ? 0
+      : depth <= t.idealDepthPct
+        ? (depth - t.minDepthPct) / (t.idealDepthPct - t.minDepthPct)
+        : (t.maxDepthPct - depth) / (t.maxDepthPct - t.idealDepthPct);
+
+  // Price sitting just above MA50 is the classic support retest. Below it scores zero - that's a
+  // broken pullback, not a buyable one.
+  const distanceFromMa50Pct = stock.MA50 > 0 ? ((stock.price - stock.MA50) / stock.MA50) * 100 : 0;
+  const maSupport = distanceFromMa50Pct < 0 ? 0 : clamp(1 - distanceFromMa50Pct / 8);
+
+  // Healthy pullbacks happen on *falling* volume - heavy volume on a decline is distribution, not
+  // a dip. This is the one factor in the whole codebase where a low volume ratio scores higher.
+  const volumeDryUp = clamp(1 - normalize(stock.volumeRatio, 0.6, 1.4));
+
+  const setupScore =
+    trendQuality * w.trendQuality + pullbackDepth * w.pullbackDepth + maSupport * w.maSupport + volumeDryUp * w.volumeDryUp;
+
+  const eligible = stock.price > stock.MA200 && stock.MA50 > stock.MA200 && depth > t.minDepthPct && depth < t.maxDepthPct;
+  const score = eligible ? setupScore : 0;
+
+  return {
+    ...stock,
+    score: clamp(score),
+    explanation: eligible
+      ? `תיקון של ${describePct(depth)} מהשיא בתוך מגמת עלייה, קרוב לתמיכת ממוצע 50`
+      : 'אין כאן תיקון בתוך מגמה: נדרש מחיר מעל ממוצע 200, ממוצע 50 מעל 200, וירידה של 4%-25% מהשיא',
+    eligibility: {
+      passed: eligible,
+      reason: eligible ? null : 'נדרשת מגמת עלייה מבוססת (מחיר מעל ממוצע 200, ממוצע 50 מעל 200) ותיקון של 4%-25% מהשיא'
+    },
+    scoreBreakdown: buildBreakdown([
+      {
+        key: 'trendQuality',
+        label: 'איכות המגמה',
+        value: trendQuality,
+        weight: w.trendQuality,
+        detail: `ממוצע 50 ${stock.MA50 > stock.MA200 ? 'מעל' : 'מתחת ל'}־200, שיפוע ${describePct(stock.ma50_slope * 100)}`
+      },
+      {
+        key: 'pullbackDepth',
+        label: 'עומק התיקון',
+        value: pullbackDepth,
+        weight: w.pullbackDepth,
+        detail: `${describePct(depth)} מתחת לשיא (אידיאלי ~${t.idealDepthPct}%)`
+      },
+      {
+        key: 'maSupport',
+        label: 'קרבה לתמיכת ממוצע 50',
+        value: maSupport,
+        weight: w.maSupport,
+        detail: `${describePct(distanceFromMa50Pct)} מעל ממוצע 50`
+      },
+      {
+        key: 'volumeDryUp',
+        label: 'התייבשות נפח',
+        value: volumeDryUp,
+        weight: w.volumeDryUp,
+        detail: `${describeMultiple(stock.volumeRatio)} - נפח נמוך בתיקון הוא סימן חיובי`
+      }
+    ])
+  };
+}
+
+// Oversold bounce: the only mean-reversion strategy in the set.
+//
+// Gated hard on price > MA200 on purpose. Mean reversion without a trend filter is how you buy a
+// stock on its way to zero - the gate means "a stock in a long-term uptrend that just got hit",
+// not "a stock that fell a lot". UNVALIDATED - see docs/SPEC_NEW_STRATEGIES.md.
+function scoreMeanReversionBounceStrategy(stock) {
+  const w = STRATEGY_WEIGHTS.mean_reversion_bounce;
+  const t = MEAN_REVERSION_THRESHOLDS;
+
+  const rsi = stock.rsi_14;
+  const drop = stock.return_5d;
+  // Both inputs are null when there wasn't enough history to compute them (see mathUtils). Scoring
+  // a stock on a fabricated neutral RSI would invent a signal that was never measured.
+  const measurable = Number.isFinite(rsi) && Number.isFinite(drop);
+
+  const oversold = measurable ? clamp((t.neutralRsi - rsi) / (t.neutralRsi - t.oversoldRsi)) : 0;
+  const sharpDrop = measurable ? clamp((t.minDropPct - drop) / (t.minDropPct - t.fullDropPct)) : 0;
+  // Capitulation: the drop should come with heavy volume, which is what separates an exhausted
+  // seller from a slow bleed.
+  const volumeClimax = normalize(stock.volumeRatio, 1.2, 3);
+  // How much cushion is left above the long-term trend line - the further above MA200, the more
+  // room the bounce has before the trend itself is in question.
+  const aboveMa200Pct = stock.MA200 > 0 ? ((stock.price - stock.MA200) / stock.MA200) * 100 : 0;
+  const trendIntact = normalize(aboveMa200Pct, 0, 20);
+
+  const setupScore =
+    oversold * w.oversold + sharpDrop * w.sharpDrop + volumeClimax * w.volumeClimax + trendIntact * w.trendIntact;
+
+  const eligible = measurable && stock.price > stock.MA200 && rsi < t.neutralRsi && drop < t.minDropPct;
+  const score = eligible ? setupScore : 0;
+
+  return {
+    ...stock,
+    score: clamp(score),
+    explanation: eligible
+      ? `נפילה של ${describePct(drop)} ב-5 ימים עם RSI ${round(rsi, 0)}, אך עדיין מעל ממוצע 200`
+      : measurable
+        ? 'לא מספיק מכורה: נדרש RSI מתחת ל-50, ירידה של 4%+ בחמישה ימים, ומחיר מעל ממוצע 200'
+        : 'אין מספיק היסטוריית מחירים לחישוב RSI/תשואת 5 ימים',
+    eligibility: {
+      passed: eligible,
+      reason: eligible
+        ? null
+        : measurable
+          ? 'נדרש RSI מתחת ל-50, ירידה של 4% לפחות בחמישה ימים, ומחיר מעל ממוצע 200 יום'
+          : 'חסרה היסטוריית מחירים לחישוב RSI ותשואת 5 ימים'
+    },
+    scoreBreakdown: buildBreakdown([
+      {
+        key: 'oversold',
+        label: 'רמת מכירת יתר',
+        value: oversold,
+        weight: w.oversold,
+        detail: measurable ? `RSI ${round(rsi, 0)}` : 'לא ניתן לחישוב'
+      },
+      {
+        key: 'sharpDrop',
+        label: 'חדות הנפילה',
+        value: sharpDrop,
+        weight: w.sharpDrop,
+        detail: measurable ? `${describePct(drop)} בחמישה ימים` : 'לא ניתן לחישוב'
+      },
+      {
+        key: 'volumeClimax',
+        label: 'נפח קפיטולציה',
+        value: volumeClimax,
+        weight: w.volumeClimax,
+        detail: describeMultiple(stock.volumeRatio)
+      },
+      {
+        key: 'trendIntact',
+        label: 'המגמה הארוכה שלמה',
+        value: trendIntact,
+        weight: w.trendIntact,
+        detail: `${describePct(aboveMa200Pct)} מעל ממוצע 200`
       }
     ])
   };

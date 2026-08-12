@@ -1,5 +1,5 @@
 const { STOCK_UNIVERSE, getTickerContext } = require('../data/universe');
-const { clamp, average, scoreConsolidation } = require('./mathUtils');
+const { clamp, average, scoreConsolidation, computeRsi, computeTrailingReturnPct } = require('./mathUtils');
 const alpacaService = require('./providers/alpacaService');
 const finnhubService = require('./providers/finnhubService');
 const { buildStockFromBars } = require('./barsStockBuilder');
@@ -413,6 +413,18 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     seededNumber(`${ticker}-cap`, 900, 220000) * 1000000);
   const return3m = trackedSignedValue(imputedFields, 'return_3m', [computeReturnPct(closes, price)], () =>
     ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0);
+  // Mean-reversion inputs. `closes` here is newest-first (FMP history order), while computeRsi /
+  // computeTrailingReturnPct take oldest-first - hence the reverse. Left null when unmeasurable
+  // rather than defaulted to a neutral 50, so the strategy can refuse to score on missing data.
+  const closesOldestFirst = [...closes].reverse();
+  const rsi14 = computeRsi(closesOldestFirst, 14);
+  const return5d = computeTrailingReturnPct(closesOldestFirst, 5);
+  if (rsi14 === null) {
+    imputedFields.push('rsi_14');
+  }
+  if (return5d === null) {
+    imputedFields.push('return_5d');
+  }
   // Real fundamental growth (revenue YoY), not the market-cap-as-"growth" proxy strategies.js used
   // to rely on. Falls back to a neutral 0% (no known signal) rather than a fabricated value.
   const revenueGrowthPct = trackedSignedValue(
@@ -461,6 +473,8 @@ async function getBestEffortFmpStock(exchange, ticker, companyName, fallbackSect
     low_52w: low52,
     volatility,
     return_3m: return3m,
+    rsi_14: rsi14,
+    return_5d: return5d,
     revenue_growth_pct: revenueGrowthPct,
     adr_pct: adrPct,
     gap_pct: gapPct,
@@ -607,6 +621,9 @@ async function getBestEffortFinnhubStock(exchange, ticker, companyName, fallback
     low_52w: low52,
     volatility,
     return_3m: return3m,
+    // candleCloses is oldest-first here (Finnhub candle order), unlike the FMP path above.
+    rsi_14: computeRsi(candleCloses, 14),
+    return_5d: computeTrailingReturnPct(candleCloses, 5),
     revenue_growth_pct: revenueGrowthPct,
     adr_pct: adrPct,
     gap_pct: gapPct,
