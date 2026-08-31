@@ -28,7 +28,7 @@ test('a stock below the minimum price is rejected with a price-specific reason',
 });
 
 test('a stock below the minimum average volume is rejected with a volume-specific reason', () => {
-  const { rejected } = applyLiquidityGate([goodStock({ symbol: 'THIN', avgVolume20d: 100000 })]);
+  const { rejected } = applyLiquidityGate([goodStock({ symbol: 'THIN', avgVolume20d: 10000 })]);
   assert.match(rejected[0].reason, /נפח/);
 });
 
@@ -64,9 +64,15 @@ test('an empty input returns empty passed and rejected without throwing', () => 
   assert.deepEqual(rejected, []);
 });
 
-test('thresholds match the ORB paper source values documented in §5.0', () => {
+test('price/ATR14/bar-count thresholds match the ORB paper source values documented in §5.0', () => {
   assert.equal(THRESHOLDS.minPrice, 5);
-  assert.equal(THRESHOLDS.minAvgVolume20d, 1000000);
   assert.equal(THRESHOLDS.minAtr14, 0.5);
   assert.equal(THRESHOLDS.minBarCount, 200);
+});
+
+// The volume threshold is deliberately NOT the paper's raw 1,000,000 - it's rescaled for the free
+// iex feed's measured ~4% coverage of real market volume (see the comment above THRESHOLDS in
+// liquidityGate.js). Pinned here so a future edit has to be a deliberate, documented choice.
+test('the volume threshold is rescaled ~25x down from the paper value for the iex feed, not the raw SIP figure', () => {
+  assert.equal(THRESHOLDS.minAvgVolume20d, 40000);
 });
