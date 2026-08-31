@@ -71,6 +71,10 @@ async function appendEntry({
   return entry;
 }
 
+// Unlike appendEntry (used for a forward candidate shown right now, always outcome: null until
+// outcomeResolver fills it in later), appendEntries is also how ledger:backfill writes rows - and
+// backfill computes each trade's outcome synchronously, from historical bars it already has in
+// hand. `input.outcome`, when present, must be preserved rather than overwritten with null.
 async function appendEntries(newEntries) {
   const entries = await readEntries();
   const created = (newEntries || []).map((input) => ({
@@ -84,7 +88,7 @@ async function appendEntries(newEntries) {
     regimeAtDecision: input.regimeAtDecision || null,
     source: input.source,
     period: input.period || null,
-    outcome: null
+    outcome: input.outcome || null
   }));
 
   const combined = entries.concat(created);

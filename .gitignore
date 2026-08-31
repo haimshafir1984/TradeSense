@@ -9,3 +9,4 @@ server/src/data/watchlistOutcomes.json
 server/src/data/universeCache.json
 server/src/data/regimeHistory.json
 server/src/data/researchBars.json
+server/src/data/ledger.json

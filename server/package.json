@@ -8,7 +8,9 @@
     "test": "node --test test/*.test.js",
     "research:mine": "node scripts/mineAnomalies.js",
     "research:match": "node scripts/matchAnomalies.js",
-    "research:github": "node scripts/surveyGithub.js"
+    "research:github": "node scripts/surveyGithub.js",
+    "ledger:backfill": "node scripts/runLedgerBackfill.js",
+    "ledger:resolve": "node scripts/runLedgerResolve.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

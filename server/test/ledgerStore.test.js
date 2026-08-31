@@ -70,6 +70,19 @@ test('appendEntries bulk-writes multiple entries (used by ledger:backfill)', asy
   assert.equal(entries[1].period, 'holdout');
 });
 
+test('appendEntries preserves a pre-resolved outcome instead of overwriting it with null (backfill computes outcomes synchronously)', async () => {
+  const scratchPath = scratchFile();
+  const ledgerStore = freshLedgerStore(scratchPath);
+
+  const outcome = { resolvedAt: '2026-01-01T00:00:00Z', exitReason: 'target', returnPct: {}, mfePct: 10, maePct: -2, rMultiple: 2 };
+  await ledgerStore.appendEntries([{ ticker: 'A', playbook: 'pead_drift', source: 'backfill', period: 'holdout', outcome }]);
+
+  const entries = await ledgerStore.readEntries();
+  cleanup(scratchPath);
+
+  assert.deepEqual(entries[0].outcome, outcome);
+});
+
 test('updateOutcome sets the outcome on the matching entry and leaves others untouched', async () => {
   const scratchPath = scratchFile();
   const ledgerStore = freshLedgerStore(scratchPath);
