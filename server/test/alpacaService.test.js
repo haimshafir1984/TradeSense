@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function freshAlpacaService() {
-  delete require.cache[require.resolve('../src/services/providers/alpacaService')];
-  return require('../src/services/providers/alpacaService');
+  delete require.cache[require.resolve('../src/providers/alpacaService')];
+  return require('../src/providers/alpacaService');
 }
 
 function clearAlpacaEnv() {

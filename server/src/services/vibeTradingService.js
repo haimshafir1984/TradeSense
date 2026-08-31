@@ -11,9 +11,15 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const universeStore = require('./universeStore');
-const { SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
 
 const RUN_TIMEOUT_MS = 3 * 60 * 1000; // Vibe-Trading agent runs take ~30-90s; generous ceiling.
+
+// Mirrors the old small_cap_breakout strategy's eligibility gate (marketCapCeiling/minPrice from
+// the now-deleted config/scoringConfig.js - docs/SPEC_V2_ARCHITECTURE.md §2). This file is a
+// standalone historical-backtest convenience tool kept out of the v2 pipeline by design, so the
+// pre-existing duplication (already called out below) stays as two inline literals instead of a
+// new dependency on whatever config the v2 playbooks end up using.
+const SMALL_CAP_THRESHOLDS = { marketCapCeiling: 2000000000, minPrice: 2 };
 
 // Same rules as docs/BACKTEST_STRATEGY_DEFINITIONS.md, kept in sync with scoringConfig.js/
 // strategies.js by hand (there is no shared source - this is a UI convenience feature, not a

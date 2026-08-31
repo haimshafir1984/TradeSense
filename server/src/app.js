@@ -1,13 +1,14 @@
 const express = require('express');
 const cors = require('cors');
-const analyzeRouter = require('./routes/analyze');
 const portfolioRouter = require('./routes/portfolio');
-const scanHistoryRouter = require('./routes/scanHistory');
-const strategyLeagueRouter = require('./routes/strategyLeague');
-const watchlistRouter = require('./routes/watchlist');
-const watchlistOutcomesRouter = require('./routes/watchlistOutcomes');
+// On-demand only (never called by any scan) - see docs/SPEC_VIBE_TRADING_INTEGRATION.md.
 const backtestRouter = require('./routes/backtest');
+// Manual research tool's on-demand check endpoint (docs/SPEC_ANOMALY_MINING.md section 11) -
+// self-contained (takes a `tickers` array), so it survives the v2 rebuild untouched even though
+// nothing currently calls it from the client (docs/SPEC_V2_ARCHITECTURE.md §2: research/** stays
+// but is deliberately kept out of the new pipeline).
 const anomalyMatchRouter = require('./routes/anomalyMatch');
+const candidatesRouter = require('./routes/candidates');
 
 const app = express();
 
@@ -22,22 +23,14 @@ app.get('/api/health', (_request, response) => {
   response.json({ ok: true });
 });
 
-app.use('/api/analyze', analyzeRouter);
+// v2 rebuild in progress (docs/SPEC_V2_ARCHITECTURE.md). /api/analyze and the whole watchlist
+// family are deleted (§2); the new /api/candidates contract (§6) is being built phase by phase
+// starting at §10 phase 3 and returns a explicit "not built yet" response until then, rather than
+// a 404 that looks like a routing bug.
+app.use('/api/candidates', candidatesRouter);
+
 app.use('/api/portfolio', portfolioRouter);
-app.use('/api/scan-history', scanHistoryRouter);
-app.use('/api/strategy-league', strategyLeagueRouter);
-// Mounted before the general /api/watchlist router: both are separate routers with their own
-// full paths (/api/watchlist/outcomes vs /api/watchlist), so Express would route them correctly
-// either way here since routes/watchlist.js only defines GET /tomorrow (no conflict) - but
-// registering the more specific path first keeps intent obvious, per
-// docs/SPEC_MANUAL_TESTING_TOOLS.md section 3.2.
-app.use('/api/watchlist/outcomes', watchlistOutcomesRouter);
-app.use('/api/watchlist', watchlistRouter);
-// On-demand only (never called by any scan) - see docs/SPEC_VIBE_TRADING_INTEGRATION.md.
 app.use('/api/backtest', backtestRouter);
-// Not part of /api/analyze itself - the client calls this separately once scan results are in
-// hand. Only reads patterns a previous `research:mine` CLI run already saved - see
-// docs/SPEC_ANOMALY_MINING.md section 11.
 app.use('/api/anomaly-match', anomalyMatchRouter);
 
 module.exports = app;

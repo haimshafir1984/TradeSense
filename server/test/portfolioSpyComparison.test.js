@@ -4,28 +4,42 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+// Rewritten for docs/SPEC_V2_ARCHITECTURE.md §2: portfolioService now sources prices from
+// alpacaService.getSnapshots (the one provider the new architecture keeps for this), not the
+// deleted marketDataService. Tests patch that real boundary directly instead of an internal shim.
 function freshPortfolioService(scratchPath) {
   process.env.PORTFOLIO_STORE_FILE_PATH = scratchPath;
   delete require.cache[require.resolve('../src/services/portfolioStore')];
   delete require.cache[require.resolve('../src/services/portfolioService')];
-  delete require.cache[require.resolve('../src/services/marketDataService')];
+  delete require.cache[require.resolve('../src/providers/alpacaService')];
   return {
     portfolioService: require('../src/services/portfolioService'),
-    marketDataService: require('../src/services/marketDataService')
+    alpacaService: require('../src/providers/alpacaService')
   };
+}
+
+// Builds the Map<symbol, snapshot> shape alpacaService.getSnapshots resolves to, from a plain
+// {SYMBOL: price} map - keeps the test bodies focused on the numbers, not Alpaca's wire shape.
+function snapshotMapFromPrices(prices, previousCloses = {}) {
+  const map = new Map();
+  for (const [ticker, price] of Object.entries(prices)) {
+    const prevClose = previousCloses[ticker];
+    map.set(ticker, {
+      latestTrade: { p: price },
+      dailyBar: { c: price },
+      prevDailyBar: prevClose != null ? { c: prevClose } : undefined
+    });
+  }
+  return map;
 }
 
 test('addHolding stores spyPriceAtPurchase and getPortfolio computes excessReturnPct (positive case)', async () => {
   const scratchPath = path.join(os.tmpdir(), `portfolio-spy-positive-${Date.now()}.json`);
-  const { portfolioService, marketDataService } = freshPortfolioService(scratchPath);
-  const originalGetStockSnapshot = marketDataService.getStockSnapshot;
-  const originalGetStockSnapshots = marketDataService.getStockSnapshots;
+  const { portfolioService, alpacaService } = freshPortfolioService(scratchPath);
+  const originalGetSnapshots = alpacaService.getSnapshots;
 
   // At purchase time: SPY is 500.
-  marketDataService.getStockSnapshot = async (ticker) => {
-    if (ticker === 'SPY') return { ticker: 'SPY', price: 500 };
-    return { ticker, price: 100 };
-  };
+  alpacaService.getSnapshots = async () => snapshotMapFromPrices({ SPY: 500 });
 
   await portfolioService.addHolding({
     ticker: 'AMZN',
@@ -35,17 +49,11 @@ test('addHolding stores spyPriceAtPurchase and getPortfolio computes excessRetur
   });
 
   // Now, at getPortfolio time: SPY rose to 550 (+10%), stock rose to 130 (+30%) -> excess = +20%.
-  marketDataService.getStockSnapshots = async (tickers) =>
-    tickers.map((ticker) => {
-      if (ticker === 'SPY') return { ticker: 'SPY', price: 550 };
-      if (ticker === 'AMZN') return { ticker: 'AMZN', price: 130 };
-      return { ticker, price: 100 };
-    });
+  alpacaService.getSnapshots = async () => snapshotMapFromPrices({ SPY: 550, AMZN: 130 });
 
   const portfolio = await portfolioService.getPortfolio();
 
-  marketDataService.getStockSnapshot = originalGetStockSnapshot;
-  marketDataService.getStockSnapshots = originalGetStockSnapshots;
+  alpacaService.getSnapshots = originalGetSnapshots;
   fs.unlinkSync(scratchPath);
   delete process.env.PORTFOLIO_STORE_FILE_PATH;
 
@@ -59,14 +67,10 @@ test('addHolding stores spyPriceAtPurchase and getPortfolio computes excessRetur
 
 test('getPortfolio computes a negative excessReturnPct when the stock lags SPY', async () => {
   const scratchPath = path.join(os.tmpdir(), `portfolio-spy-negative-${Date.now()}.json`);
-  const { portfolioService, marketDataService } = freshPortfolioService(scratchPath);
-  const originalGetStockSnapshot = marketDataService.getStockSnapshot;
-  const originalGetStockSnapshots = marketDataService.getStockSnapshots;
+  const { portfolioService, alpacaService } = freshPortfolioService(scratchPath);
+  const originalGetSnapshots = alpacaService.getSnapshots;
 
-  marketDataService.getStockSnapshot = async (ticker) => {
-    if (ticker === 'SPY') return { ticker: 'SPY', price: 400 };
-    return { ticker, price: 50 };
-  };
+  alpacaService.getSnapshots = async () => snapshotMapFromPrices({ SPY: 400 });
 
   await portfolioService.addHolding({
     ticker: 'LAGGARD',
@@ -76,17 +80,11 @@ test('getPortfolio computes a negative excessReturnPct when the stock lags SPY',
   });
 
   // SPY rises +10%, stock only rises +2% -> excess = -8%.
-  marketDataService.getStockSnapshots = async (tickers) =>
-    tickers.map((ticker) => {
-      if (ticker === 'SPY') return { ticker: 'SPY', price: 440 };
-      if (ticker === 'LAGGARD') return { ticker: 'LAGGARD', price: 51 };
-      return { ticker, price: 100 };
-    });
+  alpacaService.getSnapshots = async () => snapshotMapFromPrices({ SPY: 440, LAGGARD: 51 });
 
   const portfolio = await portfolioService.getPortfolio();
 
-  marketDataService.getStockSnapshot = originalGetStockSnapshot;
-  marketDataService.getStockSnapshots = originalGetStockSnapshots;
+  alpacaService.getSnapshots = originalGetSnapshots;
   fs.unlinkSync(scratchPath);
   delete process.env.PORTFOLIO_STORE_FILE_PATH;
 
@@ -99,8 +97,8 @@ test('getPortfolio computes a negative excessReturnPct when the stock lags SPY',
 
 test('a holding without spyPriceAtPurchase gets null spyReturnPct/excessReturnPct instead of crashing', async () => {
   const scratchPath = path.join(os.tmpdir(), `portfolio-spy-legacy-${Date.now()}.json`);
-  const { portfolioService, marketDataService } = freshPortfolioService(scratchPath);
-  const originalGetStockSnapshots = marketDataService.getStockSnapshots;
+  const { portfolioService, alpacaService } = freshPortfolioService(scratchPath);
+  const originalGetSnapshots = alpacaService.getSnapshots;
 
   // Simulate a pre-existing holding (added before this feature shipped) by writing the scratch
   // file directly, without going through addHolding.
@@ -128,16 +126,11 @@ test('a holding without spyPriceAtPurchase gets null spyReturnPct/excessReturnPc
     )
   );
 
-  marketDataService.getStockSnapshots = async (tickers) =>
-    tickers.map((ticker) => {
-      if (ticker === 'SPY') return { ticker: 'SPY', price: 500 };
-      if (ticker === 'OLD') return { ticker: 'OLD', price: 12 };
-      return { ticker, price: 100 };
-    });
+  alpacaService.getSnapshots = async () => snapshotMapFromPrices({ SPY: 500, OLD: 12 });
 
   const portfolio = await portfolioService.getPortfolio();
 
-  marketDataService.getStockSnapshots = originalGetStockSnapshots;
+  alpacaService.getSnapshots = originalGetSnapshots;
   fs.unlinkSync(scratchPath);
   delete process.env.PORTFOLIO_STORE_FILE_PATH;
 

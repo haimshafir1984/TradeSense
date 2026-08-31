@@ -10,17 +10,16 @@ function scratchFile() {
 
 function freshServices(scratchPath) {
   process.env.UNIVERSE_STORE_FILE_PATH = scratchPath;
-  delete require.cache[require.resolve('../src/services/providers/alpacaService')];
-  delete require.cache[require.resolve('../src/services/providers/nasdaqService')];
-  delete require.cache[require.resolve('../src/services/providers/finnhubService')];
-  delete require.cache[require.resolve('../src/services/marketDataService')];
+  delete require.cache[require.resolve('../src/providers/alpacaService')];
+  delete require.cache[require.resolve('../src/providers/nasdaqService')];
+  delete require.cache[require.resolve('../src/providers/finnhubService')];
   delete require.cache[require.resolve('../src/services/universeStore')];
   delete require.cache[require.resolve('../src/services/universeBuilderService')];
 
   return {
-    alpacaService: require('../src/services/providers/alpacaService'),
-    nasdaqService: require('../src/services/providers/nasdaqService'),
-    finnhubService: require('../src/services/providers/finnhubService'),
+    alpacaService: require('../src/providers/alpacaService'),
+    nasdaqService: require('../src/providers/nasdaqService'),
+    finnhubService: require('../src/providers/finnhubService'),
     universeStore: require('../src/services/universeStore'),
     universeBuilderService: require('../src/services/universeBuilderService')
   };
@@ -184,7 +183,7 @@ test('total refresh failure leaves an existing store entry untouched (last-known
   const existingEntry = { generatedAt: new Date().toISOString(), source: 'nasdaq', rows: [{ symbol: 'OLD', companyName: 'Old Inc', sector: 'Technology', marketCap: 111, price: 10, avgDollarVolume: 1000000 }] };
   await universeStore.writeUniverseCache({ NASDAQ: existingEntry });
 
-  nasdaqService.getScreenerRows = async () => null; // no Alpaca keys, no FMP key -> every attempt fails
+  nasdaqService.getScreenerRows = async () => null; // no Alpaca keys configured -> every attempt fails
 
   const refreshResult = await universeBuilderService.refreshUniverse({ exchange: 'NASDAQ' });
   const result = await universeStore.getUniverse('NASDAQ');

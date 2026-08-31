@@ -1,8 +1,50 @@
-// Called as marketDataService.getStockSnapshot(s)(...) rather than destructured, so tests can
-// monkey-patch the export without needing to reload this module - same pattern as scanHistoryService.js.
-const marketDataService = require('./marketDataService');
+// v2 rebuild (docs/SPEC_V2_ARCHITECTURE.md §2): the old marketDataService (FMP-based) is deleted.
+// Portfolio is an unchanged feature per §2, so its price lookups are rebuilt directly on the one
+// provider the new architecture keeps for this purpose - alpacaService.getSnapshots (§3.1).
+// Company name/sector aren't available from that endpoint, so they fall back to the ticker /
+// 'Unknown' exactly as they already did for any symbol marketDataService couldn't resolve either -
+// this is not a behavior regression, just a narrower data source.
+const alpacaService = require('../providers/alpacaService');
 const { readPortfolio, writePortfolio } = require('./portfolioStore');
 const { round } = require('./mathUtils');
+
+// Exported as an object (not destructured functions) so tests can monkey-patch
+// marketDataService.getStockSnapshots(...) the same way they patched the old module.
+const marketDataService = {
+  async getStockSnapshots(symbols) {
+    const snapshotMap = await alpacaService.getSnapshots({ symbols });
+    return symbols.map((ticker) => toPortfolioSnapshot(ticker, snapshotMap.get(ticker)));
+  },
+  async getStockSnapshot(ticker) {
+    const snapshotMap = await alpacaService.getSnapshots({ symbols: [ticker] });
+    return toPortfolioSnapshot(ticker, snapshotMap.get(ticker));
+  }
+};
+
+// Alpaca's raw snapshot shape (dailyBar/prevDailyBar/latestTrade) -> the flat fields this file's
+// enrichHolding/enrichWatchlistItem already expect. Missing pieces stay null/undefined rather than
+// fabricated, consistent with §1 rule 1.
+function toPortfolioSnapshot(ticker, snapshot) {
+  if (!snapshot) {
+    return { ticker, price: null, daily_change: null, companyName: null, sector: null, data_source: 'alpaca' };
+  }
+
+  const price = Number(snapshot.latestTrade?.p ?? snapshot.dailyBar?.c);
+  const previousClose = Number(snapshot.prevDailyBar?.c);
+  const dailyChange =
+    Number.isFinite(price) && Number.isFinite(previousClose) && previousClose > 0
+      ? ((price - previousClose) / previousClose) * 100
+      : null;
+
+  return {
+    ticker,
+    price: Number.isFinite(price) ? price : null,
+    daily_change: dailyChange,
+    companyName: null,
+    sector: null,
+    data_source: 'alpaca'
+  };
+}
 
 async function getPortfolio() {
   const portfolio = await readPortfolio();

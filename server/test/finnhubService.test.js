@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function freshFinnhubService() {
-  delete require.cache[require.resolve('../src/services/providers/finnhubService')];
-  return require('../src/services/providers/finnhubService');
+  delete require.cache[require.resolve('../src/providers/finnhubService')];
+  return require('../src/providers/finnhubService');
 }
 
 test('getEarningsSoon returns true when the calendar includes the ticker', async () => {

@@ -7,7 +7,7 @@
 // it to check specific scan-result tickers against ALREADY-MINED patterns in real time - no mining
 // happens on that path, just a read of patternStore + a live bars fetch for a handful of symbols.
 const universeStore = require('../universeStore');
-const alpacaService = require('../providers/alpacaService');
+const alpacaService = require('../../providers/alpacaService');
 const historicalBarsStore = require('./historicalBarsStore');
 const patternStore = require('./patternStore');
 const { computeFeaturesAt } = require('./asOfFeatures');

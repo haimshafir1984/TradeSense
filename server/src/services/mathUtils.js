@@ -28,8 +28,9 @@ function median(values = []) {
   return filtered.length % 2 === 0 ? (filtered[mid - 1] + filtered[mid]) / 2 : filtered[mid];
 }
 
-// Moved here (from marketDataService.js) so both marketDataService.js and barsStockBuilder.js can
-// use it without a circular require between the two.
+// Kept for services/research/asOfFeatures.js (docs/SPEC_V2_ARCHITECTURE.md §2: research/** stays
+// untouched). The v2 spec (§3.5) calls for removing this, but doing so would break that kept
+// module - research/** takes priority since it's an explicit "stays as-is" per §2.
 function scoreConsolidation(closes, high52, low52) {
   if (!closes.length) {
     return 0.5;

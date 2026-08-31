@@ -3,20 +3,20 @@
 //   1. Nasdaq screener (nasdaqService) - one cheap call, works locally but is blocked from Render.
 //   2. Alpaca (assets + latest bars, local liquidity filter) + Finnhub (market cap enrichment,
 //      with a 7-day reuse window so repeat runs mostly skip re-querying already-known caps).
-//   3. FMP screener (fallback, spends its daily quota only when the two quota-free options failed).
-// If every attempt fails, the store is left untouched (last-known-good) - refreshUniverse just
+// If both attempts fail, the store is left untouched (last-known-good) - refreshUniverse just
 // returns null and the caller keeps using whatever was already on disk.
-const alpacaService = require('./providers/alpacaService');
-const nasdaqService = require('./providers/nasdaqService');
-const finnhubService = require('./providers/finnhubService');
+//
+// v2 rebuild (docs/SPEC_V2_ARCHITECTURE.md §3.6): the third-tier FMP fallback was removed along
+// with marketDataService.js - FMP is deliberately out of scope for v1.
+const alpacaService = require('../providers/alpacaService');
+const nasdaqService = require('../providers/nasdaqService');
+const finnhubService = require('../providers/finnhubService');
 const universeStore = require('./universeStore');
-// marketDataService.js requires this module too (lazily, inside getAlpacaNasdaqMarketData - see
-// there for why), so this stays a plain top-level require here; only the other direction needs to
-// be lazy to avoid a load-order cycle.
-const marketDataService = require('./marketDataService');
-const { SMALL_CAP_THRESHOLDS } = require('../config/scoringConfig');
 
 const NASDAQ_UNIVERSE_LIMIT = 1000;
+// General liquidity floor for the universe itself (not any one playbook's own eligibility gate -
+// those live in playbooks/ and are configured separately).
+const MIN_UNIVERSE_PRICE = 2;
 const UNIVERSE_MIN_DOLLAR_VOLUME = Number(process.env.UNIVERSE_MIN_DOLLAR_VOLUME) || 2000000;
 const UNIVERSE_ENRICH_LIMIT = Number(process.env.UNIVERSE_ENRICH_LIMIT) || 400;
 const FINNHUB_ENRICH_CONCURRENCY = 10;
@@ -59,16 +59,14 @@ async function getUniverseWithLazyRefresh(exchange) {
 }
 
 // Maps a universeStore `source` value to the per-stock/per-scan data_source label the rest of the
-// app already uses (docs/SPEC_PROVIDER_REBALANCE.md's 'alpaca+nasdaq'/'alpaca+fmp-screener', plus
-// the new 'alpaca+finnhub').
+// app uses (docs/SPEC_PROVIDER_REBALANCE.md's 'alpaca+nasdaq', plus 'alpaca+finnhub'). The FMP
+// label is gone along with the FMP fallback tier (docs/SPEC_V2_ARCHITECTURE.md §3.6) - an unknown
+// source now falls back to 'alpaca+nasdaq' rather than implying a provider that no longer runs.
 function dataSourceLabelFor(universeSource) {
-  if (universeSource === 'nasdaq') {
-    return 'alpaca+nasdaq';
-  }
   if (universeSource === 'alpaca+finnhub') {
     return 'alpaca+finnhub';
   }
-  return 'alpaca+fmp-screener';
+  return 'alpaca+nasdaq';
 }
 
 async function refreshUniverse({ exchange = 'NASDAQ' } = {}) {
@@ -82,12 +80,6 @@ async function refreshUniverse({ exchange = 'NASDAQ' } = {}) {
   if (alpacaFinnhubRows) {
     console.log(`[universe] Refreshed ${exchange} from alpaca+finnhub. count=${alpacaFinnhubRows.length}`);
     return universeStore.writeUniverseEntry(exchange, { source: 'alpaca+finnhub', rows: alpacaFinnhubRows });
-  }
-
-  const fmpRows = await buildFromFmp(exchange);
-  if (fmpRows) {
-    console.log(`[universe] Refreshed ${exchange} from fmp. count=${fmpRows.length}`);
-    return universeStore.writeUniverseEntry(exchange, { source: 'fmp', rows: fmpRows });
   }
 
   console.warn(`[universe] All refresh attempts failed for ${exchange} - keeping last-known-good on disk.`);
@@ -133,7 +125,7 @@ async function buildFromAlpacaFinnhub(exchange) {
     const price = Number(bar?.c);
     const volume = Number(bar?.v);
 
-    if (!Number.isFinite(price) || !Number.isFinite(volume) || price < SMALL_CAP_THRESHOLDS.minPrice) {
+    if (!Number.isFinite(price) || !Number.isFinite(volume) || price < MIN_UNIVERSE_PRICE) {
       continue;
     }
 
@@ -235,38 +227,6 @@ async function enrichMarketCaps(candidates, reusableMarketCaps) {
 
   const workerCount = Math.min(FINNHUB_ENRICH_CONCURRENCY, toQuery.length);
   await Promise.all(Array.from({ length: workerCount }, worker));
-}
-
-async function buildFromFmp(exchange) {
-  const apiKey = process.env.FMP_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-
-  const url =
-    `https://financialmodelingprep.com/stable/company-screener?exchange=${exchange}` +
-    `&isActivelyTrading=true` +
-    `&limit=${UNIVERSE_ENRICH_LIMIT}` +
-    `&apikey=${apiKey}`;
-
-  const result = await marketDataService.fetchJson(url, `fmp-universe-screener:${exchange}`, true);
-  if (!result.ok || !Array.isArray(result.data)) {
-    return null;
-  }
-
-  const rows = result.data
-    .filter((item) => item?.symbol && item?.companyName && Number.isFinite(Number(item.marketCap)) && Number(item.marketCap) > 0)
-    .filter((item) => !item.symbol.includes('/') && !item.symbol.includes('.'))
-    .map((item) => ({
-      symbol: item.symbol,
-      companyName: item.companyName,
-      sector: item.sector || 'Unknown',
-      marketCap: Number(item.marketCap),
-      price: Number.isFinite(Number(item.price)) ? Number(item.price) : null,
-      avgDollarVolume: null
-    }));
-
-  return rows.length ? rows : null;
 }
 
 module.exports = {

@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function freshNasdaqService() {
-  delete require.cache[require.resolve('../src/services/providers/nasdaqService')];
-  return require('../src/services/providers/nasdaqService');
+  delete require.cache[require.resolve('../src/providers/nasdaqService')];
+  return require('../src/providers/nasdaqService');
 }
 
 // nasdaqService reads the raw body via response.text() first (so it can detect a 200 + HTML
