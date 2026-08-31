@@ -1,92 +1,30 @@
 import { useEffect, useState } from 'react';
 import PortfolioSection from './components/PortfolioSection';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+
 const exchangeOptions = [
   { value: 'NASDAQ', label: 'NASDAQ' },
-  { value: 'NYSE', label: 'NYSE' },
-  { value: 'TASE', label: 'TASE' }
+  { value: 'NYSE', label: 'NYSE' }
 ];
 
-const riskOptions = [
-  { value: 'low', label: 'נמוכה' },
-  { value: 'medium', label: 'בינונית' },
-  { value: 'high', label: 'גבוהה' }
+// Mirrors server/src/risk/riskTiers.js's label/dailyLossCapPct (docs/SPEC_V2_ARCHITECTURE.md §5.5) -
+// display-only duplication, same convention the old client used for strategy descriptions. The API
+// response itself doesn't carry tier metadata, only per-candidate results.
+const RISK_TIER_OPTIONS = [
+  { value: 'conservative', label: 'שמרני', dailyLossCapPct: null, horizon: '20-60 יום' },
+  { value: 'balanced', label: 'מאוזן', dailyLossCapPct: 3, horizon: '3-30 יום' },
+  { value: 'aggressive', label: 'אגרסיבי', dailyLossCapPct: 2, horizon: 'תוך-יומי - 3 ימים' }
 ];
 
-const investmentMethodOptions = [
-  {
-    value: 'micha_stocks',
-    label: "השקעה לטווח ארוך - William O'Neil",
-    shortLabel: "William O'Neil",
-    description:
-      'שיטת השקעה לטווח ארוך המשלבת מגמה חיובית, חוזק יחסי, הובלת שוק וקרבה למניות איכות עם בסיס פונדמנטלי חזק.'
-  },
-  {
-    value: 'mark_minervini',
-    label: 'מסחר לטווח קצר - Mark Minervini',
-    shortLabel: 'Mark Minervini',
-    description:
-      'שיטת מסחר לטווח קצר המתמקדת במניות עם מומנטום חזק, חוזק יחסי גבוה ופריצות טכניות איכותיות.'
-  },
-  {
-    value: 'ross_cameron',
-    label: 'מומנטום קצר טווח (נתוני סוף יום) - Linda Bradford Raschke',
-    shortLabel: 'Linda Raschke',
-    description:
-      'שיטה המתמקדת ב-price action, מומנטום קצר טווח ונפח חריג. מבוססת על נתוני סוף יום ולא על מסחר בזמן אמת - אינה תחליף למסך מסחר יומי חי.'
-  },
-  {
-    value: 'swing_momentum',
-    label: 'פריצות מומנטום (Swing)',
-    shortLabel: 'Swing Momentum',
-    description:
-      'שיטת Swing המאתרת פריצות ממקדים צמודים או גאפים על קטליזטור עם נפח מסחר חריג, בתנאי שיש טווח תנודה יומי (ADR) משמעותי והמניה מעל ממוצע 200 יום. מבוססת על נתוני סוף יום.'
-  },
-  {
-    value: 'small_cap_breakout',
-    label: 'מניות קטנות נפיצות (Small-Cap)',
-    shortLabel: 'Small-Cap Breakout',
-    description:
-      'מאתרת מניות קטנות (שווי שוק מתחת ל-2 מיליארד) עם נפח מסחר חריג ומומנטום חד - פוטנציאל תזוזה של עשרות אחוזים, אך בסיכון גבוה מקביל. דורשת גודל פוזיציה קטן ונקודת יציאה מוגדרת מראש.'
-  },
-  {
-    value: 'pullback_uptrend',
-    label: 'קנייה בתיקון במגמת עלייה (Pullback)',
-    shortLabel: 'Pullback',
-    description:
-      'קונה את התיקון במקום את הפריצה: מניה במגמת עלייה מבוססת שירדה 4%-25% מהשיא וחזרה לתמיכת ממוצע 50, בנפח נמוך. הסטופ קרוב יותר ולכן יחס הסיכוי/סיכון טוב יותר. שיטה חדשה - טרם אומתה על נתונים היסטוריים.'
-  },
-  {
-    value: 'mean_reversion_bounce',
-    label: 'חזרה לממוצע אחרי נפילה חדה (Mean Reversion)',
-    shortLabel: 'Mean Reversion',
-    description:
-      'השיטה היחידה שקונה חולשה: מניה שעדיין מעל ממוצע 200 יום אך נפלה חדות בחמישה ימים עם RSI נמוך ונפח גבוה. נועדה לעבוד דווקא כשהמומנטום מפסיק לעבוד. שיטה חדשה - טרם אומתה על נתונים היסטוריים.'
-  }
-];
+const STATUS_LABELS = {
+  hypothesis: { text: 'רעיון בלבד - לא נבדק', tone: 'hypothesis' },
+  backtested: { text: 'נבדק היסטורית - לא נמדד קדימה', tone: 'backtested' },
+  provisional: { text: 'נמדד חלקית - גודל מוקטן', tone: 'provisional' },
+  active: { text: 'נמדד', tone: 'active' }
+};
 
-const sectorOptions = [
-  { value: 'Any', label: 'כל הסקטורים' },
-  { value: 'Technology', label: 'טכנולוגיה' },
-  { value: 'Healthcare', label: 'בריאות' },
-  { value: 'Energy', label: 'אנרגיה' },
-  { value: 'Finance', label: 'פיננסים' },
-  { value: 'Consumer', label: 'צריכה' }
-];
-
-const marketCapOptions = [
-  { value: 'any', label: 'הכול' },
-  { value: 'large', label: 'Large Cap' },
-  { value: 'mid', label: 'Mid Cap' },
-  { value: 'small', label: 'Small Cap' }
-];
-
-const volatilityOptions = [
-  { value: 'any', label: 'הכול' },
-  { value: 'low', label: 'נמוכה' },
-  { value: 'medium', label: 'בינונית' },
-  { value: 'high', label: 'גבוהה' }
-];
+const CATALYST_CONFIDENCE_LABELS = { high: 'ביטחון גבוה', medium: 'ביטחון בינוני', low: 'אזהרה - לא אומת' };
 
 const BROKER_LINKS = [
   { id: 'ibi', label: 'IBI Trade', url: 'https://www.ibi.co.il/solutions/trading/' },
@@ -96,520 +34,107 @@ const BROKER_LINKS = [
   { id: 'atrade', label: 'ATRADE', url: 'https://www.atrade.co.il/' }
 ];
 
-const initialFilters = {
-  dividendOnly: false,
-  minDividendYield: '',
-  sector: 'Any',
-  marketCap: 'any',
-  minVolume: '',
-  minPrice: '',
-  maxPrice: '',
-  volatility: 'any',
-  unusualVolume: false
-};
+// Resolves "today's 9:30 ET market open" to the correct Israel wall-clock time, including the
+// weeks when the US/Israel DST offset isn't the usual +7 (docs/SPEC_V2_ARCHITECTURE.md §13.0) -
+// computed via Intl timezone conversion (self-correcting for DST) rather than a hardcoded offset.
+function computeMarketOpenInIsrael() {
+  const now = new Date();
+  const nyDateParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const y = nyDateParts.find((part) => part.type === 'year').value;
+  const m = nyDateParts.find((part) => part.type === 'month').value;
+  const d = nyDateParts.find((part) => part.type === 'day').value;
 
-const numberFormatter = new Intl.NumberFormat('he-IL', {
-  maximumFractionDigits: 2
-});
+  // Guess 9:30 ET as UTC 13:30, then correct for whatever the actual NY offset is that day (EST/EDT).
+  const guessUtc = new Date(`${y}-${m}-${d}T13:30:00Z`);
+  const nyTimeParts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(guessUtc);
+  const nyHour = Number(nyTimeParts.find((part) => part.type === 'hour').value);
+  const nyMinute = Number(nyTimeParts.find((part) => part.type === 'minute').value);
+  const driftMinutes = 9 * 60 + 30 - (nyHour * 60 + nyMinute);
 
-// Mirrors OPPORTUNITY_RANK_BUCKETS in server/src/services/scanHistoryService.js - kept in sync by
-// hand since it's just the display logic reading the server's own breakdown, not scoring itself.
-const OPPORTUNITY_RANK_BUCKETS = [
-  { label: '0-39', min: 0, max: 39 },
-  { label: '40-59', min: 40, max: 59 },
-  { label: '60-79', min: 60, max: 79 },
-  { label: '80-100', min: 80, max: 100 }
-];
-
-function findOpportunityRankBucketLabel(opportunityRank) {
-  return OPPORTUNITY_RANK_BUCKETS.find((bucket) => opportunityRank >= bucket.min && opportunityRank <= bucket.max)?.label;
+  return new Date(guessUtc.getTime() + driftMinutes * 60 * 1000);
 }
 
-// Mirrors WIDE_SCAN_STRATEGIES in server/src/services/scannerService.js - small_cap_breakout is
-// excluded there deliberately (see docs/SPEC_SHORT_TERM_UPGRADE.md "סטיות מהתכנון").
-const WIDE_SCAN_STRATEGIES = ['swing_momentum', 'ross_cameron'];
+function formatIsraelTime(date) {
+  return new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' }).format(date);
+}
 
-// Mirrors SHORT_TERM_STRATEGIES in server/src/services/scannerService.js - only these strategies'
-// results carry (attempted, possibly-false) catalyst flags; other strategies leave them null.
-const SHORT_TERM_STRATEGIES = ['ross_cameron', 'swing_momentum', 'small_cap_breakout'];
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+function formatGeneratedAt(isoString) {
+  try {
+    return new Date(isoString).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
 
 function App() {
-  const [activeTab, setActiveTab] = useState('watchlist');
-  const [form, setForm] = useState({
-    exchange: 'NASDAQ',
-    risk: 'medium',
-    strategy: 'micha_stocks',
-    wideScan: false,
-    filters: initialFilters
-  });
-  const [results, setResults] = useState([]);
-  const [meta, setMeta] = useState(null);
-  const [analysis, setAnalysis] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [hasSearched, setHasSearched] = useState(false);
-  const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
-  // Which result has its details panel open. Only one at a time - the panel is tall, and the
-  // point of the redesign is that the default view stays scannable.
-  const [expandedTicker, setExpandedTicker] = useState(null);
-  const [strategyLeague, setStrategyLeague] = useState(null);
-  // Measured hit-rate/risk-profile stats per strategy+opportunityRank bucket (docs/SPEC_SHORT_TERM_UPGRADE.md
-  // step 3) - lets each result show real, measured history instead of only the formula-based rank
-  // once there's enough data. null until loaded / if the request fails - falls back to the
-  // formula-only label, same as before this feature existed.
-  const [hitRateReport, setHitRateReport] = useState(null);
-  const [showTomorrowWatchlist, setShowTomorrowWatchlist] = useState(true);
-  const [tomorrowWatchlist, setTomorrowWatchlist] = useState([]);
-  const [tomorrowWatchlistGeneratedAt, setTomorrowWatchlistGeneratedAt] = useState(null);
-  const [tomorrowWatchlistDataSource, setTomorrowWatchlistDataSource] = useState(null);
-  const [tomorrowWatchlistLoading, setTomorrowWatchlistLoading] = useState(false);
-  const [tomorrowWatchlistError, setTomorrowWatchlistError] = useState('');
-  // Map-like object keyed by ticker: { [ticker]: { actualOpenPrice, gapAccuracyPct, ... } }.
-  const [tomorrowWatchlistOutcomes, setTomorrowWatchlistOutcomes] = useState({});
-  const [actualOpenInputs, setActualOpenInputs] = useState({});
-  const [outcomeBusyTicker, setOutcomeBusyTicker] = useState(null);
-  const [outcomeError, setOutcomeError] = useState('');
-  // Pre-market re-rank (docs/SPEC_SHORT_TERM_UPGRADE.md step 7) - user-triggered only, never
-  // automatic. Replaces tomorrowWatchlist in place with the reranked (gapStatus-tagged) list.
-  const [premarketRerankBusy, setPremarketRerankBusy] = useState(false);
-  const [premarketRerankError, setPremarketRerankError] = useState('');
-  const [premarketRerankAt, setPremarketRerankAt] = useState(null);
-  // Vibe-Trading on-demand historical-check integration (see
-  // docs/SPEC_VIBE_TRADING_INTEGRATION.md) - opt-in only, never fired automatically by a scan.
-  const [vibeTradingEnabled, setVibeTradingEnabled] = useState(false);
-  const [backtestBusyTicker, setBacktestBusyTicker] = useState(null);
-  const [backtestTheoryBusy, setBacktestTheoryBusy] = useState(false);
-  const [backtestModal, setBacktestModal] = useState(null); // { title, ok, report, message } | null
-  // Anomaly-mining match integration (docs/SPEC_ANOMALY_MINING.md section 11) - reads patterns a
-  // previous `research:mine` CLI run already saved. Checked automatically once scan results are in
-  // hand, via a separate request - never part of /api/analyze itself.
-  const [anomalyMatchEnabled, setAnomalyMatchEnabled] = useState(false);
-  const [anomalyMatches, setAnomalyMatches] = useState({ status: 'idle', available: false, byTicker: {} });
-  // Risk framing (docs/SPEC_SHORT_TERM_UPGRADE.md step 2): a personal position-sizing input,
-  // client-side only - never sent to the server, never affects scoring. Persisted locally so it
-  // survives a refresh; empty by default so no quantity is shown until the user opts in.
-  const [maxRiskPerTrade, setMaxRiskPerTrade] = useState(() => {
+  const [activeTab, setActiveTab] = useState('candidates');
+  const [exchange, setExchange] = useState('NASDAQ');
+  const [riskTier, setRiskTier] = useState('balanced');
+  const [accountRiskUsd, setAccountRiskUsd] = useState(() => {
     try {
-      return window.localStorage.getItem('tradesense.maxRiskPerTrade') || '';
+      return window.localStorage.getItem('tradesense.accountRiskUsd') || '';
     } catch {
       return '';
     }
   });
+  const [scanResult, setScanResult] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [expandedTicker, setExpandedTicker] = useState(null);
+  const [openBrokerMenu, setOpenBrokerMenu] = useState(null);
 
-  const showIndiColumn = form.strategy === 'mark_minervini' || form.strategy === 'ross_cameron';
-  const showCatalystColumn = SHORT_TERM_STRATEGIES.includes(form.strategy);
-
-  const handleMaxRiskPerTradeChange = (value) => {
-    setMaxRiskPerTrade(value);
+  useEffect(() => {
     try {
-      if (value) {
-        window.localStorage.setItem('tradesense.maxRiskPerTrade', value);
+      if (accountRiskUsd) {
+        window.localStorage.setItem('tradesense.accountRiskUsd', accountRiskUsd);
       } else {
-        window.localStorage.removeItem('tradesense.maxRiskPerTrade');
+        window.localStorage.removeItem('tradesense.accountRiskUsd');
       }
     } catch {
-      // localStorage can throw in private-browsing/blocked-storage contexts - the input still
-      // works for the current session, it just won't persist across reloads.
+      // localStorage unavailable - not critical, the field just won't persist across reloads.
     }
-  };
+  }, [accountRiskUsd]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const selectedTier = RISK_TIER_OPTIONS.find((tier) => tier.value === riskTier) || RISK_TIER_OPTIONS[1];
+  const marketOpenLabel = formatIsraelTime(computeMarketOpenInIsrael());
 
-    fetch(`${API_BASE_URL}/api/strategy-league`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled) {
-          setStrategyLeague(data);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setStrategyLeague(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch(`${API_BASE_URL}/api/scan-history/outcomes`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled) {
-          setHitRateReport(data);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHitRateReport(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch(`${API_BASE_URL}/api/backtest/status`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled) {
-          setVibeTradingEnabled(Boolean(data?.enabled));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setVibeTradingEnabled(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch(`${API_BASE_URL}/api/anomaly-match/status`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled) {
-          setAnomalyMatchEnabled(Boolean(data?.enabled));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAnomalyMatchEnabled(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!anomalyMatchEnabled || results.length === 0) {
-      setAnomalyMatches({ status: 'idle', available: false, byTicker: {} });
-      return undefined;
-    }
-
-    setAnomalyMatches({ status: 'loading', available: false, byTicker: {} });
-
-    fetch(`${API_BASE_URL}/api/anomaly-match/check`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tickers: results.map((result) => result.ticker) })
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (!cancelled) {
-          setAnomalyMatches({ status: 'done', available: Boolean(data?.available), byTicker: data?.results || {} });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAnomalyMatches({ status: 'done', available: false, byTicker: {} });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [results, anomalyMatchEnabled]);
-
-  const leadingStrategyLabel = strategyLeague?.leadingStrategy
-    ? investmentMethodOptions.find((option) => option.value === strategyLeague.leadingStrategy)?.shortLabel
-    : null;
-
-  useEffect(() => {
-    if (!openBrokerMenu) {
-      return undefined;
-    }
-
-    const handlePointerDown = (event) => {
-      if (!event.target.closest('[data-broker-menu-root="true"]')) {
-        setOpenBrokerMenu(null);
-      }
-    };
-
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setOpenBrokerMenu(null);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [openBrokerMenu]);
-
-  const handleFieldChange = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
-  };
-
-  const handleFilterChange = (field, value) => {
-    setForm((current) => ({
-      ...current,
-      filters: {
-        ...current.filters,
-        [field]: value
-      }
-    }));
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  async function runScan() {
     setIsLoading(true);
-    setError('');
-    setHasSearched(true);
-    setOpenBrokerMenu(null);
+    setErrorMessage(null);
+    setExpandedTicker(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-
-      if (!response.ok) {
-        throw new Error('הסריקה נכשלה. נסה שוב.');
+      const params = new URLSearchParams({ exchange, riskTier });
+      if (accountRiskUsd) {
+        params.set('accountRiskUsd', accountRiskUsd);
       }
-
+      const response = await fetch(`${API_BASE_URL}/api/candidates?${params.toString()}`);
       const data = await response.json();
-      setResults(data.results ?? []);
-      setMeta(data.meta ?? null);
-      setAnalysis(data.analysis ?? null);
-    } catch (requestError) {
-      setResults([]);
-      setMeta(null);
-      setAnalysis(null);
-      setOpenBrokerMenu(null);
-      setError(requestError.message);
+      setScanResult(data);
+    } catch (error) {
+      setErrorMessage('שגיאת רשת - נסה שוב.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
-  const handleCheckStockHistory = async (ticker) => {
-    setBacktestBusyTicker(ticker);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/backtest/stock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, strategy: form.strategy })
-      });
-      const data = await response.json();
-      setBacktestModal({ title: `בדיקה היסטורית — ${ticker}`, ...data });
-    } catch (requestError) {
-      setBacktestModal({ title: `בדיקה היסטורית — ${ticker}`, ok: false, message: requestError.message });
-    } finally {
-      setBacktestBusyTicker(null);
-    }
-  };
-
-  const handleCheckTheory = async () => {
-    setBacktestTheoryBusy(true);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/backtest/theory`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ strategy: form.strategy })
-      });
-      const data = await response.json();
-      setBacktestModal({ title: 'בדיקת תאוריה — האסטרטגיה שנבחרה', ...data });
-    } catch (requestError) {
-      setBacktestModal({ title: 'בדיקת תאוריה — האסטרטגיה שנבחרה', ok: false, message: requestError.message });
-    } finally {
-      setBacktestTheoryBusy(false);
-    }
-  };
-
-  const handleLoadTomorrowWatchlist = async (forceRefresh = false) => {
-    setTomorrowWatchlistLoading(true);
-    setTomorrowWatchlistError('');
-    setPremarketRerankAt(null);
-    setPremarketRerankError('');
-
-    try {
-      const refreshParam = forceRefresh ? '&refresh=true' : '';
-      const response = await fetch(`${API_BASE_URL}/api/watchlist/tomorrow?exchange=${form.exchange}${refreshParam}`);
-
-      if (!response.ok) {
-        throw new Error('טעינת רשימת המעקב נכשלה. נסה שוב.');
-      }
-
-      const data = await response.json();
-      setTomorrowWatchlist(data.watchlist ?? []);
-      setTomorrowWatchlistGeneratedAt(data.generatedAt ?? null);
-      setTomorrowWatchlistDataSource(data.dataSource ?? null);
-      await loadTomorrowWatchlistOutcomes(data.generatedAt ?? null);
-    } catch (requestError) {
-      setTomorrowWatchlist([]);
-      setTomorrowWatchlistGeneratedAt(null);
-      setTomorrowWatchlistDataSource(null);
-      setTomorrowWatchlistOutcomes({});
-      setTomorrowWatchlistError(requestError.message);
-    } finally {
-      setTomorrowWatchlistLoading(false);
-    }
-  };
-
-  // User-triggered only (a button click) - re-ranks the already-loaded watchlist by actual
-  // pre-market gap instead of last night's EOD prediction. Replaces tomorrowWatchlist in place.
-  const handleRerankByPremarket = async () => {
-    setPremarketRerankBusy(true);
-    setPremarketRerankError('');
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/watchlist/tomorrow/rerank`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exchange: form.exchange })
-      });
-      const data = await response.json();
-
-      if (!data.available) {
-        setPremarketRerankError(data.message || 'דירוג מחדש לפי פרה-מרקט אינו זמין כרגע.');
-        return;
-      }
-
-      setTomorrowWatchlist(data.watchlist ?? []);
-      setPremarketRerankAt(data.snapshotAt ?? new Date().toISOString());
-    } catch (requestError) {
-      setPremarketRerankError('דירוג מחדש לפי פרה-מרקט נכשל. נסה שוב.');
-    } finally {
-      setPremarketRerankBusy(false);
-    }
-  };
-
-  // Fetches logged actual-open outcomes for the trading date the current watchlist refers to
-  // (generatedAt, truncated to YYYY-MM-DD), and merges them into state keyed by ticker.
-  const loadTomorrowWatchlistOutcomes = async (generatedAt) => {
-    if (!generatedAt) {
-      setTomorrowWatchlistOutcomes({});
-      return;
-    }
-
-    const date = generatedAt.slice(0, 10);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/watchlist/outcomes?date=${date}`);
-
-      if (!response.ok) {
-        setTomorrowWatchlistOutcomes({});
-        return;
-      }
-
-      const data = await response.json();
-      setTomorrowWatchlistOutcomes(data.outcomes ?? {});
-    } catch (requestError) {
-      setTomorrowWatchlistOutcomes({});
-    }
-  };
-
-  const handleLogActualOpen = async (item) => {
-    const date = (tomorrowWatchlistGeneratedAt || '').slice(0, 10);
-    const rawValue = actualOpenInputs[item.ticker];
-    const actualOpenPrice = Number(rawValue);
-
-    if (!date || !rawValue || !Number.isFinite(actualOpenPrice) || actualOpenPrice <= 0) {
-      setOutcomeError('יש להזין מחיר פתיחה בפועל חיובי.');
-      return;
-    }
-
-    setOutcomeBusyTicker(item.ticker);
-    setOutcomeError('');
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/watchlist/outcomes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date,
-          ticker: item.ticker,
-          actualOpenPrice,
-          modelClosePrice: item.price,
-          dailyChange: item.daily_change,
-          volumeRatio: item.volumeRatio,
-          adrPct: item.adr_pct,
-          highProximity: item.highProximity,
-          rankScore: item.rankScore
-        })
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'שמירת מחיר הפתיחה בפועל נכשלה.');
-      }
-
-      setTomorrowWatchlistOutcomes((current) => ({ ...current, [item.ticker]: data }));
-    } catch (requestError) {
-      setOutcomeError(requestError.message);
-    } finally {
-      setOutcomeBusyTicker(null);
-    }
-  };
-
-  // Loaded automatically on mount and whenever the exchange changes - the server already computed
-  // this the evening before (see watchlistScheduler.js), so it's ready without the user having to
-  // ask for it.
-  useEffect(() => {
-    handleLoadTomorrowWatchlist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.exchange]);
-
-  const emptyStateMessage = isLoading
-    ? 'סורק את השוק...'
-    : hasSearched
-      ? meta?.noQualitySetups
-        ? 'אין כרגע סטאפים איכותיים התואמים לאסטרטגיה שנבחרה. נסה שוב מאוחר יותר או שקול אסטרטגיה אחרת.'
-        : 'לא נמצאו מניות שמתאימות לפילטרים שנבחרו. נסה להרחיב את הסינון או להחליף שיטת השקעה.'
-      : 'עדיין אין תוצאות. מלא את הטופס ולחץ על "סרוק שוק".';
+  const candidates = scanResult?.candidates || [];
+  const regime = scanResult?.regime;
 
   return (
-    <div className="page-shell">
+    <div className="page-shell" dir="rtl">
       <header className="topbar">
         <div className="topbar-inner">
           <span className="topbar-brand">TradeSense</span>
-
-          <nav className="topbar-tabs" role="tablist" aria-label="ניווט ראשי">
+          <nav className="topbar-tabs" role="tablist">
             <button
               type="button"
               role="tab"
-              aria-selected={activeTab === 'watchlist'}
-              className={`topbar-tab ${activeTab === 'watchlist' ? 'active' : ''}`}
-              onClick={() => setActiveTab('watchlist')}
+              aria-selected={activeTab === 'candidates'}
+              className={`topbar-tab ${activeTab === 'candidates' ? 'active' : ''}`}
+              onClick={() => setActiveTab('candidates')}
             >
-              רשימת מעקב למחר
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'scan'}
-              className={`topbar-tab ${activeTab === 'scan' ? 'active' : ''}`}
-              onClick={() => setActiveTab('scan')}
-            >
-              סריקת שוק
+              סריקת מועמדים
             </button>
             <button
               type="button"
@@ -621,181 +146,34 @@ function App() {
               התיק שלי
             </button>
           </nav>
-
-          <div className="topbar-right">
-            {analysis?.marketRegime ? (
-              <span className={`source-badge regime ${regimeClassName(analysis.marketRegime.regime)}`}>
-                מצב שוק: {analysis.marketRegime.label}
-              </span>
-            ) : null}
-            {leadingStrategyLabel ? (
-              <span className="strategy-league-badge">מובילה ב-90 הימים: {leadingStrategyLabel}</span>
-            ) : null}
-            <select
-              className="topbar-exchange"
-              value={form.exchange}
-              onChange={(event) => handleFieldChange('exchange', event.target.value)}
-              aria-label="בורסה"
-            >
-              {exchangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <span className="topbar-open-time" title="שעת פתיחת השוק בשעון ישראל, כולל מעברי שעון">
+            פתיחת מסחר היום: {marketOpenLabel}
+          </span>
         </div>
       </header>
 
       <main className="layout">
-        {activeTab === 'watchlist' ? (
-        <section className="card watchlist-card">
-          <div className="section-head">
-            <div>
-              <h2>רשימת מעקב למחר</h2>
-              <p>
-                מועמדים ל-Gap &amp; Go ליום המסחר הבא. מחושבת אוטומטית מדי ערב - מוכנה כשאתה נכנס למערכת.
-                {tomorrowWatchlistGeneratedAt ? ` עודכן לאחרונה: ${formatGeneratedAt(tomorrowWatchlistGeneratedAt)}.` : ''}
-                {tomorrowWatchlistDataSource === 'alpaca+fmp' ? (
-                  <span className="metric-pill high" style={{ marginRight: '0.5rem' }}>
-                    מקור: סריקת שוק רחבה
-                  </span>
-                ) : tomorrowWatchlistDataSource === 'fmp-universe' ? (
-                  <span className="metric-pill medium" style={{ marginRight: '0.5rem' }}>
-                    מקור: מדגם מצומצם
-                  </span>
-                ) : null}
-              </p>
-            </div>
-            <div className="watchlist-actions">
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => handleLoadTomorrowWatchlist(true)}
-                disabled={tomorrowWatchlistLoading}
-              >
-                {tomorrowWatchlistLoading ? 'מרענן...' : 'רענן עכשיו'}
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={handleRerankByPremarket}
-                disabled={premarketRerankBusy || tomorrowWatchlist.length === 0}
-                title="שולף תמונת מצב אחת מ-Alpaca לכל הרשימה ומדרג מחדש לפי הגאפ בפועל במקום התחזית מאתמול בערב"
-              >
-                {premarketRerankBusy ? 'מעדכן לפי פרה-מרקט...' : 'עדכן לפי פרה-מרקט'}
-              </button>
-              <button type="button" className="ghost-button" onClick={() => setShowTomorrowWatchlist((current) => !current)}>
-                {showTomorrowWatchlist ? 'הסתר' : 'הצג'}
-              </button>
-            </div>
-          </div>
+        {activeTab === 'candidates' ? (
+          <section className="candidates-section">
+            <p className="v2-disclaimer">
+              TradeSense מציגה לוגיקות מסחר מתועדות ואת מצב הנתונים מולן - <b>זו אינה המלצת השקעה או ייעוץ.</b> כל פלייבוק מסומן
+              בדרגת אמינות (§5.8); ראו <a href="docs/SPEC_V2_ARCHITECTURE.md" target="_blank" rel="noreferrer">docs/SPEC_V2_ARCHITECTURE.md</a>.
+            </p>
 
-          {showTomorrowWatchlist ? (
-            <>
-              <p className="watchlist-disclaimer">
-                מבוסס נתוני סוף יום - לאימות מול מחירי פתיחה בזמן אמת לפני כל החלטה.
-              </p>
+            <div className="controls-panel">
+              <Field label="בורסה">
+                <select value={exchange} onChange={(event) => setExchange(event.target.value)}>
+                  {exchangeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
 
-              {tomorrowWatchlistError ? <p className="error-box">{tomorrowWatchlistError}</p> : null}
-              {premarketRerankError ? <p className="error-box">{premarketRerankError}</p> : null}
-              {premarketRerankAt ? (
-                <p className="watchlist-disclaimer">
-                  דורג מחדש לפי פרה-מרקט ({formatGeneratedAt(premarketRerankAt)}) - הנתון עשוי להיות חלקי (feed IEX).
-                </p>
-              ) : null}
-              {outcomeError ? <p className="error-box">{outcomeError}</p> : null}
-
-              <div className="results-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>סימול</th>
-                      <th>שם חברה</th>
-                      <th>מחיר</th>
-                      <th>שינוי יומי</th>
-                      <th>יחס נפח</th>
-                      <th>ADR%</th>
-                      <th>דוח בקרוב</th>
-                      <th>סיבה</th>
-                      <th>סיכוי לפריצה</th>
-                      {premarketRerankAt ? <th>פרה-מרקט בפועל</th> : null}
-                      <th>מחיר פתיחה בפועל</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tomorrowWatchlistLoading ? (
-                      <tr>
-                        <td colSpan={10 + (premarketRerankAt ? 1 : 0)} className="empty-state">
-                          טוען רשימת מעקב...
-                        </td>
-                      </tr>
-                    ) : tomorrowWatchlist.length === 0 ? (
-                      <tr>
-                        <td colSpan={10 + (premarketRerankAt ? 1 : 0)} className="empty-state">
-                          לא נמצאו כרגע מועמדים שעומדים בקריטריונים.
-                        </td>
-                      </tr>
-                    ) : (
-                      tomorrowWatchlist.map((item) => (
-                        <tr key={item.ticker}>
-                          <td>{item.ticker}</td>
-                          <td>{item.companyName}</td>
-                          <td>{numberFormatter.format(item.price)}</td>
-                          <td className="value-tone positive">{item.daily_change}%</td>
-                          <td>{item.volumeRatio}x</td>
-                          <td>{item.adr_pct}%</td>
-                          <td>
-                            {item.hasEarningsSoon ? (
-                              <span className="metric-pill medium">קטליזטור/סיכון: דוח בקרוב</span>
-                            ) : (
-                              <span className="cell-subtext">אין דוח קרוב ידוע</span>
-                            )}
-                          </td>
-                          <td>{item.reason}</td>
-                          <td>
-                            <BreakoutLikelihoodCell likelihood={item.breakoutLikelihood} />
-                          </td>
-                          {premarketRerankAt ? (
-                            <td>
-                              <PremarketGapCell gapStatus={item.gapStatus} actualGapPct={item.actualGapPct} />
-                            </td>
-                          ) : null}
-                          <td>
-                            <ActualOpenCell
-                              outcome={tomorrowWatchlistOutcomes[item.ticker]}
-                              inputValue={actualOpenInputs[item.ticker] ?? ''}
-                              busy={outcomeBusyTicker === item.ticker}
-                              onChange={(value) =>
-                                setActualOpenInputs((current) => ({ ...current, [item.ticker]: value }))
-                              }
-                              onSave={() => handleLogActualOpen(item)}
-                            />
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : null}
-        </section>
-        ) : null}
-
-        {activeTab === 'scan' ? (
-        <div className="scan-layout">
-        <aside className="card scan-settings">
-          <div className="section-head compact">
-            <h2>הגדרות סריקה</h2>
-            <p>בחר רמת סיכון ושיטת השקעה, ולאחר מכן צמצם עם פילטרים מתקדמים.</p>
-          </div>
-
-          <form className="scanner-form" onSubmit={handleSubmit}>
-            <div className="grid grid-primary">
               <Field label="רמת סיכון">
-                <select value={form.risk} onChange={(event) => handleFieldChange('risk', event.target.value)}>
-                  {riskOptions.map((option) => (
+                <select value={riskTier} onChange={(event) => setRiskTier(event.target.value)}>
+                  {RISK_TIER_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -803,836 +181,226 @@ function App() {
                 </select>
               </Field>
 
-              <Field label="שיטת השקעה">
-                <select value={form.strategy} onChange={(event) => handleFieldChange('strategy', event.target.value)}>
-                  {investmentMethodOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-
-            <div className="strategy-info-list">
-              {investmentMethodOptions.map((option) => (
-                <div key={option.value} className={`strategy-info-item ${form.strategy === option.value ? 'active' : ''}`}>
-                  <span className="strategy-info-name">{option.shortLabel}</span>
-                  <span className="tooltip-wrap" tabIndex="0" aria-label={option.description}>
-                    i
-                    <span className="tooltip-box">{option.description}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {WIDE_SCAN_STRATEGIES.includes(form.strategy) ? (
-              <>
-                <Checkbox
-                  label="סריקה רחבה (אלפי מניות, ~40-70 שניות)"
-                  checked={form.wideScan}
-                  onChange={(checked) => handleFieldChange('wideScan', checked)}
+              <Field label="סיכון בדולרים לעסקה (אופציונלי)">
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="לדוגמה: 200"
+                  value={accountRiskUsd}
+                  onChange={(event) => setAccountRiskUsd(event.target.value)}
                 />
-                <p className="advanced-panel-hint">
-                  מרחיבה את הסריקה מעבר למאגר הרגיל, כדי לגלות מניות שלא נמצאות בו - עלולה לקחת יותר זמן. אם לא זמינה כרגע, הסריקה נופלת חזרה למאגר הרגיל ומצוין הדבר בתוצאות.
-                </p>
-              </>
-            ) : null}
+              </Field>
 
-            <Field label="סיכון מקסימלי לעסקה ($) - אופציונלי">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={maxRiskPerTrade}
-                onChange={(event) => handleMaxRiskPerTradeChange(event.target.value)}
-                placeholder="למשל 200"
-              />
-            </Field>
-            <p className="advanced-panel-hint">
-              משמש רק לחישוב כמות מניות מוצעת בטבלת התוצאות, לפי מרחק הסטופ הטכני. נשמר במכשיר הזה בלבד ולא נשלח לשרת.
-            </p>
+              <button type="button" className="scan-button" onClick={runScan} disabled={isLoading}>
+                {isLoading ? 'סורק...' : 'סרוק שוק'}
+              </button>
+            </div>
 
-            <details className="advanced-panel">
-              <summary>פילטרים מתקדמים</summary>
-              <p className="advanced-panel-hint">כל הפילטרים חלים לפני חישוב ניקוד האסטרטגיה.</p>
-
-              <div className="grid grid-secondary">
-                <Field label="סקטור">
-                  <select value={form.filters.sector} onChange={(event) => handleFilterChange('sector', event.target.value)}>
-                    {sectorOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="שווי שוק">
-                  <select value={form.filters.marketCap} onChange={(event) => handleFilterChange('marketCap', event.target.value)}>
-                    {marketCapOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="תנודתיות">
-                  <select value={form.filters.volatility} onChange={(event) => handleFilterChange('volatility', event.target.value)}>
-                    {volatilityOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="מינימום תשואת דיבידנד">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.filters.minDividendYield}
-                    onChange={(event) => handleFilterChange('minDividendYield', event.target.value)}
-                    placeholder="למשל 2.5"
-                  />
-                </Field>
-
-                <Field label="מינימום נפח">
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.filters.minVolume}
-                    onChange={(event) => handleFilterChange('minVolume', event.target.value)}
-                    placeholder="למשל 1000000"
-                  />
-                </Field>
-
-                <Field label="טווח מחיר">
-                  <div className="price-range">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={form.filters.minPrice}
-                      onChange={(event) => handleFilterChange('minPrice', event.target.value)}
-                      placeholder="מינימום"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={form.filters.maxPrice}
-                      onChange={(event) => handleFilterChange('maxPrice', event.target.value)}
-                      placeholder="מקסימום"
-                    />
-                  </div>
-                </Field>
-              </div>
-
-              <div className="toggle-grid">
-                <Checkbox label="דיבידנד בלבד" checked={form.filters.dividendOnly} onChange={(checked) => handleFilterChange('dividendOnly', checked)} />
-                <Checkbox label="נפח חריג" checked={form.filters.unusualVolume} onChange={(checked) => handleFilterChange('unusualVolume', checked)} />
-              </div>
-            </details>
-
-            <button className="submit-button" type="submit" disabled={isLoading}>
-              {isLoading ? 'סורק את השוק...' : 'סרוק שוק'}
-            </button>
-
-            {error ? <p className="error-box">{error}</p> : null}
-          </form>
-        </aside>
-
-        <section className="card results-card">
-          <div className="section-head">
-            <h2>תוצאות</h2>
-            <p>
-              {meta
-                ? `נותחו ${numberFormatter.format(meta.analyzedCount)} מניות, הוחזרו ${numberFormatter.format(meta.returnedCount)} תוצאות`
-                : 'המערכת תחזיר את 10 המניות המובילות לפי שיטת ההשקעה שנבחרה.'}
-            </p>
-          </div>
-
-          {meta ? (
-            <div className="result-meta-bar">
-              <span className={`source-badge ${sourceClassName(meta.source)}`}>מקור נתונים: {sourceLabel(meta.source)}</span>
-              {meta.wideScanUsed ? <span className="source-badge">סריקה רחבה הופעלה</span> : null}
-              {vibeTradingEnabled ? (
-                <button
-                  type="button"
-                  className="vibe-trading-theory-button"
-                  onClick={handleCheckTheory}
-                  disabled={backtestTheoryBusy}
-                  title="בודק את חוקי האסטרטגיה על מדגם מניות היסטורי (Vibe-Trading + DeepSeek, בלחיצה בלבד - כ-30-90 שניות, עלות זניחה)"
-                >
-                  {backtestTheoryBusy ? 'בודק תאוריה…' : 'בדוק תאוריה היסטורית'}
-                </button>
-              ) : null}
-              {analysis?.marketRegime ? (
-                <span className={`source-badge fit ${fitClassName(analysis.marketRegime.strategyFit?.level)}`}>
-                  התאמת אסטרטגיה: {analysis.marketRegime.strategyFit?.label || 'בינונית'}
+            <div className="tier-summary-bar">
+              <span className="tier-summary-item">אופק: {selectedTier.horizon}</span>
+              <span className="tier-summary-item">
+                תקרת הפסד יומית: {selectedTier.dailyLossCapPct != null ? `${selectedTier.dailyLossCapPct}%` : 'ללא (אופק ארוך)'}
+              </span>
+              {regime ? (
+                <span className={`regime-badge regime-${regime.state}`}>
+                  משטר שוק: {regime.state === 'risk_on' ? 'תומך סיכון' : regime.state === 'risk_off' ? 'נגד סיכון' : 'ניטרלי'}
                 </span>
               ) : null}
-              {analysis?.summary?.averageOpportunityRank ? (
-                <>
-                  <span className="source-badge metric">ציון הזדמנות ממוצע: {analysis.summary.averageOpportunityRank}</span>
-                  <span className="source-badge metric">תשואה משוקללת ממוצעת: {analysis.summary.averageExpectedReturnPct}%</span>
-                </>
-              ) : null}
-              {analysis?.marketRegime?.strategyFit?.note ? (
-                <p className="market-regime-note">{analysis.marketRegime.strategyFit.note}</p>
-              ) : null}
-              <RegimeRecommendationNote marketRegime={analysis?.marketRegime} selectedStrategy={meta?.strategy} />
-              {analysis?.dataQuality?.issues?.length ? (
-                <ul className="data-quality-issues">
-                  {analysis.dataQuality.issues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              ) : null}
             </div>
-          ) : null}
 
-          {form.strategy === 'small_cap_breakout' ? (
-            <p className="watchlist-disclaimer">
-              אסטרטגיה בסיכון גבוה: מניות קטנות יכולות לנוע בעשרות אחוזים לשני הכיוונים. מומלץ גודל פוזיציה קטן ונקודת יציאה מוגדרת מראש.
-            </p>
-          ) : null}
+            {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
 
-          <div className="results-wrapper">
-            {results.length === 0 ? (
-              <p className="empty-state">{emptyStateMessage}</p>
-            ) : (
-              <ol className="result-list">
-                {results.map((result) => (
-                  <ResultCard
-                    key={result.ticker}
-                    result={result}
-                    strategy={form.strategy}
-                    hitRateReport={hitRateReport}
-                    maxRiskPerTrade={maxRiskPerTrade}
-                    isExpanded={expandedTicker === result.ticker}
-                    onToggleExpand={() =>
-                      setExpandedTicker((current) => (current === result.ticker ? null : result.ticker))
-                    }
-                    showIndiFit={showIndiColumn}
-                    showCatalyst={showCatalystColumn}
-                    brokerMenuOpen={openBrokerMenu === result.ticker}
-                    onToggleBrokerMenu={() =>
-                      setOpenBrokerMenu((current) => (current === result.ticker ? null : result.ticker))
-                    }
-                    onCloseBrokerMenu={() => setOpenBrokerMenu(null)}
-                    vibeTradingEnabled={vibeTradingEnabled}
-                    backtestBusy={backtestBusyTicker === result.ticker}
-                    onCheckHistory={() => handleCheckStockHistory(result.ticker)}
-                    anomalyMatchEnabled={anomalyMatchEnabled}
-                    anomalyMatches={anomalyMatches}
-                  />
+            {scanResult ? (
+              <p className="scan-meta">
+                נוצר: {formatGeneratedAt(scanResult.generatedAt)} · {candidates.length} מועמדים
+              </p>
+            ) : null}
+
+            {scanResult && scanResult.warnings?.length ? (
+              <ul className="scan-warnings">
+                {scanResult.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
                 ))}
-              </ol>
-            )}
-          </div>
-        </section>
-        </div>
+              </ul>
+            ) : null}
+
+            {scanResult && candidates.length === 0 ? (
+              <DiagnosticsPanel diagnostics={scanResult.diagnostics} />
+            ) : null}
+
+            <ol className="candidate-list">
+              {candidates.map((candidate) => (
+                <CandidateCard
+                  key={`${candidate.ticker}-${candidate.playbook.key}`}
+                  candidate={candidate}
+                  isExpanded={expandedTicker === `${candidate.ticker}-${candidate.playbook.key}`}
+                  onToggleExpand={() =>
+                    setExpandedTicker((current) =>
+                      current === `${candidate.ticker}-${candidate.playbook.key}` ? null : `${candidate.ticker}-${candidate.playbook.key}`
+                    )
+                  }
+                  brokerMenuOpen={openBrokerMenu === candidate.ticker}
+                  onToggleBrokerMenu={() => setOpenBrokerMenu((current) => (current === candidate.ticker ? null : candidate.ticker))}
+                  onCloseBrokerMenu={() => setOpenBrokerMenu(null)}
+                />
+              ))}
+            </ol>
+          </section>
         ) : null}
 
         {activeTab === 'portfolio' ? <PortfolioSection apiBaseUrl={API_BASE_URL} /> : null}
       </main>
-
-      {backtestModal ? <BacktestReportModal modal={backtestModal} onClose={() => setBacktestModal(null)} /> : null}
     </div>
   );
 }
 
-// One scan result.
-//
-// The collapsed view answers only three questions: what is it, why is it here, and what would the
-// trade look like. Everything else moved into the details panel - the previous layout put 10-14
-// columns on screen at once, which emphasised nothing and left "why is this stock recommended"
-// unanswered. Nothing was removed, only re-prioritised.
-function ResultCard({
-  result,
-  strategy,
-  hitRateReport,
-  maxRiskPerTrade,
-  isExpanded,
-  onToggleExpand,
-  showIndiFit,
-  showCatalyst,
-  brokerMenuOpen,
-  onToggleBrokerMenu,
-  onCloseBrokerMenu,
-  vibeTradingEnabled,
-  backtestBusy,
-  onCheckHistory,
-  anomalyMatchEnabled,
-  anomalyMatches
-}) {
-  const breakdown = result.scoreBreakdown || [];
-  const topFactors = breakdown.slice(0, 2);
+// Collapsed card answers only: what's the catalyst, what's the plan, which playbook and how
+// trustworthy is it right now (docs/SPEC_V2_ARCHITECTURE.md §8's mandatory hierarchy). Everything
+// else - factors, selection data - is behind the toggle.
+function CandidateCard({ candidate, isExpanded, onToggleExpand, brokerMenuOpen, onToggleBrokerMenu, onCloseBrokerMenu }) {
+  const statusInfo = STATUS_LABELS[candidate.playbook.status] || STATUS_LABELS.hypothesis;
 
   return (
-    <li className={`result-card${isExpanded ? ' expanded' : ''}`}>
-      <div className="result-card-main">
-        <div className="result-identity">
-          <span className="result-ticker">{result.ticker}</span>
-          <span className="result-company">{result.companyName}</span>
-          <span className="result-price">${result.price}</span>
+    <li className={`candidate-card status-${statusInfo.tone}${isExpanded ? ' expanded' : ''}`}>
+      <div className="candidate-card-main">
+        <div className="candidate-identity">
+          <span className="candidate-ticker">{candidate.ticker}</span>
+          <span className="candidate-company">{candidate.companyName}</span>
+          <span className="candidate-price">${candidate.price}</span>
         </div>
 
-        <div className="result-why">
-          <p className="result-why-headline">{result.explanation}</p>
-          <div className="result-why-factors">
-            {topFactors.map((factor) => (
-              <span key={factor.key} className="why-pill">
-                <b>{factor.label}</b>
-                {factor.detail ? <span>{factor.detail}</span> : null}
+        <div className="candidate-catalyst">
+          {candidate.catalyst ? (
+            <>
+              <span className={`catalyst-confidence catalyst-${candidate.catalyst.confidence}`}>
+                {CATALYST_CONFIDENCE_LABELS[candidate.catalyst.confidence]}
               </span>
-            ))}
-          </div>
+              <span className="catalyst-detail">{candidate.catalyst.detail}</span>
+            </>
+          ) : (
+            <span className="catalyst-detail">לא זוהה קטליזטור</span>
+          )}
         </div>
 
-        <div className="result-score">
-          <div className="result-score-value">{result.matchScore}%</div>
-          <div className="result-score-label">התאמה לאסטרטגיה</div>
-          <span className={`metric-pill ${probabilityClassName(result.opportunityRank)}`}>{result.opportunityRank}</span>
+        <TradePlanSummary plan={candidate.plan} />
+
+        <div className="candidate-playbook">
+          <span className="playbook-label">{candidate.playbook.label}</span>
+          <span className={`status-tag status-tag-${statusInfo.tone}`}>{statusInfo.text}</span>
         </div>
 
-        <TradePlan riskFraming={result.riskFraming} price={result.price} maxRiskPerTrade={maxRiskPerTrade} />
-
-        <div className="result-actions">
+        <div className="candidate-actions">
           <button type="button" className="details-toggle" onClick={onToggleExpand} aria-expanded={isExpanded}>
-            {isExpanded ? 'הסתר פירוט' : 'למה המניה הזו?'}
+            {isExpanded ? 'הסתר פירוט' : 'פירוט'}
           </button>
           <BrokerMenu isOpen={brokerMenuOpen} onToggle={onToggleBrokerMenu} onClose={onCloseBrokerMenu} />
-          {vibeTradingEnabled ? (
-            <button
-              type="button"
-              className="vibe-trading-stock-button"
-              onClick={onCheckHistory}
-              disabled={backtestBusy}
-              title="בודק מה המניה הזו עשתה בעבר בתבניות דומות (Vibe-Trading + DeepSeek, בלחיצה בלבד)"
-            >
-              {backtestBusy ? 'בודק…' : 'בדוק היסטורית'}
-            </button>
-          ) : null}
         </div>
       </div>
 
       {isExpanded ? (
-        <div className="result-details">
-          <div className="result-details-block">
-            <h4>ממה מורכב הציון</h4>
-            <ScoreBreakdownBars breakdown={breakdown} />
-            {result.eligibility && !result.eligibility.passed ? (
-              <p className="eligibility-note">לא עברה את סף הכניסה: {result.eligibility.reason}</p>
-            ) : null}
+        <div className="candidate-details">
+          <div className="candidate-details-block">
+            <h4>גורמים</h4>
+            <ul className="factor-list">
+              {(candidate.factors || []).map((factor) => (
+                <li key={factor.key}>
+                  <span className="factor-label">{factor.label}</span>
+                  <span className="factor-detail">{factor.detail}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-
-          <div className="result-details-block">
-            <h4>הערכות נוספות</h4>
-            <dl className="detail-pairs">
-              <div>
-                <dt>פוטנציאל מהלך</dt>
-                <dd>{result.estimatedUpsideRange}</dd>
-              </div>
-              <div>
-                <dt>תשואה משוקללת</dt>
-                <dd>
-                  {result.expectedReturnPct}%
-                  {result.opportunity?.recommendationLabel ? (
-                    <span className="cell-subtext"> ({result.opportunity.recommendationLabel})</span>
-                  ) : null}
-                </dd>
-              </div>
-              <div>
-                <dt>ציון הזדמנות (יחסי)</dt>
-                <dd>
-                  {result.opportunityRank}
-                  <MeasuredOpportunityNote
-                    strategy={strategy}
-                    opportunityRank={result.opportunityRank}
-                    hitRateReport={hitRateReport}
-                  />
-                </dd>
-              </div>
-              <div>
-                <dt>אסטרטגיה</dt>
-                <dd>
-                  {result.strategyName}
-                  <span className="cell-subtext"> · ראשי: {result.expertSupport?.primary?.shortName || 'הנבחרת'}</span>
-                </dd>
-              </div>
-              {showIndiFit ? (
-                <div>
-                  <dt>התאמה ל-Indi</dt>
-                  <dd>
-                    <IndiFitCell indiFit={result.indiFit} />
-                  </dd>
-                </div>
-              ) : null}
-              {showCatalyst ? (
-                <div>
-                  <dt>קטליזטור/סיכון</dt>
-                  <dd>
-                    <CatalystCell
-                      hasEarningsSoon={result.hasEarningsSoon}
-                      hasRecentNews={result.hasRecentNews}
-                      recentNewsCount={result.recentNewsCount}
-                    />
-                  </dd>
-                </div>
-              ) : null}
-              {anomalyMatchEnabled ? (
-                <div>
-                  <dt>תבנית אנומליה</dt>
-                  <dd>
-                    <AnomalyMatchCell
-                      status={anomalyMatches.status}
-                      available={anomalyMatches.available}
-                      match={anomalyMatches.byTicker[result.ticker]}
-                    />
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-            <ExpertSupportSummary expertSupport={result.expertSupport} />
+          <div className="candidate-details-block">
+            <h4>נתוני בחירה</h4>
+            <p className="cell-subtext">
+              נפח יחסי: {candidate.selection?.rvol ?? '—'} ({candidate.selection?.rvolBasis === 'opening' ? 'פתיחה' : 'יומי'}) - מבוסס
+              feed חלקי (iex, ~4% מנפח השוק), יחסי בין מניות בלבד.
+            </p>
           </div>
+          {candidate.warnings?.length ? (
+            <div className="candidate-details-block">
+              <h4>אזהרות</h4>
+              <ul className="candidate-warning-list">
+                {candidate.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </li>
   );
 }
 
-// The actionable half of a recommendation: where the stop would sit and how many shares that
-// implies. Kept in the collapsed view deliberately - a pick without an exit isn't a trade, which
-// is the single biggest gap this system had.
-function TradePlan({ riskFraming, price, maxRiskPerTrade }) {
-  if (!riskFraming || riskFraming.stopDistancePct == null) {
-    return (
-      <div className="trade-plan">
-        <span className="cell-subtext">אין מספיק נתוני תנודתיות לחישוב סטופ</span>
-      </div>
-    );
+function TradePlanSummary({ plan }) {
+  if (!plan || !plan.valid) {
+    return <div className="trade-plan"><span className="cell-subtext">אין תוכנית יציאה תקינה</span></div>;
   }
-
-  const maxRisk = Number(maxRiskPerTrade);
-  const perShareRisk = Number(price) - Number(riskFraming.stopPrice);
-  const quantity =
-    Number.isFinite(maxRisk) && maxRisk > 0 && perShareRisk > 0 ? Math.floor(maxRisk / perShareRisk) : null;
 
   return (
     <div className="trade-plan">
       <div className="trade-plan-row">
+        <span className="trade-plan-key">כניסה</span>
+        <span className="trade-plan-value">${plan.entry.price}</span>
+      </div>
+      <div className="trade-plan-row">
         <span className="trade-plan-key">סטופ</span>
         <span className="trade-plan-value">
-          ${riskFraming.stopPrice} <span className="cell-subtext">({riskFraming.stopDistancePct}%)</span>
+          ${plan.stop.price} <span className="cell-subtext">(-{plan.stop.distancePct}%)</span>
         </span>
       </div>
-      {riskFraming.rewardRiskRatio != null ? (
-        <div className="trade-plan-row">
-          <span className="trade-plan-key">סיכוי/סיכון</span>
-          <span className="trade-plan-value">{riskFraming.rewardRiskRatio}</span>
-        </div>
-      ) : null}
-      {quantity != null ? (
+      <div className="trade-plan-row">
+        <span className="trade-plan-key">יעד</span>
+        <span className="trade-plan-value">
+          ${plan.target.price} <span className="cell-subtext">({plan.target.rMultiple}R)</span>
+        </span>
+      </div>
+      <div className="trade-plan-row">
+        <span className="trade-plan-key">Time-stop</span>
+        <span className="trade-plan-value">{plan.timeStopDays} ימי מסחר</span>
+      </div>
+      {plan.sizing ? (
         <div className="trade-plan-row">
           <span className="trade-plan-key">כמות</span>
-          <span className="trade-plan-value">{quantity}</span>
+          <span className="trade-plan-value">{plan.sizing.shares}</span>
         </div>
       ) : (
         <div className="trade-plan-row">
-          <span className="cell-subtext">הגדר סיכון מקסימלי לעסקה כדי לקבל כמות</span>
+          <span className="cell-subtext">הזן סיכון בדולרים כדי לקבל כמות</span>
         </div>
       )}
     </div>
   );
 }
 
-// Renders the per-factor breakdown the server computed (strategies.js#buildBreakdown). Bars are
-// scaled to the strongest factor rather than to 1.0, so the *relative* weight of the reasons stays
-// readable even when the overall score is low. Contribution is shown out of 100 because that's the
-// same scale as the headline match percentage.
-function ScoreBreakdownBars({ breakdown }) {
-  if (!breakdown || breakdown.length === 0) {
-    return <p className="cell-subtext">אין פירוט ניקוד לתוצאה הזו.</p>;
-  }
-
-  const strongest = Math.max(...breakdown.map((factor) => factor.contribution), 0.0001);
-
-  return (
-    <ul className="score-bars">
-      {breakdown.map((factor) => (
-        <li key={factor.key}>
-          <div className="score-bar-head">
-            <span className="score-bar-label">{factor.label}</span>
-            <span className="score-bar-points">{Math.round(factor.contribution * 100)} נק׳</span>
-          </div>
-          <div className="score-bar-track">
-            <div className="score-bar-fill" style={{ width: `${(factor.contribution / strongest) * 100}%` }} />
-          </div>
-          {factor.detail ? <span className="score-bar-detail">{factor.detail}</span> : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// Shows the plain-text/markdown report a Vibe-Trading run returns, or the error/disabled message
-// if it failed. This is deliberately a raw text dump, not a parsed/styled report - the run's own
-// output already reads fine as markdown-ish text, and parsing it would be brittle against
-// whatever the agent happens to write this time. See docs/SPEC_VIBE_TRADING_INTEGRATION.md.
-function BacktestReportModal({ modal, onClose }) {
-  return (
-    <div className="backtest-modal-overlay" onClick={onClose}>
-      <div className="backtest-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="backtest-modal-header">
-          <h3>{modal.title}</h3>
-          <button type="button" className="backtest-modal-close" onClick={onClose} aria-label="סגור">
-            ✕
-          </button>
-        </div>
-        {modal.ok ? (
-          <>
-            <p className="backtest-modal-disclaimer">
-              בדיקה היסטורית חד-פעמית דרך Vibe-Trading (DeepSeek) - לא ייעוץ השקעות, ולא תמיד בדיקה על universe מלא. ראו
-              docs/BACKTEST_FINDINGS.md להסתייגויות המלאות.
-            </p>
-            <pre className="backtest-modal-report">{modal.report}</pre>
-          </>
-        ) : (
-          <p className="backtest-modal-error">{modal.message}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RegimeRecommendationNote({ marketRegime, selectedStrategy }) {
-  if (!marketRegime) {
+// Explains "0 candidates" with the actual funnel counts (docs/SPEC_V2_ARCHITECTURE.md §6) instead
+// of leaving an unexplained empty list.
+function DiagnosticsPanel({ diagnostics }) {
+  if (!diagnostics) {
     return null;
   }
 
-  const recommendation = marketRegime.recommendedStrategy;
-  const notes = [];
-
-  if (recommendation?.key && recommendation.key !== selectedStrategy) {
-    const sourceLabel = recommendation.source === 'league' ? 'מבוסס ביצועים נמדדים' : 'מבוסס מצב שוק';
-    notes.push(
-      `בתנאי השוק הנוכחיים (${marketRegime.label}) לוגיקת ${recommendation.label} מתאימה יותר (${sourceLabel}).`
-    );
-  }
-
-  if (marketRegime.regime === 'bearish') {
-    notes.push('השוק חלש, שקול להקטין חשיפה.');
-  }
-
-  // Damping banner for the two highest-risk strategies (docs/SPEC_SHORT_TERM_UPGRADE.md step 6) -
-  // based on the smoothed (multi-day) regime, not a single potentially-noisy same-day reading.
-  // Doesn't block the scan, just prices the risk in - see docs/BACKTEST_FINDINGS.md for the
-  // backtest evidence behind this.
-  const dampedStrategies = ['small_cap_breakout', 'swing_momentum'];
-  const riskyRegimes = ['bearish', 'volatile'];
-  if (dampedStrategies.includes(selectedStrategy) && riskyRegimes.includes(marketRegime.smoothedRegime)) {
-    notes.push(
-      'במשטר שוק כזה (על פני כמה ימים) הסגנון הזה נטה היסטורית לביצועים חלשים - ראו docs/BACKTEST_FINDINGS.md. לא נחסמת הסריקה, אך כדאי לתמחר את הסיכון בהתאם.'
-    );
-  }
-
-  if (!notes.length) {
-    return null;
-  }
+  const rows = [
+    diagnostics.universeCount != null ? ['universe', diagnostics.universeCount] : null,
+    diagnostics.afterLiquidityGate != null ? ['אחרי שער נזילות', diagnostics.afterLiquidityGate] : null,
+    diagnostics.afterSelection != null ? ['אחרי בחירה', diagnostics.afterSelection] : null,
+    diagnostics.afterPlaybooks != null ? ['אחרי פלייבוקים', diagnostics.afterPlaybooks] : null
+  ].filter(Boolean);
 
   return (
-    <>
-      {notes.map((note) => (
-        <p key={note} className="market-regime-note">
-          {note}
-        </p>
-      ))}
-    </>
-  );
-}
-
-// Shows what happened historically to logged candidates that scored similarly to this one
-// (watchlistLearningService.js, computed server-side from watchlistOutcomes.json). Below the
-// minimum sample size it says so explicitly rather than showing a percentage that would look
-// scientific but rest on a handful of data points.
-// Shows the actual pre-market gap vs. last night's EOD prediction, after a user-triggered rerank
-// (docs/SPEC_SHORT_TERM_UPGRADE.md step 7). 'unknown' (no snapshot data for this ticker) is shown
-// distinctly from a confirmed/faded gap - it's "we don't know", not "the gap disappeared".
-function PremarketGapCell({ gapStatus, actualGapPct }) {
-  if (gapStatus === 'unknown' || actualGapPct === null || actualGapPct === undefined) {
-    return <span className="cell-subtext">אין נתון פרה-מרקט</span>;
-  }
-
-  const sign = actualGapPct > 0 ? '+' : '';
-  return (
-    <span className={`metric-pill ${gapStatus === 'confirmed' ? 'high' : 'low'}`}>
-      {gapStatus === 'confirmed' ? 'גאפ מאושר' : 'גאפ נחלש'}: {sign}
-      {actualGapPct}%
-    </span>
-  );
-}
-
-function BreakoutLikelihoodCell({ likelihood }) {
-  if (!likelihood || likelihood.positiveGapRatePct === null) {
-    const sampleSize = likelihood?.sampleSize ?? 0;
-    const minSampleSize = likelihood?.minSampleSize ?? 5;
-    return (
-      <span className="cell-subtext">
-        אין עדיין מספיק נתונים ({sampleSize}/{minSampleSize} תצפיות)
-      </span>
-    );
-  }
-
-  return (
-    <span className={`metric-pill ${likelihood.positiveGapRatePct >= 50 ? 'high' : 'low'}`}>
-      {likelihood.positiveGapRatePct}% גאפ חיובי (ממוצע {likelihood.avgGapPct > 0 ? '+' : ''}
-      {likelihood.avgGapPct}%, {likelihood.sampleSize} תצפיות דומות)
-    </span>
-  );
-}
-
-// Lets the user log the real next-morning opening price for a gap-and-go candidate and see how
-// it compares to the model's close price (gapAccuracyPct). Before logging (or while editing): a
-// small input + save button. After logging: a colored pill (green when the gap matched the
-// direction the watchlist predicted - i.e. a positive gap - red otherwise), with an "edit" option
-// that switches back to the input, pre-filled with the previously logged price.
-function ActualOpenCell({ outcome, inputValue, busy, onChange, onSave }) {
-  const [isEditing, setIsEditing] = useState(false);
-
-  if (outcome && !isEditing) {
-    return (
-      <div className="actual-open-cell">
-        <span className={`metric-pill ${outcome.gapAccuracyPct >= 0 ? 'high' : 'low'}`}>
-          גאפ בפועל: {outcome.gapAccuracyPct > 0 ? '+' : ''}
-          {outcome.gapAccuracyPct}%
-        </span>
-        <button
-          type="button"
-          className="table-action-button"
-          onClick={() => {
-            onChange(String(outcome.actualOpenPrice));
-            setIsEditing(true);
-          }}
-        >
-          ערוך
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="actual-open-cell">
-      <input
-        type="number"
-        min="0"
-        step="0.01"
-        className="actual-open-input"
-        value={inputValue}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="מחיר פתיחה"
-      />
-      <button
-        type="button"
-        className="table-action-button"
-        onClick={() => {
-          onSave();
-          setIsEditing(false);
-        }}
-        disabled={busy}
-      >
-        {busy ? 'שומר...' : 'שמור'}
-      </button>
-    </div>
-  );
-}
-
-// Replaces the old "success probability" framing with an honest split (docs/SPEC_SHORT_TERM_UPGRADE.md
-// step 3): once there's enough measured scan history (>=10 evaluated samples in the last 90 days,
-// same strategy + opportunityRank bucket as this result), show the actual measured hit-rate and
-// risk profile instead of only the formula-based relative rank.
-function MeasuredOpportunityNote({ strategy, opportunityRank, hitRateReport }) {
-  const bucketLabel = findOpportunityRankBucketLabel(opportunityRank);
-  const cell = hitRateReport?.byStrategyAndBucket?.byStrategy?.[strategy]?.[bucketLabel];
-
-  if (!cell || cell.insufficientSamples) {
-    return <div className="cell-subtext">מבוסס נוסחה, טרם נמדד מספיק</div>;
-  }
-
-  return (
-    <div className="cell-subtext">
-      נמדד: {cell.hits} מתוך {cell.count} עלו מעל ה-benchmark תוך {cell.horizonDays} ימים · חציון {cell.medianReturnPct}% ·
-      הגרוע ביותר {cell.worstReturnPct}% · {cell.pctBelowMinus10}% ירדו מעל 10%
-    </div>
-  );
-}
-
-// Both flags are informational only - neither feeds any strategy's score
-// (docs/SPEC_SHORT_TERM_UPGRADE.md step 5). null means "not checked" (e.g. no provider key
-// configured), shown differently from a confirmed "no" so the user isn't given false confidence.
-function CatalystCell({ hasEarningsSoon, hasRecentNews, recentNewsCount }) {
-  if (hasEarningsSoon === null && hasRecentNews === null) {
-    return <span className="cell-subtext">לא נבדק</span>;
-  }
-
-  return (
-    <div>
-      {hasEarningsSoon ? (
-        <span className="metric-pill medium">קטליזטור/סיכון: דוח בקרוב</span>
-      ) : (
-        <div className="cell-subtext">אין דוח קרוב ידוע</div>
-      )}
-      {hasRecentNews ? (
-        <div className="cell-subtext">יש אירוע חדשותי ({recentNewsCount}) - בדוק לפני החלטה</div>
+    <div className="diagnostics-panel">
+      <h4>למה אין תוצאות</h4>
+      {diagnostics.stage ? <p className="cell-subtext">נעצר בשלב: {diagnostics.stage}</p> : null}
+      {rows.length ? (
+        <ul className="diagnostics-rows">
+          {rows.map(([label, value]) => (
+            <li key={label}>
+              {label}: {value}
+            </li>
+          ))}
+        </ul>
       ) : null}
-    </div>
-  );
-}
-
-// Purely a mechanical calculation shown for the user's own judgment - never a recommendation to
-// enter/exit a position. Quantity only appears once the user opts into the (client-side-only,
-// never sent to the server) "max risk per trade" field. See docs/SPEC_SHORT_TERM_UPGRADE.md step 2.
-function RiskFramingCell({ riskFraming, price, maxRiskPerTrade }) {
-  if (!riskFraming || riskFraming.stopDistancePct == null) {
-    return <span className="cell-subtext">אין מספיק נתוני תנודתיות</span>;
-  }
-
-  const maxRisk = Number(maxRiskPerTrade);
-  const perShareRisk = Number(price) - Number(riskFraming.stopPrice);
-  const quantity = Number.isFinite(maxRisk) && maxRisk > 0 && perShareRisk > 0
-    ? Math.floor(maxRisk / perShareRisk)
-    : null;
-
-  return (
-    <div>
-      <div>סטופ מוצע: ${riskFraming.stopPrice} ({riskFraming.stopDistancePct}%)</div>
-      {riskFraming.rewardRiskRatio != null ? <div>יחס סיכוי/סיכון: {riskFraming.rewardRiskRatio}</div> : null}
-      {quantity != null ? <div>כמות לפי הסיכון שהוגדר: {quantity}</div> : null}
-      <div className="cell-subtext">מרחק סטופ לפי טווח התנודה היומי - חישוב טכני, לא ייעוץ</div>
-    </div>
-  );
-}
-
-// Reads patterns a previous `research:mine` CLI run already saved (docs/SPEC_ANOMALY_MINING.md) -
-// a statistically-derived research finding, not a vetted strategy and not a recommendation.
-// Checked automatically once scan results arrive, via a separate request from /api/analyze itself.
-// Plain-Hebrew names for the 16 as-of-day features (docs/SPEC_ANOMALY_MINING.md section 4) - the
-// server only knows them by their code identifiers (e.g. "gapCount10d"), which means nothing to a
-// non-technical user. Presentation-only mapping, kept client-side since it never affects matching.
-const ANOMALY_FEATURE_LABELS = {
-  volumeRatio1d: 'נפח מסחר יומי (יחסית לממוצע)',
-  volumeRatio3d: 'נפח מסחר ב-3 ימים (יחסית לממוצע)',
-  volumeTrend5d: 'מגמת נפח (5 ימים אחרונים)',
-  adrPct20d: 'רמת תנודתיות יומית',
-  adrContraction: 'התכווצות תנודתיות',
-  consolidationScore: 'רמת התכנסות המחיר',
-  highProximity60d: 'קרבה לשיא 60 יום',
-  distFromLow60d: 'מרחק מהשפל ב-60 יום',
-  return5d: 'תשואה ב-5 ימים אחרונים',
-  return20d: 'תשואה ב-20 ימים אחרונים',
-  ma50Slope: 'שיפוע ממוצע 50 יום',
-  priceVsMa50: 'מחיר מול ממוצע 50 יום',
-  priceVsMa200: 'מחיר מול ממוצע 200 יום',
-  rangePosition20d: 'מיקום בטווח המחיר (20 יום)',
-  gapCount10d: 'מספר גאפים ב-10 ימים אחרונים',
-  dailyChange: 'שינוי מחיר יומי'
-};
-
-const ANOMALY_GAP_COUNT_LABELS = { 0: 'ללא גאפים', 1: 'גאפ אחד', 2: 'שני גאפים', 3: '3 גאפים ומעלה' };
-const ANOMALY_QUARTILE_LABELS = { 0: 'נמוך', 1: 'בינוני-נמוך', 2: 'בינוני-גבוה', 3: 'גבוה' };
-
-function describeAnomalyCondition(condition) {
-  const featureLabel = ANOMALY_FEATURE_LABELS[condition.feature] || condition.feature;
-  const valueLabel =
-    condition.feature === 'gapCount10d' ? ANOMALY_GAP_COUNT_LABELS[condition.bin] : ANOMALY_QUARTILE_LABELS[condition.bin];
-  return `${featureLabel}: ${valueLabel ?? condition.bin}`;
-}
-
-function describeAnomalyPatternMatch(patternMatch) {
-  const conditionsText = (patternMatch.conditions || []).map(describeAnomalyCondition).join(' + ');
-  const { p, lift, n } = patternMatch.holdout;
-  return `${conditionsText} — היסטורית: ${(p * 100).toFixed(1)}% מהמקרים הובילו לקפיצה (פי ${lift.toFixed(1)} מהרגיל, ${n} מקרים)`;
-}
-
-function anomalyLiftClassName(lift) {
-  if (lift >= 4) return 'high';
-  if (lift >= 2) return 'medium';
-  return 'low';
-}
-
-// Deliberately a single-line pill, not a stacked list of raw pattern strings (e.g.
-// "distFromLow60d in [0.358, +inf) AND gapCount10d >= 3") - that reads as noise to a
-// non-technical user and made result rows very tall. The full plain-Hebrew breakdown of every
-// matched pattern lives in the native tooltip instead, available on hover without costing table
-// height. See docs/SPEC_ANOMALY_MINING.md section 0.4 - this is a factual signal, not a
-// recommendation, hence the disclaimer repeated in the tooltip itself.
-function AnomalyMatchCell({ status, available, match }) {
-  if (status === 'loading') {
-    return <span className="cell-subtext">בודק…</span>;
-  }
-  if (!available) {
-    return <span className="cell-subtext">לא זמין</span>;
-  }
-  if (!match || match.matches.length === 0) {
-    return (
-      <span className="cell-subtext" title="לא עומדת כרגע באף תבנית ששרדה">
-        -
-      </span>
-    );
-  }
-
-  const sortedMatches = [...match.matches].sort((a, b) => b.holdout.lift - a.holdout.lift);
-  const strongest = sortedMatches[0];
-  const tooltip = [
-    'מבוסס על ניתוח סטטיסטי של השנה האחרונה (NASDAQ, 300M-10B) - עובדה נמדדת, לא המלצה ולא ציון מכויל.',
-    '',
-    ...sortedMatches.map((patternMatch, index) => `${index + 1}. ${describeAnomalyPatternMatch(patternMatch)}`),
-    '',
-    'פירוט מלא: docs/ANOMALY_FINDINGS.md'
-  ].join('\n');
-
-  return (
-    <span className={`metric-pill ${anomalyLiftClassName(strongest.holdout.lift)}`} title={tooltip}>
-      {sortedMatches.length === 1 ? 'תבנית 1' : `${sortedMatches.length} תבניות`} · פי {strongest.holdout.lift.toFixed(1)}
-    </span>
-  );
-}
-
-function IndiFitCell({ indiFit }) {
-  if (!indiFit) {
-    return <span className="cell-subtext">לא רלוונטי</span>;
-  }
-
-  return (
-    <div>
-      <span className={`metric-pill ${indiFitClassName(indiFit.label)}`}>{indiFit.label}</span>
-      <div className="cell-subtext">{indiFit.note}</div>
-    </div>
-  );
-}
-
-function ExpertSupportSummary({ expertSupport }) {
-  const supporters = expertSupport?.supporters || [];
-
-  if (!supporters.length) {
-    return <div className="cell-subtext expert-support-empty">ללא תמיכה חזקה נוספת</div>;
-  }
-
-  return (
-    <div className="expert-support-row">
-      <span className="cell-subtext">תמיכה:</span>
-      <div className="expert-support-badges">
-        {supporters.slice(0, 2).map((expert) => (
-          <span key={expert.id} className="expert-support-badge">
-            {expert.shortName}
-          </span>
-        ))}
-        {supporters.length > 2 ? <span className="expert-support-badge">+{supporters.length - 2}</span> : null}
-      </div>
     </div>
   );
 }
@@ -1676,75 +444,6 @@ function Field({ label, children }) {
       {children}
     </label>
   );
-}
-
-function Checkbox({ label, checked, onChange }) {
-  return (
-    <label className="checkbox">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function formatGeneratedAt(isoString) {
-  try {
-    return new Date(isoString).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
-  } catch {
-    return '';
-  }
-}
-
-function sourceClassName(source) {
-  if (
-    source === 'fmp' ||
-    source === 'finnhub' ||
-    source === 'alpaca+nasdaq' ||
-    source === 'alpaca+fmp-screener' ||
-    source === 'alpaca+finnhub' ||
-    source === 'alpaca+wide-scan'
-  ) {
-    return 'live';
-  }
-  if (source === 'fmp_partial' || source === 'finnhub_partial') return 'partial';
-  return 'demo';
-}
-
-function sourceLabel(source) {
-  if (source === 'fmp') return 'נתוני אמת (FMP)';
-  if (source === 'fmp_partial') return 'נתונים חיים חלקיים (FMP)';
-  if (source === 'finnhub') return 'נתוני אמת (Finnhub)';
-  if (source === 'finnhub_partial') return 'נתונים חיים חלקיים (Finnhub)';
-  if (source === 'alpaca+nasdaq') return 'נתוני אמת (Alpaca+Nasdaq)';
-  if (source === 'alpaca+fmp-screener') return 'נתוני אמת (Alpaca+FMP)';
-  if (source === 'alpaca+finnhub') return 'נתוני אמת (Alpaca+Finnhub)';
-  if (source === 'alpaca+wide-scan') return 'נתוני אמת (סריקה רחבה)';
-  return 'נתוני דמו';
-}
-
-function regimeClassName(regime) {
-  if (regime === 'bullish') return 'live';
-  if (regime === 'volatile') return 'partial';
-  if (regime === 'bearish') return 'demo';
-  return '';
-}
-
-function fitClassName(level) {
-  if (level === 'high') return 'live';
-  if (level === 'low') return 'demo';
-  return 'partial';
-}
-
-function probabilityClassName(value) {
-  if (value >= 75) return 'high';
-  if (value >= 55) return 'medium';
-  return 'low';
-}
-
-function indiFitClassName(label) {
-  if (label === 'חזקה' || label === 'כן') return 'high';
-  if (label === 'מעקב') return 'medium';
-  return 'low';
 }
 
 export default App;

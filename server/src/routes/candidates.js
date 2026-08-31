@@ -1,19 +1,32 @@
-// Placeholder for the v2 candidates endpoint (docs/SPEC_V2_ARCHITECTURE.md §6). The full pipeline
-// (liquidity gate -> catalyst -> selection -> playbooks -> exit engine) is built phase by phase
-// per §10; until phase 8 wires the real route, this returns an explicit "not built yet" response
-// instead of a bare 404, so a request against the deployed app during the rebuild reads as
-// intentional rather than as a broken route.
+// GET /api/candidates (docs/SPEC_V2_ARCHITECTURE.md §6/§10 phase 8) - replaces the phase-0
+// placeholder. Every candidate returned here is also logged to the forward ledger automatically
+// by candidatesService (§5.7) - this route does not do that itself.
 const express = require('express');
+const { getCandidates } = require('../pipeline/candidatesService');
 
 const router = express.Router();
 
-router.get('/', (_request, response) => {
-  response.json({
-    generatedAt: new Date().toISOString(),
-    candidates: [],
-    diagnostics: null,
-    warnings: ['TradeSense v2 נמצא בבנייה מחדש - מסלול הסריקה עדיין לא מומש. ראו docs/SPEC_V2_ARCHITECTURE.md.']
-  });
+router.get('/', async (request, response) => {
+  const { exchange, riskTier, playbook, accountRiskUsd } = request.query;
+
+  try {
+    const result = await getCandidates({
+      exchange: exchange || 'NASDAQ',
+      riskTier: riskTier || 'balanced',
+      playbook: playbook || null,
+      accountRiskUsd: accountRiskUsd !== undefined ? Number(accountRiskUsd) : null
+    });
+
+    response.json(result);
+  } catch (error) {
+    console.warn(`[routes/candidates] Failed: ${error.message}`);
+    response.status(500).json({
+      generatedAt: new Date().toISOString(),
+      candidates: [],
+      diagnostics: { stage: 'error' },
+      warnings: ['שגיאה פנימית בסריקה - נסה שוב בעוד רגע']
+    });
+  }
 });
 
 module.exports = router;

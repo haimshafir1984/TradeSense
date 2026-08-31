@@ -33,6 +33,23 @@ function computeAccountRiskUsd({ accountEquityUsd, riskTierKey, playbookStatus }
   return round((accountEquityUsd * effectivePct) / 100, 2);
 }
 
+// The API (§6) takes a direct per-trade accountRiskUsd from the caller, rather than deriving one
+// from account equity - this applies the same provisional-halving/non-tradeable-status rule
+// (§5.8) to that supplied figure instead of computing a fresh one from computeAccountRiskUsd's
+// equity-percentage formula. Both functions enforce the same status rule; they differ in whether
+// the dollar figure comes from the tier's own percentage or from the caller directly.
+function applyStatusMultiplier({ accountRiskUsd, playbookStatus }) {
+  if (!Number.isFinite(accountRiskUsd) || accountRiskUsd <= 0) {
+    return null;
+  }
+  if (!TRADEABLE_STATUSES.has(playbookStatus)) {
+    return null;
+  }
+
+  const multiplier = playbookStatus === 'provisional' ? PROVISIONAL_SIZE_MULTIPLIER : 1;
+  return round(accountRiskUsd * multiplier, 2);
+}
+
 // Dollar value of the tier's daily loss cap, or null when the tier has no cap (conservative) or
 // account equity isn't known.
 function dailyLossCapUsd({ accountEquityUsd, riskTierKey }) {
@@ -72,6 +89,7 @@ function canOpenNewPosition({ riskTierKey, openPositionsCount }) {
 
 module.exports = {
   computeAccountRiskUsd,
+  applyStatusMultiplier,
   dailyLossCapUsd,
   hasReachedDailyLossCap,
   canOpenNewPosition

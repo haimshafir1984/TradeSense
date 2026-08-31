@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   computeAccountRiskUsd,
+  applyStatusMultiplier,
   dailyLossCapUsd,
   hasReachedDailyLossCap,
   canOpenNewPosition
@@ -30,6 +31,22 @@ test('computeAccountRiskUsd returns null for an unknown tier or missing/invalid 
   assert.equal(computeAccountRiskUsd({ accountEquityUsd: null, riskTierKey: 'balanced', playbookStatus: 'active' }), null);
   assert.equal(computeAccountRiskUsd({ accountEquityUsd: 0, riskTierKey: 'balanced', playbookStatus: 'active' }), null);
   assert.equal(computeAccountRiskUsd({ accountEquityUsd: -500, riskTierKey: 'balanced', playbookStatus: 'active' }), null);
+});
+
+test('applyStatusMultiplier halves a directly-supplied accountRiskUsd for provisional and passes active through unchanged', () => {
+  assert.equal(applyStatusMultiplier({ accountRiskUsd: 200, playbookStatus: 'provisional' }), 100);
+  assert.equal(applyStatusMultiplier({ accountRiskUsd: 200, playbookStatus: 'active' }), 200);
+});
+
+test('applyStatusMultiplier returns null for hypothesis/backtested regardless of the supplied amount', () => {
+  assert.equal(applyStatusMultiplier({ accountRiskUsd: 200, playbookStatus: 'hypothesis' }), null);
+  assert.equal(applyStatusMultiplier({ accountRiskUsd: 200, playbookStatus: 'backtested' }), null);
+});
+
+test('applyStatusMultiplier returns null for a missing/invalid accountRiskUsd', () => {
+  assert.equal(applyStatusMultiplier({ accountRiskUsd: null, playbookStatus: 'active' }), null);
+  assert.equal(applyStatusMultiplier({ accountRiskUsd: 0, playbookStatus: 'active' }), null);
+  assert.equal(applyStatusMultiplier({ accountRiskUsd: -50, playbookStatus: 'active' }), null);
 });
 
 test('dailyLossCapUsd is null for the conservative tier (no cap) and computed for balanced/aggressive', () => {
