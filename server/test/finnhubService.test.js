@@ -151,3 +151,66 @@ test('isConfigured reflects whether FINNHUB_API_KEY is set', () => {
   assert.equal(finnhubService.isConfigured(), true);
   delete process.env.FINNHUB_API_KEY;
 });
+
+test('getEarningsSurprises returns null when not configured', async () => {
+  const finnhubService = freshFinnhubService();
+  delete process.env.FINNHUB_API_KEY;
+
+  const result = await finnhubService.getEarningsSurprises('AAPL');
+
+  assert.equal(result, null);
+});
+
+test('getEarningsSurprises maps period/actual/estimate/surprisePercent from the raw response', async () => {
+  const finnhubService = freshFinnhubService();
+  const originalFetch = global.fetch;
+  process.env.FINNHUB_API_KEY = 'test-key';
+
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      { period: '2026-06-30', actual: 1.5, estimate: 1.2, surprisePercent: 25.0, symbol: 'AAPL' },
+      { period: '2026-03-31', actual: 1.1, estimate: 1.15, surprisePercent: -4.35, symbol: 'AAPL' }
+    ]
+  });
+
+  const result = await finnhubService.getEarningsSurprises('AAPL');
+
+  global.fetch = originalFetch;
+  delete process.env.FINNHUB_API_KEY;
+
+  assert.deepEqual(result, [
+    { period: '2026-06-30', actual: 1.5, estimate: 1.2, surprisePercent: 25.0 },
+    { period: '2026-03-31', actual: 1.1, estimate: 1.15, surprisePercent: -4.35 }
+  ]);
+});
+
+test('getEarningsSurprises returns null (not an empty array) when the request fails', async () => {
+  const finnhubService = freshFinnhubService();
+  const originalFetch = global.fetch;
+  process.env.FINNHUB_API_KEY = 'test-key';
+
+  global.fetch = async () => ({ ok: false, status: 500 });
+
+  const result = await finnhubService.getEarningsSurprises('AAPL');
+
+  global.fetch = originalFetch;
+  delete process.env.FINNHUB_API_KEY;
+
+  assert.equal(result, null);
+});
+
+test('getEarningsSurprises returns an empty array (not null) when Finnhub genuinely has no entries', async () => {
+  const finnhubService = freshFinnhubService();
+  const originalFetch = global.fetch;
+  process.env.FINNHUB_API_KEY = 'test-key';
+
+  global.fetch = async () => ({ ok: true, json: async () => [] });
+
+  const result = await finnhubService.getEarningsSurprises('AAPL');
+
+  global.fetch = originalFetch;
+  delete process.env.FINNHUB_API_KEY;
+
+  assert.deepEqual(result, []);
+});

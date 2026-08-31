@@ -1,9 +1,8 @@
-// Adapter for Finnhub's free tier (60 calls/min, no daily cap) - used for earnings-date and
-// company-profile lookups so the funnel/watchlist earnings check no longer depends on FMP's
-// exhaustible 250 call/day quota. See docs/SPEC_PROVIDER_REBALANCE.md section 4.
+// Adapter for Finnhub's free tier (60 calls/min, no daily cap) - earnings dates/surprises,
+// company profile, and recent news. See docs/SPEC_PROVIDER_REBALANCE.md section 4 and
+// docs/SPEC_V2_ARCHITECTURE.md §3.3/§7.2.
 //
-// Reuses the FINNHUB_API_KEY env var already read by marketDataService.js's existing
-// DATA_MODE=finnhub path.
+// Reuses the FINNHUB_API_KEY env var.
 
 const BASE_URL = 'https://finnhub.io/api/v1';
 
@@ -136,9 +135,39 @@ async function getRecentNewsCount(ticker) {
   return data.filter((item) => Number.isFinite(item?.datetime) && item.datetime * 1000 >= cutoffMs).length;
 }
 
+// GET /stock/earnings - historical EPS actual-vs-estimate surprises (docs/SPEC_V2_ARCHITECTURE.md
+// §7.2), most-recent quarter first as Finnhub returns them. Used by playbooks/peadDrift.js to
+// detect a numeric earnings surprise, and by ledger:backfill to reconstruct past surprise dates.
+// Returns null (never an empty array standing in for "no surprises") when the request itself
+// failed or wasn't configured - an empty array is a legitimate "no data for this ticker" answer
+// and callers must be able to tell the two apart.
+async function getEarningsSurprises(ticker) {
+  if (!isConfigured()) {
+    return null;
+  }
+
+  const apiKey = process.env.FINNHUB_API_KEY;
+  const url = `${BASE_URL}/stock/earnings?symbol=${ticker}&token=${apiKey}`;
+  const data = await fetchFinnhub(url, `getEarningsSurprises:${ticker}`);
+
+  if (!Array.isArray(data)) {
+    return null;
+  }
+
+  return data
+    .filter((entry) => entry && entry.period)
+    .map((entry) => ({
+      period: entry.period,
+      actual: Number.isFinite(Number(entry.actual)) ? Number(entry.actual) : null,
+      estimate: Number.isFinite(Number(entry.estimate)) ? Number(entry.estimate) : null,
+      surprisePercent: Number.isFinite(Number(entry.surprisePercent)) ? Number(entry.surprisePercent) : null
+    }));
+}
+
 module.exports = {
   isConfigured,
   getEarningsSoon,
   getCompanyProfile,
-  getRecentNewsCount
+  getRecentNewsCount,
+  getEarningsSurprises
 };

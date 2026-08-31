@@ -327,3 +327,130 @@ test('getSnapshots returns an empty map when the request fails', async () => {
 
   assert.equal(result.size, 0);
 });
+
+test('getIntradayBars returns an empty map without a request when start/end are missing', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  let called = false;
+  global.fetch = async () => {
+    called = true;
+    return jsonResponse({ bars: {} });
+  };
+
+  const result = await alpacaService.getIntradayBars({ symbols: ['AAPL'] });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(result.size, 0);
+  assert.equal(called, false);
+});
+
+test('getIntradayBars sends the requested timeframe and ISO start/end, defaulting to 5Min/iex', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  let capturedParams = null;
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    capturedParams = new URL(url).searchParams;
+    return jsonResponse({ bars: {}, next_page_token: null });
+  };
+
+  await alpacaService.getIntradayBars({ symbols: ['AAPL'], start: '2026-01-05T14:30:00Z', end: '2026-01-05T14:35:00Z' });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(capturedParams.get('timeframe'), '5Min');
+  assert.equal(capturedParams.get('feed'), 'iex');
+  assert.equal(capturedParams.get('start'), new Date('2026-01-05T14:30:00Z').toISOString());
+  assert.equal(capturedParams.get('end'), new Date('2026-01-05T14:35:00Z').toISOString());
+});
+
+test('getIntradayBars honors an explicit timeframe and feed override', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  let capturedParams = null;
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    capturedParams = new URL(url).searchParams;
+    return jsonResponse({ bars: {}, next_page_token: null });
+  };
+
+  await alpacaService.getIntradayBars({
+    symbols: ['AAPL'],
+    timeframe: '1Min',
+    feed: 'delayed_sip',
+    start: '2026-01-05',
+    end: '2026-01-06'
+  });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(capturedParams.get('timeframe'), '1Min');
+  assert.equal(capturedParams.get('feed'), 'delayed_sip');
+});
+
+test('getIntradayBars merges paginated results and sorts oldest-to-newest per symbol', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  let callCount = 0;
+  const originalFetch = global.fetch;
+  global.fetch = async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return jsonResponse({
+        bars: { AAPL: [{ t: '2026-01-05T14:35:00Z', c: 101 }] },
+        next_page_token: 'p2'
+      });
+    }
+    return jsonResponse({
+      bars: { AAPL: [{ t: '2026-01-05T14:30:00Z', c: 100 }] },
+      next_page_token: null
+    });
+  };
+
+  const result = await alpacaService.getIntradayBars({
+    symbols: ['AAPL'],
+    start: '2026-01-05T14:30:00Z',
+    end: '2026-01-05T14:40:00Z'
+  });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  const bars = result.get('AAPL');
+  assert.equal(bars.length, 2);
+  assert.equal(bars[0].c, 100);
+  assert.equal(bars[1].c, 101);
+});
+
+test('getIntradayBars returns an empty map on HTTP failure instead of throwing', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+
+  const originalFetch = global.fetch;
+  global.fetch = async () => jsonResponse(null, false, 500);
+
+  const result = await alpacaService.getIntradayBars({
+    symbols: ['AAPL'],
+    start: '2026-01-05T14:30:00Z',
+    end: '2026-01-05T14:40:00Z'
+  });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(result.size, 0);
+});

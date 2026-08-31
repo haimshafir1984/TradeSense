@@ -224,6 +224,68 @@ async function getLatestDailyBars({ symbols = [] } = {}) {
   return latest;
 }
 
+// GET /v2/stocks/bars with a sub-daily timeframe - same endpoint as getDailyBars, same
+// chunking/pagination/fail-soft behavior, just a different `timeframe` and an explicit start/end
+// instead of a "days back" window (docs/SPEC_V2_ARCHITECTURE.md §7.1). Unlike getDailyBars, the
+// caller controls the exact window: live ORB needs a few minutes around today's open, while
+// ledger:backfill (§5.8) needs a specific historical day - there's no one sensible default.
+// `start`/`end` accept any string Date() can parse (a plain date or a full ISO timestamp).
+async function getIntradayBars({ symbols = [], timeframe = '5Min', start, end, feed = 'iex' } = {}) {
+  const result = new Map();
+
+  if (!Array.isArray(symbols) || symbols.length === 0 || !start || !end) {
+    return result;
+  }
+
+  const symbolChunks = chunk(symbols, SYMBOLS_PER_CHUNK);
+
+  for (const symbolChunk of symbolChunks) {
+    let pageToken = null;
+
+    do {
+      const params = new URLSearchParams({
+        symbols: symbolChunk.join(','),
+        timeframe,
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        limit: '10000',
+        adjustment: 'split',
+        feed,
+        sort: 'asc'
+      });
+
+      if (pageToken) {
+        params.set('page_token', pageToken);
+      }
+
+      const url = `${DATA_BASE_URL}/v2/stocks/bars?${params.toString()}`;
+      const data = await fetchAlpaca(url, 'getIntradayBars');
+
+      if (!data) {
+        pageToken = null;
+        break;
+      }
+
+      const barsBySymbol = data.bars || {};
+      for (const [symbol, bars] of Object.entries(barsBySymbol)) {
+        if (!Array.isArray(bars) || !bars.length) {
+          continue;
+        }
+        const existing = result.get(symbol) || [];
+        result.set(symbol, existing.concat(bars));
+      }
+
+      pageToken = data.next_page_token || null;
+    } while (pageToken);
+  }
+
+  for (const bars of result.values()) {
+    bars.sort((left, right) => new Date(left.t).getTime() - new Date(right.t).getTime());
+  }
+
+  return result;
+}
+
 // GET /v2/stocks/snapshots - latest trade/quote plus today's and yesterday's daily bar, for up to
 // a handful of symbols in one batched call. Used for the user-triggered pre-market re-rank
 // (docs/SPEC_SHORT_TERM_UPGRADE.md step 7), not any automatic scan. Returns Map<symbol, snapshot>;
@@ -258,5 +320,6 @@ module.exports = {
   getActiveAssets,
   getDailyBars,
   getLatestDailyBars,
+  getIntradayBars,
   getSnapshots
 };
