@@ -2,81 +2,61 @@
 
 מסמך התמצאות קצר לתחילת שיחה חדשה של Claude Code בפרויקט הזה.
 
-## ⚠️ המערכת בבנייה מחדש (v2) — התחל מכאן
+## TradeSense v2 — בנייה מחדש הושלמה (2026-08-31)
 
-מ-2026-08-31 TradeSense עובר **בנייה מחדש מלאה**, לא שדרוג. ההוראה המחייבת היא **[docs/SPEC_V2_ARCHITECTURE.md](docs/SPEC_V2_ARCHITECTURE.md)** — תקרא אותה במלואה לפני כל שינוי קוד. שאר המסמך הזה (ותוכן README.md/docs/*.md הישן) מתאר את **מערכת v1 שנמחקת בהדרגה**; שימושי כרקע היסטורי, לא כתיאור של הקוד הקיים כרגע.
+TradeSense עברה **בנייה מחדש מלאה**, לא שדרוג. ההוראה המחייבת היא **[docs/SPEC_V2_ARCHITECTURE.md](docs/SPEC_V2_ARCHITECTURE.md)** — לקרוא לפני כל שינוי קוד. כל 10 הפאזות ב-§10 הושלמו; המסמך הזה מתעד את המצב הנוכחי + כמה ממצאים חשובים מבדיקה חיה שלא היו ידועים בזמן כתיבת הספק.
 
-**עקרון מנחה של הבנייה מחדש** (§0 בספק): המערכת הישנה ייצרה *דירוג*; v2 מייצרת *עסקה שלמה* — כניסה/סטופ/יעד/time-stop/גודל. מועמד בלי תוכנית יציאה תקינה נפסל, לא מוצג.
+**עקרון מנחה** (§0 בספק): המערכת לא מייצרת *דירוג* — היא מייצרת *עסקה שלמה*: כניסה/סטופ/יעד/time-stop/גודל. מועמד בלי תוכנית יציאה תקינה נפסל, לא מוצג.
 
-### מצב נוכחי
+## מבנה הקוד
 
-| פאזה | תוצר | סטטוס |
-|---|---|---|
-| 0 | מחיקה + שרת עולה עם מסלול ריק | **הושלם** (2026-08-31) |
-| 1 | ספקים + `getIntradayBars` + `getEarningsSurprises` | **הושלם** (2026-08-31) |
-| 2 | מנוע יציאה + רמות סיכון (**קודם לכל פלייבוק**) | **הושלם** (2026-08-31) |
-| 3 | pipeline: שער נזילות, קטליזטור, בחירה לפי נפח יחסי, שער משטר שוק, `runScan` + diagnostics | **הושלם** (2026-08-31) |
-| 4 | פלייבוקים P4 (`short_term_reversal`) + P1 (`pead_drift`) | **הושלם** (2026-08-31) |
-| 5 | פלייבוק P3 (`gap_continuation`) | **הושלם** (2026-08-31) |
-| 6 | ledger: store, resolver, stats מפוצל forward/backfill, סולם 4 הדרגות | **הושלם** (2026-08-31) |
-| 7 | `ledger:backfill` CLI + חלוקה כרונולוגית + `docs/BACKFILL_FINDINGS.md` | **הושלם** (2026-08-31) |
-| 8 | API אמיתי (`/api/candidates`, `/api/playbooks`, `/api/ledger/*`) + לקוח v2 | **הושלם** (2026-08-31) |
-| 9 | פלייבוק P2 (`opening_range_breakout`) מאחורי `ORB_ENABLED=false` | **הושלם** (2026-08-31) |
-| 10 | ראו §10 בספק | ממתין |
+```
+server/src/
+  providers/     alpacaService, nasdaqService, finnhubService — שכבת ה-API היחידה שמותר להסתמך עליה
+  services/      universeStore, universeBuilderService, mathUtils, portfolioService, vibeTradingService, research/**
+  pipeline/      liquidityGate, catalystService, selectionService, regimeGate, runScan, candidatesService
+  playbooks/     peadDrift, shortTermReversal, gapContinuation, openingRangeBreakout, features, index
+  risk/          exitEngine, riskTiers, positionSizing
+  ledger/        ledgerStore, outcomeResolver, playbookStats, backfill
+  routes/        candidates, playbooks, ledger, portfolio, backtest, anomalyMatch
+client/src/
+  App.jsx        מסך "סריקת מועמדים" (v2) + טאב "התיק שלי" (ללא שינוי)
+```
 
-**פאזה 9 - הערה:** `playbooks/index.js` שוכתב כך שהדגל נבדק **בזמן קריאה** (`process.env.ORB_ENABLED === 'true'`), לא נקבע פעם אחת בטעינת המודול - כדי שההתנהגות תישאר תקינה גם כשה-env var משתנה בלי לטעון מחדש את התהליך. אומת בפועל מול שרת רץ: `/api/playbooks` מחזיר 3 פלייבוקים כש-`ORB_ENABLED` לא מוגדר, 4 כשמוגדר `true`.
+**נמחק לחלוטין** (§2 בספק): `strategies.js`, `scannerService.js`, `analysisService.js`, `expertSupportService.js`, `indiOverlayService.js`, `opportunityScoringService.js`, `explanationService.js`, `marketRegimeService.js`, כל משפחת `watchlist*`, `funnelScanService.js`, `smallCapUniverseService.js`, `scanHistory*.js`, `marketDataService.js` (FMP), `barsStockBuilder.js`, `riskFramingService.js`, `regimeHistoryStore.js`, `shadowScanService.js`, `shareCountService.js`, `watchlistRerankService.js`, `wideScanUniverseService.js`, `config/scoringConfig.js`. כל הטסטים שלהם הוסרו איתם.
 
-**פאזה 8 - ממצא חשוב מבדיקה חיה (לא רק טסטים):** מגבלת feed `iex` (§3.1, §12 החלטה 2) חמורה בהרבה בפועל ממה שנראה בתאוריה. נמדד ישירות: הנפח היומי של MSFT דרך `iex` הוא **~1M מניות**, לעומת נפח אמיתי של ~20-30M — בדיוק תואם ליחס ~4% שה-spec כבר תיעד (נתח שוק IEX). **התוצאה: שער הנזילות (`liquidityGate`, סף 1,000,000$ שמקורו במאמר ה-ORB שהשתמש בנתוני SIP מלאים) פוסל כמעט את כל השוק — כולל מניות ענק כמו MSFT/GOOGL/META/TSLA** שסביר להניח שהיו עוברות בקלות עם נתוני נפח מלאים. מריצה חיה על universe של 1000 מניות: רק 19 עברו את שער הנזילות. **לא תוקן/כויל מחדש בכוונה** - זו בדיוק ההחלטה שנשמרה לזמן שיהיה ledger אמיתי (§12 החלטה 2), לא משהו שצריך "לתקן" בלי ראיות. שווה החלטה מפורשת: להוריד את הסף פרופורציונלית ל-iex (~פי 20-25), או להמתין לשדרוג SIP.
+**נשאר ולא משולב במסלול v2** (§2): `services/vibeTradingService.js` + `routes/backtest.js` (בדיקה מול Vibe-Trading, on-demand מקומי), `services/research/**` + `routes/anomalyMatch.js` (כריית אנומליות, on-demand), `services/portfolioService.js`/`portfolioStore.js` (טאב "התיק שלי", ללא שינוי).
 
-**עוד ממצא תפעולי:** `catalystService`'s concurrency (5 מקבילים) גרם לחסימות `HTTP 429` מ-Finnhub בריצה על 400+ מניות - לא קורס (fail-soft כמתוכנן, `catalyst: null` לסימולים שנכשלו), אבל מפחית דיוק זיהוי קטליזטורים בסריקה גדולה. שווה הפחתת concurrency או backoff בעתיד.
+## ארבעת הפלייבוקים
 
-**באג תשתית מקומי שתוקן:** `.env`'s `CLIENT_ORIGIN` הצביע על `:5174` בעוד Vite רץ בפועל על `:5173` - חסם CORS את כל קריאות ה-API מהדפדפן. תוקן ל-`:5173` (לא קשור לקוד v2, תצורת dev מקומית בלבד).
+| מפתח | עוצמת ראיות | רמות סיכון | מצב |
+|---|---|---|---|
+| `pead_drift` | חזקה | שמרני, מאוזן | פעיל |
+| `short_term_reversal` | בינונית-חזקה | שמרני, מאוזן | פעיל |
+| `gap_continuation` | חלשה (לא שפיט) | מאוזן, אגרסיבי | פעיל, **לא נתמך ב-`ledger:backfill`** (שחזור קטליזטור היסטורי יקר מדי) |
+| `opening_range_breakout` | בינונית-חזקה | אגרסיבי בלבד | **כבוי** (`ORB_ENABLED`, נבדק בזמן קריאה לא בטעינת מודול). דורש `openingRangeHigh/Low/Direction` שהצנרת לא מזינה עדיין (אין נתונים תוך-יומיים ב-v1) |
 
-**פאזה 6 - הערה:** `getPlaybookStatus` קיים אבל **עדיין לא מחובר** לפלייבוקים עצמם או ל-API - זה פאזה 8. השדה הסטטי `status: 'hypothesis'` על כל מודול פלייבוק הוא ברירת מחדל הגיונית (תואם מה ש-`determineStatus` היה מחזיר על ledger ריק), לא באג.
+כל פלייבוק מתחיל בדרגה `hypothesis` בסולם ארבע הדרגות (§5.8: `hypothesis → backtested → provisional → active`, אין קיצור דרך, backfill מקדם עד `backtested` בלבד). `docs/BACKFILL_FINDINGS.md` מכיל ריצה אמיתית (40 מניות, 24 חודשים) — `pead_drift` מראה איתות מוקדם מעודד (holdout n=35, hit-rate 71.4%) אך מתחת לסף ה-100 ל-`backtested`. הרצה מלאה: `npm run ledger:backfill --workspace server` (150 מניות).
 
-**פאזה 7 - הערות חשובות:**
-- **תוקן באג אמיתי שנתפס בזמן הרצה אמיתית מול Alpaca/Finnhub (לא רק טסטים):** `ledgerStore.appendEntries` דרס כל `outcome` שהועבר אליו בקבוע `null` - כלומר ה-backfill היה "כותב" עסקאות שנפתרו במלואן, ואז מוחק את התוצאה שלהן ברגע השמירה. נתפס כי ריצה אמיתית הראתה `49 trades written` אבל הדוח הציג `n=0` בכל מקום. תוקן + נוסף טסט רגרסיה ב-`ledgerStore.test.js`.
-- `gap_continuation` **אינו נתמך ב-backfill** (`SUPPORTED_PLAYBOOK_KEYS = ['pead_drift', 'short_term_reversal']`) - שחזור היסטורי של קטליזטורים (חדשות/דוחות) יקר מדי על Finnhub החינמי על פני מאות מניות/ימים. מתועד בדוח, לא מוסתר.
-- `docs/BACKFILL_FINDINGS.md` שבריפו הוא **ריצה אמיתית אך מצומצמת** (40 מניות, 24 חודשים, שני הפלייבוקים הנתמכים) שהופעלה כדי לוודא שהצנרת עובדת מקצה לקצה מול Alpaca/Finnhub האמיתיים - לא ריצה מלאה. `pead_drift` כבר מראה איתות מוקדם מעודד (holdout: n=35, hit-rate 71.4%, avgR 1.44) אך עדיין מתחת לסף ה-100 עסקאות ל-`backtested`. להרצה מלאה: `npm run ledger:backfill --workspace server` (ברירת מחדל: 150 מניות, 24 חודשים).
+## שני ממצאים חיים חשובים שלא היו ידועים בזמן כתיבת הספק
 
-**פאזה 4 - הערה:** שני הפלייבוקים במצב `hypothesis` (סולם §5.8), **לא מחוברים ל-`runScan`** - זה חלק מפאזה 8. `dailyChangePct` ב-`features.js` הוא קירוב ל"תשואת יום-הדוח" של PEAD כי אין לנו נר תוך-יומי מדויק של רגע התגובה, רק נרות יומיים.
-
-**פאזה 3 - הערה:** `runScan.js` בונה shortlist מלא (universe → נזילות → קטליזטור → בחירה → משטר), אבל **עדיין לא כולל הערכת פלייבוקים** (זה פאזות 4/5/9) ו-**`routes/candidates.js` עדיין placeholder** - החיווט ל-route האמיתי הוא פאזה 8 במפורש (§10), לא נעשה מוקדם.
-
-**מה נשאר מהמערכת הישנה** (§3 בספק — זה כל מה שמותר להסתמך עליו):
-- `server/src/providers/` (הועבר מ-`services/providers/`, ללא שינוי תוכן) — `alpacaService.js`, `nasdaqService.js`, `finnhubService.js`
-- `server/src/services/universeStore.js` + `universeBuilderService.js` — תשתית ה-universe הלילית. **הערה:** ה-scheduler שהפעיל את הרענון הלילי (`watchlistScheduler.js`) נמחק עם משפחת ה-watchlist; הרענון עדיין קורה lazy (בזמן בקשה), אבל אין עוד "חימום" אוטומטי בלילה — לתעד/לפתור בפאזה מתאימה.
-- `server/src/services/mathUtils.js` — כולל `computeRsi`/`computeTrailingReturnPct`. `scoreConsolidation` נשאר בניגוד ל-§3.5 בספק כי `services/research/asOfFeatures.js` (שנשאר כמות שהוא) תלוי בו.
-- `server/src/services/portfolioService.js`/`portfolioStore.js` — פיצ'ר נפרד, נשאר. שוכתב פנימית להשתמש ב-`alpacaService.getSnapshots` במקום ב-`marketDataService` שנמחק (שם/סקטור כבר לא זמינים דרך זה — נופלים ל-ticker/'Unknown', לא regression).
-- `server/src/services/vibeTradingService.js` + `server/src/services/research/**` — כלים ידניים עצמאיים, **לא** משולבים במסלול v2. `vibeTradingService.js` שוכתב עם קבוע `SMALL_CAP_THRESHOLDS` מקומי (היה ב-`config/scoringConfig.js` שנמחק) כדי לשמר התנהגות זהה.
-- Routes ששרדו: `routes/portfolio.js`, `routes/backtest.js` (Vibe-Trading, on-demand), `routes/anomalyMatch.js` (כריית אנומליות, on-demand — עצמאי, לא תלוי במסלול הסריקה).
-- `routes/candidates.js` — placeholder בלבד כרגע, מחזיר `warnings` שמסביר שהמסלול טרם מומש.
-
-**נמחק לחלוטין** (§2 בספק): `strategies.js`, `scannerService.js`, `analysisService.js`, `expertSupportService.js`, `indiOverlayService.js`, `opportunityScoringService.js`, `explanationService.js`, `marketRegimeService.js`, כל משפחת `watchlist*`, `funnelScanService.js`, `smallCapUniverseService.js`, `scanHistory*.js`, `marketDataService.js` (FMP), `barsStockBuilder.js`, `riskFramingService.js`, `regimeHistoryStore.js`, `shadowScanService.js`, `shareCountService.js`, `watchlistRerankService.js`, `wideScanUniverseService.js`, `config/scoringConfig.js`, וה-routes המתאימים. כל הטסטים שלהם הוסרו יחד איתם.
-
-**`client/src/App.jsx` עדיין לא נגע בו** — הוא הריפו ל-`/api/analyze`/`/api/watchlist`/`/api/scan-history`/`/api/strategy-league` שנמחקו. הבנייה מחדש של הלקוח היא **פאזה 8** במפורש. עד אז: הלקוח נבנה בהצלחה (`npm run build` עובר), אבל טאבי "סריקת שוק" ו"רשימת מעקב" יחזירו שגיאות רשת בזמן ריצה - זה מצב ביניים צפוי, לא רגרסיה שצריך לתקן מוקדם.
-
-**מוסכמת commit:** commit נפרד לכל פאזה מ-§10, כל commit מעדכן את הטבלה למעלה.
-
----
-
-## מה שמתחת לכאן מתאר את v1 (רקע היסטורי בלבד)
-
-## מה זה TradeSense (v1 — נמחקת בהדרגה)
-
-מערכת סריקת מניות: לקוח React 19/Vite + שרת Node/Express, npm workspaces (`client/`, `server/`). ה-README.md ומסמכי docs/SPEC_*.md הישנים מתעדים את הארכיטקטורה, האסטרטגיות, ומשפך הנתונים של v1 — שימושי להבנת *למה* v2 נבנתה כמו שהיא (ראו §0 ב-`SPEC_V2_ARCHITECTURE.md`), לא כתיאור עדכני.
-
-מסמכים רלוונטיים עדיין (לא נמחקו, לא תלויים בקוד שנמחק):
-- `docs/SPEC_VIBE_TRADING_LAB.md`, `docs/BACKTEST_STRATEGY_DEFINITIONS.md`, `docs/BACKTEST_FINDINGS.md`, `docs/SPEC_VIBE_TRADING_INTEGRATION.md` — כלי ה-backtest החיצוני, עדיין רלוונטי כי `vibeTradingService.js` שרד.
-- `docs/SPEC_ANOMALY_MINING.md`, `docs/ANOMALY_FINDINGS.md`, `docs/SPEC_GITHUB_SURVEY.md`, `docs/GITHUB_SURVEY.md` — כלי המחקר תחת `services/research/**`, שרדו במלואם.
-- `docs/SPEC_UNIVERSE_RESILIENCE.md`, `docs/SPEC_PROVIDER_REBALANCE.md` — עדיין מתארים נכון את `universeStore.js`/`universeBuilderService.js` ואת שרשרת הספקים (בלי שכבת ה-FMP שהוסרה).
-
-מסמכים שהפכו להיסטוריים בלבד (מתארים קוד שנמחק): `docs/HOW_IT_WORKS.md`, `docs/SPEC_DATA_FUNNEL.md`, `docs/SPEC_SMALL_CAP_STRATEGY.md`, `docs/SPEC_UI_REDESIGN.md`, `docs/SPEC_SHORT_TERM_UPGRADE.md`, `docs/SPEC_NEW_STRATEGIES.md`, `docs/LOGIC_IMPROVEMENTS.md`, `docs/EXPLAINER.html`.
+1. **מגבלת feed `iex` חמורה בהרבה בפועל מהצפוי.** נמדד: נפח MSFT דרך `iex` ≈ 1M מניות/יום, לעומת ~20-30M אמיתי (~4%, תואם למה שהספק כבר חזה). התוצאה: שער הנזילות (סף 1,000,000$, מקורו במחקר ORB עם נתוני SIP מלאים) פוסל היום חלק ניכר מהשוק — כולל מניות ענק כמו MSFT/GOOGL/META/TSLA. מריצה חיה על 1000 מניות: רק 19 עברו. **בכוונה לא תוקן** — זו ההחלטה מ-§12.2 (להמתין לנתוני ledger אמיתיים לפני שיקול שדרוג ל-SIP), לא תקלה.
+2. **`catalystService`'s concurrency (5) גרם ל-`HTTP 429` מ-Finnhub** בסריקה על 400+ מניות. Fail-soft כמתוכנן (`catalyst: null`, לא קורס), אבל מפחית דיוק בסריקות גדולות — מועמד לטיפול עתידי (concurrency נמוך יותר / backoff).
 
 ## מוסכמות עבודה בריפו הזה
 
-- טסטים: `node:test` + `node:assert/strict` תחת `server/test/` (`npm test --workspace server`). דפוס נפוץ: `delete require.cache[...]` לטעינה מחדש של מודול + ניקוי env vars ב-setup.
-- שינויי UI: להריץ dev server (Claude Browser preview tools) ולבדוק בפועל.
-- `.env` בשורש הוא ה-source of truth למפתחות מקומיים ומ-gitignore (`git check-ignore -v .env` מאשר). לעולם לא לחשוף את תוכנו (אפילו לא ב-`cat`/הדפסה לטרמינל) - להשתמש ב-Read tool בלבד כשצריך לבדוק מבנה, ולא לצטט ערכי מפתחות בהודעות.
-- build: `npm run build` (root) בונה את הלקוח ל-`client/dist`; לנקות אחרי בדיקה מקומית לפי המוסכמה הקיימת בפרויקט.
-- Deploy: push ל-`main` -> auto-deploy ב-Render (שני שירותים נפרדים: server כ-Web Service, client כ-Static Site — ראו `docs/DEPLOYMENT.md`). **בזמן הבנייה מחדש: כל פאזה חייבת להשאיר את שני השירותים עולים ומגיבים**, גם אם המסלול עדיין חלקי (§12.1 בספק).
+- טסטים: `node:test` + `node:assert/strict` תחת `server/test/` (`npm test --workspace server`, 285 טסטים). דפוס נפוץ: `delete require.cache[...]` לטעינה מחדש + ניקוי env vars ב-setup. **חשוב:** מודול שצריך שיהיה ניתן ל-mock (למשל נדרש ע"י `candidatesService`) חייב להיות `require`-ed כאובייקט namespace (`const foo = require('./foo')` + `foo.bar()`), **לא** דה-סטרוקטורינג (`const { bar } = require('./foo')`) — דה-סטרוקטורינג לוכד את הפונקציה בזמן ה-require ומונע מ-mock בטסט להגיע לקורא. נתקלנו בזה בפועל בפאזה 8.
+- שינויי UI: להריץ dev server (Claude Browser preview tools) ולבדוק בפועל מול API אמיתי, לא רק unit tests — נתפסו כך גם באג CORS מקומי וגם ממצא ה-feed שלמעלה.
+- `.env` בשורש: `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`, `FINNHUB_API_KEY`, `CLIENT_ORIGIN` (**חייב לתאום לפורט שהלקוח באמת רץ עליו** — אחרת CORS חוסם כל קריאת API מהדפדפן בשקט), ואופציונלית `ORB_ENABLED`, `VIBE_TRADING_ENABLED`+`VIBE_TRADING_LAB_PATH`. לעולם לא לחשוף את תוכנו (גם לא ב-`cat`) — Read tool בלבד, ולא לצטט ערכי מפתחות בהודעות.
+- build: `npm run build` (root) בונה את הלקוח ל-`client/dist`; לנקות אחרי בדיקה מקומית.
+- Deploy: push ל-`main` → auto-deploy ב-Render (שני שירותים: server כ-Web Service, client כ-Static Site — ראו `docs/DEPLOYMENT.md`).
+
+## מסמכים
+
+- [README.md](README.md) — סקירה טכנית מלאה של v2.
+- [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) — הסבר לא-טכני.
+- [docs/DAILY_RUNBOOK.md](docs/DAILY_RUNBOOK.md) — נוהל הפעלה יומי (גרסה מודפסת של §13 בספק).
+- [docs/EXPLAINER.html](docs/EXPLAINER.html) — מסמך אינטראקטיבי (לפתוח בדפדפן).
+- [docs/BACKFILL_FINDINGS.md](docs/BACKFILL_FINDINGS.md) — תוצאות מילוי היסטורי, נדרס בכל ריצת `ledger:backfill`.
+- כלים עצמאיים ששרדו: `docs/SPEC_VIBE_TRADING_LAB.md`+`BACKTEST_FINDINGS.md` (Vibe-Trading), `SPEC_ANOMALY_MINING.md`+`ANOMALY_FINDINGS.md` (כריית אנומליות), `SPEC_GITHUB_SURVEY.md`+`GITHUB_SURVEY.md`.
+- מסמכי v1 היסטוריים בלבד (מתארים קוד שנמחק, שימושיים רק להבנת §0 "למה בונים מחדש"): `SPEC_DATA_FUNNEL.md`, `SPEC_SMALL_CAP_STRATEGY.md`, `SPEC_UI_REDESIGN.md`, `SPEC_SHORT_TERM_UPGRADE.md`, `SPEC_NEW_STRATEGIES.md`, `LOGIC_IMPROVEMENTS.md`.

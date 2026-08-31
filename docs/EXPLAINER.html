@@ -1,4 +1,4 @@
-<title>TradeSense — איך המערכת בוחרת מניות</title>
+<title>TradeSense — איך המערכת בונה תוכניות מסחר</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root{
@@ -152,7 +152,6 @@
     display:grid;
     grid-template-columns:repeat(auto-fit, minmax(150px,1fr));
     gap:0;
-    counter-reset:step;
   }
   .flow-step{
     position:relative;
@@ -183,6 +182,7 @@
     font-size:16.5px;
     margin:0 0 4px;
     display:flex; align-items:center; justify-content:space-between; gap:8px;
+    flex-wrap:wrap;
   }
   .card .tag{
     font-family:var(--mono);
@@ -194,6 +194,9 @@
     border-radius:20px;
     white-space:nowrap;
   }
+  .card .tag.evidence-strong{ color:var(--good); background:color-mix(in srgb, var(--good) 14%, transparent); }
+  .card .tag.evidence-moderate{ color:var(--accent-strong); background:color-mix(in srgb, var(--accent) 16%, transparent); }
+  .card .tag.evidence-weak{ color:var(--risk); background:color-mix(in srgb, var(--risk) 12%, transparent); }
   .card p{ font-size:14.5px; color:var(--ink-soft); margin:8px 0 0; }
   .card .gate{
     margin-top:12px;
@@ -204,6 +207,22 @@
     color:var(--ink);
   }
   .card .gate b{ color:var(--accent-strong); font-weight:600; }
+
+  /* ---------- status ladder ---------- */
+  .ladder{ display:grid; grid-template-columns:repeat(4,1fr); gap:2px; margin:0 0 20px; }
+  .ladder-step{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    padding:16px 14px;
+    text-align:center;
+    font-size:13px;
+  }
+  .ladder-step:first-child{ border-radius:10px 0 0 10px; }
+  .ladder-step:last-child{ border-radius:0 10px 10px 0; border-color:var(--good); background:color-mix(in srgb, var(--good) 10%, var(--card)); }
+  .ladder-step .n{ font-family:var(--mono); font-size:11px; color:var(--ink-soft); display:block; margin-bottom:6px; }
+  .ladder-step b{ display:block; margin-bottom:4px; }
+  .ladder-arrow{ text-align:center; color:var(--ink-soft); font-size:18px; align-self:center; }
+  @media (max-width:700px){ .ladder{ grid-template-columns:1fr; } .ladder-step{ border-radius:10px !important; } }
 
   /* ---------- data section ---------- */
   .datalist{ display:grid; gap:14px; }
@@ -234,43 +253,6 @@
   .callout.good{ border-inline-start-color:var(--good); background:color-mix(in srgb, var(--good) 7%, var(--card)); }
   .callout.good h4{ color:var(--good); }
 
-  /* ---------- addon panel ---------- */
-  .addon{
-    background:var(--card);
-    border:1px solid var(--card-border);
-    border-radius:14px;
-    padding:28px 28px 24px;
-    box-shadow:var(--shadow);
-  }
-  .addon-head{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:6px; }
-  .addon-head h3{ margin:0; font-size:18px; }
-  .switch{
-    display:flex; align-items:center; gap:9px;
-    font-family:var(--mono); font-size:11.5px; color:var(--ink-soft);
-  }
-  .switch .track{
-    width:34px; height:18px; border-radius:20px;
-    background:var(--rule);
-    position:relative;
-    flex:none;
-  }
-  .switch .track::after{
-    content:""; position:absolute; top:2px; right:2px;
-    width:14px; height:14px; border-radius:50%;
-    background:var(--card); box-shadow:0 1px 2px rgba(0,0,0,.25);
-  }
-  .addon p.desc{ color:var(--ink-soft); margin:10px 0 20px; max-width:62ch; }
-  .addon-actions{ display:flex; gap:12px; flex-wrap:wrap; }
-  .fakebtn{
-    font-size:13.5px;
-    padding:10px 18px;
-    border-radius:20px;
-    border:1px solid var(--card-border);
-    color:var(--ink-soft);
-    background:transparent;
-    font-family:var(--sans);
-  }
-
   /* ---------- glossary ---------- */
   dl.gloss{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:18px 28px; margin:0; }
   dl.gloss div{ border-inline-start:2px solid var(--rule); padding-inline-start:14px; }
@@ -292,194 +274,142 @@
 
 <nav class="toc" id="toc">
   <a href="#flow"><span class="dot"></span>איך זה עובד</a>
-  <a href="#strategies"><span class="dot"></span>חמש שיטות בחירה</a>
+  <a href="#playbooks"><span class="dot"></span>ארבעה פלייבוקים</a>
+  <a href="#ladder"><span class="dot"></span>סולם הדרגות</a>
   <a href="#data"><span class="dot"></span>על מה זה מסתכל</a>
-  <a href="#watchlist"><span class="dot"></span>רשימת מעקב למחר</a>
   <a href="#honesty"><span class="dot"></span>מגבלות בכנות</a>
-  <a href="#addon"><span class="dot"></span>בדיקה מול היסטוריה</a>
   <a href="#gloss"><span class="dot"></span>מילון קצר</a>
 </nav>
 
 <div class="wrap">
 
   <div class="hero">
-    <p class="eyebrow">TradeSense · מסמך הסבר</p>
-    <h1>איך המערכת בוחרת מניות — בלי הפרזות</h1>
-    <p class="lede">מסמך אחד, בעברית פשוטה, שמסביר מה TradeSense עושה בפועל, על אילו נתונים היא מסתכלת, ומה היא <b>לא</b> — לפני שקוראים לזה "המלצת השקעה".</p>
+    <p class="eyebrow">TradeSense v2 · מסמך הסבר</p>
+    <h1>איך המערכת בונה תוכניות מסחר — בלי הפרזות</h1>
+    <p class="lede">מסמך אחד, בעברית פשוטה, שמסביר מה TradeSense עושה בפועל, על אילו נתונים היא מסתמכת, ומה היא <b>לא</b> — לפני שקוראים לזה "המלצת השקעה".</p>
   </div>
 
   <section id="flow">
     <h2><span class="num">01</span>איך זה עובד, מקצה לקצה</h2>
-    <p class="section-sub">כל סריקה עוברת חמישה שלבים קבועים, באותו סדר, על כל מניה בבורסה שנבחרה.</p>
+    <p class="section-sub">כל סריקה עוברת שבעה שלבים קבועים. ההבדל המהותי מגרסה קודמת: התוצר הוא <b>תוכנית מסחר שלמה</b>, לא רק דירוג — מועמד בלי תוכנית יציאה תקינה נפסל ולא מוצג בכלל.</p>
     <div class="flow">
-      <div class="flow-step"><span class="k">קלט</span><h3>בחירת פרמטרים</h3><p>בורסה, רמת סיכון, שיטת השקעה ופילטרים — כולם נבחרים על ידך בטופס.</p></div>
-      <div class="flow-step"><span class="k">מאגר</span><h3>רשימת מניות</h3><p>נבנית פעם בלילה ונשמרת לדיסק, כדי שהסריקה היומית לא תלויה בזמינות רגעית של ספק נתונים.</p></div>
-      <div class="flow-step"><span class="k">סינון</span><h3>פילטרים קשיחים</h3><p>מניות שלא עומדות בסף (למשל שווי שוק, מחיר מינימלי, תנודתיות) נפסלות לגמרי — לא מדורגות נמוך, נעלמות.</p></div>
-      <div class="flow-step"><span class="k">ניקוד</span><h3>חישוב לפי שיטה</h3><p>כל מניה שנשארה מקבלת ציון 0–1 לפי הנוסחה של השיטה שנבחרה (פירוט בסעיף הבא).</p></div>
-      <div class="flow-step"><span class="k">פלט</span><h3>עד 10 תוצאות</h3><p>ממוינות מהגבוה לנמוך, כל אחת עם הסבר קצר בעברית למה היא הגיעה לרשימה.</p></div>
-    </div>
-    <div class="callout good" style="margin-top:20px;">
-      <h4>המערכת "מתאמנת" גם בלי שלוחצים על כלום</h4>
-      <p>כל ערב, באותו מנגנון שמכין את "רשימת המעקב למחר" (סעיף 04), המערכת מריצה גם סריקת-צל שקטה על חמש השיטות ושומרת את התוצאות — כדי לבנות עם הזמן תמונה אמיתית של מי מהשיטות באמת מנצחת (ראו "ליגת האסטרטגיות" בסעיף הבא). זו הקלטת נתונים בלבד: שום מסחר לא מתבצע ושום המלצה לא נשלחת מעצמה.</p>
+      <div class="flow-step"><span class="k">שלב 1</span><h3>שער נזילות</h3><p>נפסלות מניות שלא סחירות מספיק (מחיר, נפח, תנודתיות) כדי בכלל לתכנן עליהן עסקה.</p></div>
+      <div class="flow-step"><span class="k">שלב 2</span><h3>קטליזטור</h3><p>יש סיבה אמיתית לתנועה? דוח, חדשות, גאפ. בלי סיבה מזוהה — מסומן כאזהרה, לא כאיכות.</p></div>
+      <div class="flow-step"><span class="k">שלב 3</span><h3>בחירה לפי נפח</h3><p>המניות עם הנפח היחסי הגבוה ביותר היום, ביחס לרגיל שלהן.</p></div>
+      <div class="flow-step"><span class="k">שלב 4</span><h3>פלייבוקים</h3><p>כל מניה נבדקת מול ארבע לוגיקות מסחר קבועות (סעיף הבא).</p></div>
+      <div class="flow-step"><span class="k">שלב 5</span><h3>מנוע יציאה</h3><p>כניסה, סטופ, יעד, ומתי לצאת אם כלום לא קרה. בלי תוכנית תקינה — אין מועמד.</p></div>
+      <div class="flow-step"><span class="k">שלב 6</span><h3>משטר שוק</h3><p>המדד הכללי בודק אם בכלל מותר להשתמש ברמת הסיכון הכי גבוהה היום.</p></div>
+      <div class="flow-step"><span class="k">שלב 7</span><h3>יומן (ledger)</h3><p>כל מועמד שהוצג נרשם אוטומטית, והתוצאה שלו נבדקת בהמשך מול המחיר האמיתי.</p></div>
     </div>
   </section>
 
-  <section id="strategies">
-    <h2><span class="num">02</span>חמש שיטות בחירה</h2>
-    <p class="section-sub">"שיטת השקעה" בטופס היא בעצם נוסחת ניקוד שונה — כל אחת שמה דגש על תמהיל אחר של מגמה, מומנטום, נפח מסחר וחוזק יחסי מול השוק. כמה מהן נועלות מניה על 0 אם היא לא עוברת סף כניסה בסיסי, לפני שהניקוד בכלל נכנס לתמונה. <b>לכל תוצאה, בכל שיטה,</b> מצורף גם "מסגור סיכון" טכני — מרחק סטופ מוצע לפי טווח התנודה היומי של המניה עצמה, ויחס סיכוי/סיכון — חישוב, לא המלצה לפעולה.</p>
+  <section id="playbooks">
+    <h2><span class="num">02</span>ארבעה פלייבוקים</h2>
+    <p class="section-sub">"פלייבוק" הוא לוגיקת מסחר קבועה עם שער כניסה, סטופ ויעד — לא ניחוש. לכל אחד <b>דירוג עוצמת ראיות</b> משלו: כמה ספרות מקצועית באמת תומכת בו, לא כמה הוא נשמע משכנע.</p>
     <div class="grid-2">
       <div class="card">
-        <h3>Micha Stocks <span class="tag">טווח ארוך</span></h3>
-        <p>מחפשת יציבות: מגמת עלייה מעל ממוצע 200 יום, קרבה לשיא השנתי, ונפח מסחר תומך. משלבת גם צמיחת הכנסות שנתית בפועל — לא רק גודל חברה.</p>
+        <h3>PEAD <span class="tag evidence-strong">ראיות חזקות</span></h3>
+        <p>דריפט אחרי הפתעת רווחים: מניה שהפתיעה משמעותית בדוח נוטה להמשיך לזוז באותו כיוון שבועות אחרי. התופעה המתועדת ביותר בסט — מ-1968 — אך נחלשת עם השנים ורגישה לעלויות מסחר.</p>
+        <div class="gate">שער: הפתעת רווחים <b>5%+</b>, תגובה של <b>+2%</b> ביום הדוח.</div>
       </div>
       <div class="card">
-        <h3>Mark Minervini <span class="tag">מומנטום טכני</span></h3>
-        <p>ה"תבנית מגמה" הקלאסית: מחיר מעל שני הממוצעים בסדר הנכון (50 מעל 200), רחוק משמעותית מהשפל השנתי, קרוב לשיא, וחוזק יחסי גבוה מול המדד — לרוב אחרי תקופת התכנסות (VCP).</p>
+        <h3>היפוך קצר-טווח <span class="tag evidence-moderate">ראיות בינוניות-חזקות</span></h3>
+        <p>מניה במגמת עלייה ארוכה שנפלה חדות וממכירת-יתר, וסביר שתתאושש. עובד דווקא כשמומנטום נכשל — לכן מוסיף גיוון אמיתי, לא רעיון כפול.</p>
+        <div class="gate">שער בטיחות מוחלט: <b>מחיר מעל ממוצע 200 יום</b>.</div>
       </div>
       <div class="card">
-        <h3>Ross Cameron <span class="tag">קצר טווח</span></h3>
-        <p>מומנטום חד ביום המסחר: שינוי יומי גדול, נפח חריג, קרבה לשיא היום, עם העדפה למניות float נמוך — מספר מניות סחיר אמיתי כשיש (מ-Finnhub/FMP, ל-10 הפינליסטים בלבד), אחרת קירוב גס לפי שווי שוק. מסומן בתוצאה איזה מהשניים שימש. גם מסומן דגל "דוח בקרוב" / "חדשות אחרונות" — לידיעה בלבד, לא משפיע על הציון.</p>
+        <h3>המשך גאפ <span class="tag evidence-weak">ראיות חלשות</span></h3>
+        <p>מניה שקפצה בפתיחה על נפח וחדשות אמיתיות נוטה להמשיך לרוץ. המקור הוא בלוגים מסחריים, <b>לא מחקר שפיט</b> — הראיה החלשה ביותר בסט, ומתויגת ככזו בכל מקום שהיא מוצגת.</p>
+        <div class="gate">גאפ ללא קטליזטור מזוהה <b>נדחה תמיד</b>.</div>
       </div>
       <div class="card">
-        <h3>Swing Momentum <span class="tag">פריצות</span></h3>
-        <p>שני תת-מבנים: פריצה מקונסולידציה צמודה בנפח גבוה, או גאפ חד על קטליזטור ("Episodic Pivot"). המניה מדורגת לפי מה שמתאים לה יותר. גם כאן מסומנים דגלי דוח-קרוב/חדשות, ואפשר להפעיל "סריקה רחבה" (אלפי מניות במקום כמה עשרות, עם המתנה ארוכה יותר).</p>
-        <div class="gate">סף כניסה: <b>ADR ≥ 3.5%</b> ומחיר מעל ממוצע 200 יום — אחרת ציון 0.</div>
+        <h3>פריצת טווח פתיחה <span class="tag evidence-moderate">ראיות בינוניות</span></h3>
+        <p>פריצה מעל שיא 5 הדקות הראשונות של המסחר. מחקר אמיתי תומך, אבל ה-edge שלו הגיע כמעט כולו מפילטר בחירת המניות, לא מהתבנית עצמה — והמאמר הניח אפס עלויות ביצוע.</p>
+        <div class="gate"><b>כבוי כרגע</b> — דורש נתוני 5 דקות שלא מחוברים עדיין.</div>
       </div>
-      <div class="card">
-        <h3>Small-Cap Breakout <span class="tag">מניות קטנות</span></h3>
-        <p>פרופיל "מניה קטנה שיכולה לזוז עשרות אחוזים": פריצת נפח, תנועה יומית חדה, קרבה לשיא וחוזק יחסי — אך ורק על מניות שעומדות בסף. במצבי שוק דובי/תנודתי (על פני כמה ימים, לא רק היום) מוצגת אזהרה מפורשת שמבוססת על ממצאי backtest.</p>
-        <div class="gate">סף כניסה: <b>שווי שוק &lt; 2B$</b>, <b>מחיר ≥ 2$</b>, <b>ADR ≥ 5%</b>.</div>
-      </div>
+    </div>
+  </section>
+
+  <section id="ladder">
+    <h2><span class="num">03</span>סולם ארבע הדרגות — הדבר הכי חשוב להבין</h2>
+    <p class="section-sub">כל פלייבוק מתחיל כרעיון בלבד ומתקדם רק לפי ראיות שנצברו בפועל. <b>אין קיצור דרך בין הדרגות</b> — גם אם בדיקה היסטורית נראית מצוינת, אי אפשר לדלג ל"נמדד" בלי עסקאות אמיתיות.</p>
+    <div class="ladder">
+      <div class="ladder-step"><span class="n">דרגה 1</span><b>רעיון בלבד</b>אין נתונים כלל. אל תסחר.</div>
+      <div class="ladder-step"><span class="n">דרגה 2</span><b>נבדק היסטורית</b>100+ עסקאות על נתוני עבר. לא בכסף אמיתי.</div>
+      <div class="ladder-step"><span class="n">דרגה 3</span><b>נמדד חלקית</b>10+ עסקאות אמיתיות. חצי גודל, אוטומטית.</div>
+      <div class="ladder-step"><span class="n">דרגה 4</span><b>נמדד</b>30+ עסקאות אמיתיות. גודל מלא.</div>
+    </div>
+    <div class="callout good">
+      <h4>איך מקצרים המתנה בלי לרמות</h4>
+      <p>לצבור 30 עסקאות אמיתיות לוקח חודשים. כלי נפרד (<code>ledger:backfill</code>) מריץ את אותן לוגיקות בדיוק על נתונים היסטוריים — מאות "עסקאות" תוך שעות. אבל זו ראיה <b>חלשה יותר</b> (אין הטיית שרידות בזמן אמת, אין slippage אמיתי) — ולכן היא יכולה לקדם פלייבוק עד "נבדק היסטורית" בלבד, לעולם לא ל"נמדד".</p>
     </div>
   </section>
 
   <section id="data">
-    <h2><span class="num">03</span>על מה זה מסתבס בפועל</h2>
-    <p class="section-sub">שילוב של נתונים טכניים (מבוססי מחיר ונפח) ומעט נתונים פונדמנטליים. אין ניתוח סנטימנט, חדשות או דוחות כספיים מלאים.</p>
+    <h2><span class="num">04</span>על מה זה מסתמך בפועל</h2>
+    <p class="section-sub">שילוב של נתונים טכניים (מחיר ונפח) עם קטליזטורים אמיתיים (דוחות, חדשות). אין ניתוח סנטימנט מורכב ואין דוחות כספיים מלאים.</p>
     <div class="datalist">
       <div class="datarow">
-        <div class="label">ממוצעים נעים<small>MA50 / MA200</small></div>
-        <p>לזיהוי מגמה: האם המחיר מעל הממוצע, והאם הממוצע הקצר מעל הארוך (סדר "בריא" לפי מינרוויני).</p>
+        <div class="label">ATR14<small>Average True Range</small></div>
+        <p>טווח תנודה יומי ממוצע ב-14 ימים — הבסיס למרחק הסטופ בכל תוכנית מסחר. לא אחוז קבוע, אלא מותאם לתנודתיות של המניה עצמה.</p>
       </div>
       <div class="datarow">
-        <div class="label">טווח יומי ממוצע<small>ADR%</small></div>
-        <p>ממוצע תנודה יומית ב-20 הימים האחרונים. משמש כסף כניסה בסיסי לשיטות המומנטום — מניה "רדומה" נפסלת.</p>
+        <div class="label">ממוצעים נעים<small>MA20 / MA50 / MA200</small></div>
+        <p>לזיהוי מגמה ולקביעת יעדים (למשל, חזרה לממוצע 20 יום בהיפוך קצר-טווח).</p>
       </div>
       <div class="datarow">
-        <div class="label">יחס נפח מסחר<small>volume vs. avg 30d</small></div>
-        <p>נפח מסחר יומי מול הממוצע ב-30 יום — סימן לעניין חריג במניה באותו יום.</p>
+        <div class="label">נפח יחסי<small>RVOL</small></div>
+        <p>נפח היום מול הממוצע — השכבה שהמחקר מזהה כנושאת את רוב ה-edge. ⚠️ מבוסס על מקור נתונים חינמי שמכסה רק חלק מהשוק (ראו מגבלות למטה).</p>
       </div>
       <div class="datarow">
-        <div class="label">קרבה לשיא/שפל שנתי<small>52w high/low</small></div>
-        <p>כמה קרוב המחיר לשיא השנתי (פוטנציאל פריצה) וכמה רחוק מהשפל השנתי (סימן לחוזק, לא נפילה שמתאוששת רגעית).</p>
+        <div class="label">הפתעת רווחים<small>earnings surprise</small></div>
+        <p>הפרש בין רווח בפועל לתחזית האנליסטים — הקטליזטור המדיד ביותר במערכת, ליבת פלייבוק PEAD.</p>
       </div>
       <div class="datarow">
-        <div class="label">חוזק יחסי אמיתי<small>return 3m − SPY 3m</small></div>
-        <p>לא מדד פנימי — תשואת 3 חודשים של המניה בפועל, פחות תשואת ה-SPY לאותה תקופה. אם המניה לא מנצחת את השוק, זה נספג בציון.</p>
+        <div class="label">RSI14</div>
+        <p>מדד מכירת-יתר/קניית-יתר — משמש לזיהוי היפוכים אפשריים בפלייבוק ההיפוך הקצר-טווח.</p>
       </div>
       <div class="datarow">
-        <div class="label">שווי שוק וצמיחת הכנסות<small>market cap · revenue growth YoY</small></div>
-        <p>הפונדמנטלי היחיד שנכנס לניקוד: גודל החברה (לסינון small-cap) וצמיחת הכנסות שנתית בפועל (רק בשיטת Micha Stocks).</p>
+        <div class="label">משטר שוק<small>SPY מול MA200 + תנודתיות</small></div>
+        <p>כשהמדד הכללי במגמת ירידה, הרמה האגרסיבית ביותר נחסמת אוטומטית — לא מדרג מניות, חוסם רמות סיכון שלמות.</p>
       </div>
-      <div class="datarow">
-        <div class="label">מספר מניות סחיר<small>shares outstanding</small></div>
-        <p>ל-10 הפינליסטים בלבד בשיטת Ross Cameron: מספר אמיתי מ-Finnhub/FMP במקום קירוב גס לפי שווי שוק — לא "פרי-פלואט" מדויק (שאף ספק חינמי לא חושף), אבל מספר אמיתי בכל זאת.</p>
-      </div>
-      <div class="datarow">
-        <div class="label">קטליזטורים<small>דוח בקרוב · חדשות 48 שעות</small></div>
-        <p>לשיטות הקצרות בלבד, לתצוגה בלבד — לא נכנס לשום ציון. "יש דוח קרוב" הוא גם קטליזטור אפשרי וגם סיכון; "יש חדשות" הוא תזכורת לבדוק לפני החלטה, לא שיפוט אם החדשות טובות או רעות.</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="watchlist">
-    <h2><span class="num">04</span>רשימת מעקב למחר</h2>
-    <p class="section-sub">תכונה נפרדת לגמרי מהסריקה הראשית: כל ערב המערכת מכינה לבד, בלי שתלחץ על כלום, רשימה של עד 10 מניות קטנות-בינוניות שזזו חזק היום בנפח חריג — מועמדות אפשריות להמשך תנועה ("gap and go") בפתיחת המסחר מחר.</p>
-    <div class="grid-2">
-      <div class="card">
-        <h3>איך זה נשאר בתקציב <span class="tag">משפך תלת-שלבי</span></h3>
-        <p>שירותי הנתונים מוגבלים במכסה יומית, אז המערכת לא בודקת כל מניה לעומק מההתחלה: מבט רחב וזול על אלפי מניות ← מבט בינוני על כמה מאות ← מבט מדוקדק (שווי שוק, דוח כספים קרוב) רק על 10–20 הפינליסטים שבאמת שרדו.</p>
-      </div>
-      <div class="card">
-        <h3>לומד מהתוצאות שלך <span class="tag">Breakout Likelihood</span></h3>
-        <p>אפשר לרשום ליד כל שורה את מחיר הפתיחה בפועל למחרת. אחרי כמה תיעודים (מינימום 5) המערכת משווה כל מועמד חדש לתיעודים דומים שקדמו לו, ומציגה "כמה פעמים דפוס דומה נגמר בפער חיובי" — שקוף ופשוט, לא מודל "קופסה שחורה".</p>
-      </div>
-      <div class="card">
-        <h3>עדכון לפי פרה-מרקט <span class="tag">ביוזמתך בלבד</span></h3>
-        <p>כפתור אחד שולף תמונת מצב חיה של הרשימה כולה ומדרג מחדש לפי הגאפ בפועל עכשיו, במקום התחזית מאמש — כל מועמד מסומן "גאפ מאושר" (החזיק) או "גאפ נחלש" (התהפך/דעך), או "אין נתון" אם לא התקבל דיווח. לא רץ אוטומטית; אם אין חיבור מתאים, הרשימה פשוט נשארת כפי שהייתה.</p>
-      </div>
-    </div>
-    <div class="callout" style="margin-top:16px;">
-      <h4>נתוני סוף יום, לא זמן אמת</h4>
-      <p>הרשימה מבוססת על מחיר הסגירה של היום. לפני כל החלטה צריך לוודא מול המחיר האמיתי בפתיחת המסחר מחר (או ללחוץ "עדכן לפי פרה-מרקט" למעלה) — וכל מניה עם דוח כספים קרוב מסומנת בדגל, כי זה יכול להיות גם הזדמנות וגם סיכון.</p>
     </div>
   </section>
 
   <section id="honesty">
     <h2><span class="num">05</span>מגבלות — בכנות</h2>
-    <p class="section-sub">חשוב להבין מה המערכת <b>לא</b> עושה, לפני שמסתכלים על תוצאה בודדת כעל "המלצה".</p>
+    <p class="section-sub">חשוב להבין מה המערכת <b>לא</b> עושה, לפני שמסתכלים על מועמד בודד כעל "המלצה".</p>
     <div class="callout">
       <h4>זו לא ייעוץ השקעות</h4>
-      <p>הניקוד הוא נוסחה טכנית קבועה מראש, לא חוות דעת של יועץ מוסמך. עבר לא מבטיח עתיד, וזו בדיוק הסיבה שיש בהמשך כלי לבדוק זאת.</p>
+      <p>כל תוכנית היא נוסחה טכנית קבועה מראש, לא חוות דעת של יועץ מוסמך. עבר לא מבטיח עתיד.</p>
     </div>
     <div class="callout">
-      <h4>נתונים חלקיים אפשריים</h4>
-      <p>ספקי הנתונים (Alpaca / Nasdaq / Finnhub / FMP) עלולים להחזיר שדות חסרים בגלל מגבלות API. במקרה כזה חלק מהשדות מחושבים מתוך ערך פנימי (imputed) — התוצאה עדיין מוצגת, אך רמת הביטחון בה יורדת.</p>
-    </div>
-    <div class="callout good">
-      <h4>"ציון הזדמנות" — נוסחה, ולפעמים גם מדידה אמיתית</h4>
-      <p>הציון הבסיסי הוא תמיד נוסחה יחסית, לא הסתברות סטטיסטית. אבל המערכת שומרת כל סריקה (כולל סריקות-צל ליליות) ובודקת בדיעבד מה קרה בפועל — כשיש מספיק דגימות דומות (10 ומעלה, ב-90 הימים האחרונים), התוצאה מציגה "נמדד: X מתוך Y עלו מעל השוק" במקום הנוסחה בלבד. שני המצבים מסומנים במפורש, כדי שלא יתבלבלו.</p>
+      <h4>מקור הנתונים מכסה רק חלק מהשוק</h4>
+      <p>נמדד בפועל: מניה כמו מיקרוסופט מראה נפח של כ-1 מיליון מניות ביום דרך המקור החינמי (iex), לעומת 20-30 מיליון בפועל — כ-4% מהשוק האמיתי. המשמעות: שער הנזילות פוסל היום חלק ניכר מהשוק, כולל מניות ענק סחירות מאוד. זו מגבלה מתועדת ומודעת, לא באג, וקיימת אפשרות לשדרוג עתידי.</p>
     </div>
     <div class="callout">
-      <h4>מצב שוק יכול "לרסן" המלצה בסיכון גבוה</h4>
-      <p>ב-Small-Cap Breakout וב-Swing Momentum, כשמצב השוק (על פני כמה ימים, לא רק היום) הוא דובי או תנודתי, מוצגת אזהרה שמפנה לממצאי backtest אמיתיים — הסריקה לא נחסמת, רק מתומחרת בהתאם.</p>
+      <h4>אין "תשואה צפויה" ואין "אחוז הצלחה"</h4>
+      <p>המספרים שמוצגים בכל תוכנית נובעים מתמטית מהמרחק בין הכניסה ליעד — לא תחזית. אחוז הצלחה מוצג רק אחרי שיש עשרות עסקאות אמיתיות מאחורי הפלייבוק (סולם הדרגות למעלה).</p>
     </div>
     <div class="callout">
       <h4>אין רשת ביטחון של "מסחר אמיתי"</h4>
-      <p>שום חלק במערכת לא מתחבר לברוקר או מבצע פעולת קנייה/מכירה בפועל. הפלט הוא רשימה מדורגת ותו לא.</p>
-    </div>
-  </section>
-
-  <section id="addon">
-    <h2><span class="num">06</span>בדיקה מול היסטוריה — תוסף אופציונלי</h2>
-    <p class="section-sub">תוסף חדש, מקומי בלבד, שמריץ בדיקה נתונים היסטוריים דרך כלי חיצוני (Vibe-Trading) — <b>אך ורק בלחיצת כפתור</b>, אף פעם לא אוטומטית על סריקה.</p>
-    <div class="addon">
-      <div class="addon-head">
-        <h3>שני כפתורים, שני סוגי שאלה</h3>
-        <div class="switch"><span class="track"></span>כבוי כברירת מחדל</div>
-      </div>
-      <p class="desc">
-        <b>"בדוק היסטורית"</b> ליד מניה בודדת בתוצאות — שואל: מה <i>המניה הזו עצמה</i> עשתה בעבר, כשהראתה תבנית דומה לחוקי השיטה שנבחרה?
-        <br>
-        <b>"בדוק תאוריה היסטורית"</b> ליד סרגל התוצאות — שואל שאלה רחבה יותר: איך <i>החוקים עצמם</i> של השיטה הנבחרת ביצעו על מדגם קבוע של מניות ב-3 השנים האחרונות.
-      </p>
-      <div class="addon-actions">
-        <span class="fakebtn">בדוק היסטורית ↗</span>
-        <span class="fakebtn">בדוק תאוריה היסטורית ↗</span>
-      </div>
-    </div>
-    <div class="callout good" style="margin-top:16px;">
-      <h4>למה זה מוגבל בכוונה</h4>
-      <p>הבדיקה רצה רק בפיתוח מקומי, לא קיימת בכלל בסביבת הענן, ולא נוגעת בשום חיבור למסחר אמיתי. "בדוק תאוריה היסטורית" בונה כיום את מדגם המניות אוטומטית מה-universe הלילי האמיתי של המערכת (לא רשימה שנבחרה ידנית) — כשזה לא זמין, נופל בחזרה לרשימה קבועה ומציין זאת בפירוש בדוח שמוצג. גם ככה, זה עדיין מדגם יחסית קבוע, לא universe טרי בכל ריצה — פירוט מלא ב-docs/BACKTEST_FINDINGS.md.</p>
+      <p>שום חלק במערכת לא מתחבר לברוקר או מבצע פעולת קנייה/מכירה בפועל. הפלט הוא רשימת תוכניות ותו לא.</p>
     </div>
   </section>
 
   <section id="gloss">
-    <h2><span class="num">07</span>מילון קצר</h2>
+    <h2><span class="num">06</span>מילון קצר</h2>
     <dl class="gloss">
-      <div><dt>ADR%</dt><dd>טווח תנודה יומי ממוצע — מדד לכמה "חיה" המניה ביום מסחר רגיל.</dd></div>
-      <div><dt>MA50 / MA200</dt><dd>ממוצע נע של המחיר על פני 50 או 200 ימי מסחר — מייצג מגמה.</dd></div>
-      <div><dt>Relative Strength</dt><dd>תשואת המניה פחות תשואת המדד (SPY) לאותה תקופה — האם המניה "מנצחת" את השוק.</dd></div>
-      <div><dt>VCP / Consolidation</dt><dd>תקופת התכנסות מחיר בטווח מצטמצם, לרוב לפני פריצה.</dd></div>
-      <div><dt>Episodic Pivot</dt><dd>גאפ חד על קטליזטור (חדשות/דוחות) בנפח חריג — סוג אחר של הזדמנות מפריצה רגילה.</dd></div>
-      <div><dt>imputedFields</dt><dd>שדות שחושבו מקירוב פנימי כי הספק לא החזיר נתון אמיתי — משפיע על ציון הביטחון.</dd></div>
-      <div><dt>סטופ (Stop)</dt><dd>מחיר שבו, אם המניה יורדת אליו, נהוג לצאת מהפוזיציה כדי לעצור הפסד — כאן מוצע לפי טווח התנודה היומי (ADR) של המניה עצמה.</dd></div>
-      <div><dt>יחס סיכוי/סיכון (R)</dt><dd>הפוטנציאל הצפוי חלקי מרחק הסטופ — יחס של 3 אומר "פוטנציאל עלייה גדול פי 3 ממרחק הסטופ", לא הבטחה.</dd></div>
-      <div><dt>Regime מוחלק</dt><dd>מצב השוק, אחרי החלקה על פני עד 3 הימים האחרונים — כדי שלא יתהפך בין שתי סריקות באותו יום.</dd></div>
+      <div><dt>ATR14</dt><dd>טווח תנודה אמיתי ממוצע — הבסיס למרחק הסטופ בכל תוכנית.</dd></div>
+      <div><dt>R (יחס סיכוי/סיכון)</dt><dd>היעד חלקי מרחק הסטופ. יעד של 3R = פוטנציאל עלייה גדול פי 3 ממרחק הסטופ.</dd></div>
+      <div><dt>Time-stop</dt><dd>יציאה מתוזמנת אם המחיר לא הגיע ליעד ולא נגע בסטופ תוך פרק זמן קבוע.</dd></div>
+      <div><dt>Playbook (פלייבוק)</dt><dd>לוגיקת מסחר קבועה עם שער כניסה, סטופ ויעד משלה — לא ניחוש.</dd></div>
+      <div><dt>Backfill (מילוי היסטורי)</dt><dd>הרצת אותן לוגיקות על נתונים מהעבר כדי לקצר את זמן ההמתנה לראיה ראשונית — ראיה חלשה יותר מנתונים קדימה.</dd></div>
+      <div><dt>Ledger (יומן)</dt><dd>רישום אוטומטי של כל מועמד שהוצג, עם תוצאה שנבדקת בהמשך מול המחיר האמיתי.</dd></div>
     </dl>
   </section>
 
-  <footer>TradeSense — מסמך הסבר · מבוסס על הקוד בפועל בריפו, לא על תיאור שיווקי</footer>
+  <footer>TradeSense v2 — מסמך הסבר · מבוסס על הקוד בפועל בריפו, לא על תיאור שיווקי</footer>
 </div>
 
 <script>
