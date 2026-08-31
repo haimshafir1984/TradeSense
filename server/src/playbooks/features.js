@@ -104,7 +104,13 @@ function computeHighLow(bars, period) {
 function computeFeaturesFromBars(bars) {
   const safeBars = Array.isArray(bars) ? bars : [];
   const last = safeBars[safeBars.length - 1];
+  const previous = safeBars[safeBars.length - 2];
   const price = Number(last?.c);
+  const previousClose = Number(previous?.c);
+  const dailyChangePct =
+    Number.isFinite(price) && Number.isFinite(previousClose) && previousClose > 0
+      ? ((price - previousClose) / previousClose) * 100
+      : null;
   const closes = safeBars.map((bar) => Number(bar?.c));
 
   const range52w = computeHighLow(safeBars, 252);
@@ -114,7 +120,9 @@ function computeFeaturesFromBars(bars) {
     barCount: safeBars.length,
     price: Number.isFinite(price) ? price : null,
     volume: Number.isFinite(Number(last?.v)) ? Number(last.v) : null,
+    dailyChangePct,
     atr14: computeAtr(safeBars, 14),
+    ma20: simpleMovingAverage(safeBars, 20),
     ma50: simpleMovingAverage(safeBars, 50),
     ma200: simpleMovingAverage(safeBars, 200),
     ma50Slope: computeMa50Slope(safeBars),

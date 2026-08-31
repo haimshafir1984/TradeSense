@@ -17,6 +17,17 @@ function average(values = []) {
   return filtered.reduce((total, value) => total + value, 0) / filtered.length;
 }
 
+// Linear-maps value into [0,1] over [min,max], clamped at both ends. Used by playbooks (§5.3) to
+// turn a raw measurement (e.g. an earnings surprise of 12%) into a 0-1 conviction factor - never a
+// probability, just a relative-strength scale for internal ranking.
+function normalize(value, min, max) {
+  if (!Number.isFinite(value) || max <= min) {
+    return 0;
+  }
+
+  return clamp((value - min) / (max - min));
+}
+
 function median(values = []) {
   const filtered = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
 
@@ -97,6 +108,7 @@ module.exports = {
   round,
   average,
   median,
+  normalize,
   scoreConsolidation,
   computeRsi,
   computeTrailingReturnPct
