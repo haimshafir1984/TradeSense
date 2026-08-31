@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 
 const { PLAYBOOKS, getPlaybook, listPlaybooks } = require('../src/playbooks/index');
 
-test('the registry contains pead_drift and short_term_reversal (phase 4)', () => {
+test('the registry contains pead_drift, short_term_reversal, and gap_continuation (phases 4-5)', () => {
   const keys = PLAYBOOKS.map((playbook) => playbook.key);
   assert.ok(keys.includes('pead_drift'));
   assert.ok(keys.includes('short_term_reversal'));
+  assert.ok(keys.includes('gap_continuation'));
 });
 
 test('getPlaybook returns the matching playbook or null for an unknown key', () => {

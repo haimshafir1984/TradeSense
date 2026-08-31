@@ -106,10 +106,18 @@ function computeFeaturesFromBars(bars) {
   const last = safeBars[safeBars.length - 1];
   const previous = safeBars[safeBars.length - 2];
   const price = Number(last?.c);
+  const open = Number(last?.o);
   const previousClose = Number(previous?.c);
   const dailyChangePct =
     Number.isFinite(price) && Number.isFinite(previousClose) && previousClose > 0
       ? ((price - previousClose) / previousClose) * 100
+      : null;
+  // Gap from the prior close to the LAST BAR'S OWN open - a bar-based approximation of a premarket
+  // gap, distinct from catalystService's live-snapshot premarketGapPct (playbooks/gapContinuation.js
+  // prefers the live figure when available and falls back to this for offline/backfill use).
+  const gapPct =
+    Number.isFinite(open) && Number.isFinite(previousClose) && previousClose > 0
+      ? ((open - previousClose) / previousClose) * 100
       : null;
   const closes = safeBars.map((bar) => Number(bar?.c));
 
@@ -119,8 +127,10 @@ function computeFeaturesFromBars(bars) {
   return {
     barCount: safeBars.length,
     price: Number.isFinite(price) ? price : null,
+    open: Number.isFinite(open) ? open : null,
     volume: Number.isFinite(Number(last?.v)) ? Number(last.v) : null,
     dailyChangePct,
+    gapPct,
     atr14: computeAtr(safeBars, 14),
     ma20: simpleMovingAverage(safeBars, 20),
     ma50: simpleMovingAverage(safeBars, 50),
