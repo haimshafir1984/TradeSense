@@ -1,0 +1,85 @@
+const alpaca = require("../providers/alpacaService");
+const store = require("./store");
+function nyDate(time = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(time));
+}
+function nyTimestamp(date, hhmm) {
+  const guess = Date.parse(`${date}T${hhmm}:00Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(guess));
+  const actual =
+    Number(parts.find((p) => p.type === "hour").value) * 60 +
+    Number(parts.find((p) => p.type === "minute").value);
+  const [h, m] = hhmm.split(":").map(Number);
+  return guess + ((h * 60 + m - actual + 1440) % 1440) * 60000;
+}
+async function sessions(now = Date.now()) {
+  const today = nyDate(now);
+  let cached = store.get("cache", "calendar");
+  if (!cached || cached.date !== today) {
+    const start = nyDate(now - 40 * 86400000),
+      end = nyDate(now + 20 * 86400000);
+    const rows = await alpaca.getCalendar(start, end);
+    if (!Array.isArray(rows) || !rows.length)
+      throw new Error("לוח המסחר אינו זמין; איתותים חדשים הושהו");
+    cached = { date: today, rows };
+    store.put("cache", "calendar", cached);
+  }
+  return cached.rows.map((s) => ({
+    date: s.date,
+    open: nyTimestamp(s.date, s.open.slice(0, 5)),
+    close: nyTimestamp(s.date, s.close.slice(0, 5)),
+  }));
+}
+function freshPrice(snapshot, now, ageMs = 90000) {
+  const trade = snapshot?.latestTrade;
+  const time = Date.parse(trade?.t),
+    price = Number(trade?.p);
+  return price > 0 &&
+    Number.isFinite(time) &&
+    time <= now + 1000 &&
+    now - time <= ageMs
+    ? { price, time, at: new Date(time).toISOString() }
+    : null;
+}
+function openingRvol(bars, calendar, today, now) {
+  const elapsed =
+    Math.floor(Math.min(now - today.open, today.close - today.open) / 300000) *
+    300000;
+  if (elapsed < 900000) return null;
+  function volume(s) {
+    if (s.close - s.open < elapsed) return null;
+    const sample = bars.filter(
+      (b) =>
+        Date.parse(b.t) >= s.open &&
+        Date.parse(b.t) + 300000 <= s.open + elapsed,
+    );
+    if (
+      sample.length !== elapsed / 300000 ||
+      sample.some(
+        (b, i) => Date.parse(b.t) !== s.open + i * 300000 || !(b.v > 0),
+      )
+    )
+      return null;
+    return sample.reduce((sum, b) => sum + b.v, 0);
+  }
+  const current = volume(today);
+  const history = calendar
+    .filter((s) => s.open < today.open)
+    .slice(-14)
+    .map(volume)
+    .filter((v) => v > 0);
+  return current > 0 && history.length >= 5
+    ? current / (history.reduce((a, b) => a + b, 0) / history.length)
+    : null;
+}
+module.exports = { nyDate, nyTimestamp, sessions, freshPrice, openingRvol };

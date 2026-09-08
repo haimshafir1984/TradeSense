@@ -10,3 +10,7 @@ server/src/data/universeCache.json
 server/src/data/regimeHistory.json
 server/src/data/researchBars.json
 server/src/data/ledger.json
+server/src/data/*.sqlite*
+output/
+.playwright-cli/
+.npm-cache/

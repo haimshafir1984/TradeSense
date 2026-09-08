@@ -9,6 +9,7 @@ const BASE_URL = 'https://finnhub.io/api/v1';
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 50;
 let requestTimestamps = [];
+let requestQueue = Promise.resolve();
 
 function isConfigured() {
   return Boolean(process.env.FINNHUB_API_KEY);
@@ -31,8 +32,18 @@ async function throttle() {
 
 async function fetchFinnhub(url, label) {
   try {
-    await throttle();
-    const response = await fetch(url);
+    const slot = requestQueue.then(throttle);
+    requestQueue = slot.catch(() => {});
+    await slot;
+    let response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (response.status === 429) {
+      const delay = Math.min(60000, Math.max(2000, Number(response.headers?.get?.('retry-after') || 5) * 1000));
+      await new Promise(resolve => setTimeout(resolve, delay));
+      const retry = requestQueue.then(throttle);
+      requestQueue = retry.catch(() => {});
+      await retry;
+      response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    }
 
     if (!response.ok) {
       console.warn(`[finnhub] ${label} failed: HTTP ${response.status}`);

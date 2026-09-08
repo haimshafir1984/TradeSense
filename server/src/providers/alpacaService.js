@@ -32,6 +32,7 @@ const ALLOWED_EXCHANGES = new Set(['NASDAQ', 'NYSE']);
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 190;
 let requestTimestamps = [];
+let throttleQueue = Promise.resolve();
 
 // Alpaca's bars endpoint has a practical URL-length limit; splitting symbols into chunks keeps
 // every request well under it regardless of how large the universe gets.
@@ -95,8 +96,10 @@ async function throttle() {
 
 async function fetchAlpaca(url, label) {
   try {
-    await throttle();
-    const response = await fetch(url, { headers: authHeaders() });
+    const slot = throttleQueue.then(throttle);
+    throttleQueue = slot.catch(() => {});
+    await slot;
+    const response = await fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(15000) });
 
     if (!response.ok) {
       console.warn(`[alpaca] ${label} failed: HTTP ${response.status}`);
@@ -321,5 +324,33 @@ module.exports = {
   getDailyBars,
   getLatestDailyBars,
   getIntradayBars,
-  getSnapshots
+  getSnapshots,
+  getClock,
+  getCalendar,
+  openStream
 };
+
+async function getClock() {
+  return isConfigured() ? fetchAlpaca(`${tradingBaseUrl()}/v2/clock`, 'clock') : null;
+}
+async function getCalendar(start, end) {
+  return isConfigured() ? fetchAlpaca(`${tradingBaseUrl()}/v2/calendar?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, 'calendar') : null;
+}
+// One connection per process; the engine owns resubscription and reconnection.
+function openStream(symbols, onData, onStatus) {
+  const socket = new WebSocket('wss://stream.data.alpaca.markets/v2/iex');
+  socket.addEventListener('open', () => socket.send(JSON.stringify({ action:'auth', key:process.env.ALPACA_API_KEY_ID, secret:process.env.ALPACA_API_SECRET_KEY })));
+  socket.addEventListener('message', event => {
+    try {
+      for (const item of JSON.parse(event.data)) {
+        if (item.T === 'success' && item.msg === 'authenticated') socket.send(JSON.stringify({ action:'subscribe', trades:symbols, quotes:symbols, bars:symbols }));
+        else if (item.T === 'subscription') onStatus('connected');
+        else if (item.T === 'error') { onStatus('error'); socket.close(); }
+        else if (['t','q','b'].includes(item.T)) onData(item);
+      }
+    } catch { onStatus('error'); }
+  });
+  socket.addEventListener('error', () => onStatus('error'));
+  socket.addEventListener('close', () => onStatus('disconnected'));
+  return socket;
+}

@@ -1,3 +1,5 @@
+> **עדכון v3 — 8 בספטמבר 2026:** המוצר הפעיל נבנה מחדש לאיתותים ומעקב אוטומטיים עבור Blink. נקודת הכניסה העדכנית היא [SPEC_V3_AUTOPILOT.md](SPEC_V3_AUTOPILOT.md). התוכן למטה נשמר כתיעוד המערכת הקודמת; הוראות v2, תוצאות backfill ודרישת כניסה ידנית במשך 20 יום אינן מתארות את v3.
+
 # ממצאי Backtest — small_cap_breakout ו-swing_momentum (Vibe-Trading + DeepSeek)
 
 תאריך: 2026-07-18

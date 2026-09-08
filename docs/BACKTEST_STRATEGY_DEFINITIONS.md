@@ -1,3 +1,5 @@
+> **עדכון v3 — 8 בספטמבר 2026:** המוצר הפעיל נבנה מחדש לאיתותים ומעקב אוטומטיים עבור Blink. נקודת הכניסה העדכנית היא [SPEC_V3_AUTOPILOT.md](SPEC_V3_AUTOPILOT.md). התוכן למטה נשמר כתיעוד המערכת הקודמת; הוראות v2, תוצאות backfill ודרישת כניסה ידנית במשך 20 יום אינן מתארות את v3.
+
 # Backtest Strategy Definitions — TradeSense Historical Validation
 
 Purpose: feed these definitions to Vibe-Trading (running locally, DeepSeek-driven) to
