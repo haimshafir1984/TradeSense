@@ -14,7 +14,7 @@ function keys() {
   );
   return keys;
 }
-function subscribe(subscription) {
+function subscribe(userId, subscription) {
   let url;
   try {
     url = new URL(subscription?.endpoint);
@@ -41,30 +41,31 @@ function subscribe(subscription) {
   )
     throw new Error("שירות התראות לא נתמך");
   if (
-    store.list("subscription").length >= 10 &&
-    !store.get(
+    store.listUser(userId, "subscription").length >= 10 &&
+    !store.getUser(
+      userId,
       "subscription",
       createHash("sha256").update(url.href).digest("hex"),
     )
   )
     throw new Error("הגעת למגבלת המכשירים");
   const id = createHash("sha256").update(url.href).digest("hex");
-  store.put("subscription", id, {
+  store.putUser(userId, "subscription", id, {
     id,
     endpoint: url.href,
     keys: subscription.keys,
   });
 }
-function event(id, title, body, type = "info") {
-  if (store.get("event", id)) return;
-  store.put("event", id, {
+function event(userId, id, title, body, type = "info") {
+  if (store.getUser(userId, "event", id)) return;
+  store.putUser(userId, "event", id, {
     id,
     title,
     body,
     type,
     createdAt: new Date().toISOString(),
   });
-  store.put("outbox", id, {
+  store.putUser(userId, "outbox", id, {
     id,
     title,
     body,
@@ -73,37 +74,43 @@ function event(id, title, body, type = "info") {
     nextAt: 0,
   });
 }
-async function flush() {
+async function flush(userIds) {
   keys();
-  for (const item of store.list("outbox").slice(0, 30)) {
-    if (item.nextAt > Date.now()) continue;
-    if (Date.now() - item.createdAt > 900000) {
-      store.remove("outbox", item.id);
-      continue;
-    }
-    let retry = false;
-    for (const sub of store.list("subscription")) {
-      if (store.get("delivery", `${item.id}:${sub.id}`)) continue;
-      try {
-        await webpush.sendNotification(
-          sub,
-          JSON.stringify({ id: item.id, title: item.title, body: item.body }),
-          { TTL: 300, timeout: 10000 },
-        );
-        store.put("delivery", `${item.id}:${sub.id}`, { at: Date.now() });
-      } catch (error) {
-        if ([404, 410].includes(error.statusCode))
-          store.remove("subscription", sub.id);
-        else retry = true;
+  const users = userIds || store.list("user").map((u) => u.id);
+  for (const userId of users) {
+    for (const item of store.listUser(userId, "outbox").slice(0, 30)) {
+      if (item.nextAt > Date.now()) continue;
+      if (Date.now() - item.createdAt > 900000) {
+        store.removeUser(userId, "outbox", item.id);
+        continue;
       }
+      let retry = false;
+      for (const sub of store.listUser(userId, "subscription")) {
+        if (store.getUser(userId, "delivery", `${item.id}:${sub.id}`))
+          continue;
+        try {
+          await webpush.sendNotification(
+            sub,
+            JSON.stringify({ id: item.id, title: item.title, body: item.body }),
+            { TTL: 300, timeout: 10000 },
+          );
+          store.putUser(userId, "delivery", `${item.id}:${sub.id}`, {
+            at: Date.now(),
+          });
+        } catch (error) {
+          if ([404, 410].includes(error.statusCode))
+            store.removeUser(userId, "subscription", sub.id);
+          else retry = true;
+        }
+      }
+      if (retry && item.attempts < 4)
+        store.putUser(userId, "outbox", item.id, {
+          ...item,
+          attempts: item.attempts + 1,
+          nextAt: Date.now() + 60000,
+        });
+      else store.removeUser(userId, "outbox", item.id);
     }
-    if (retry && item.attempts < 4)
-      store.put("outbox", item.id, {
-        ...item,
-        attempts: item.attempts + 1,
-        nextAt: Date.now() + 60000,
-      });
-    else store.remove("outbox", item.id);
   }
 }
 module.exports = { keys, subscribe, event, flush };

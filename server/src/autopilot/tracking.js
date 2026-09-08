@@ -16,10 +16,10 @@ function executionTime(input, earliest, now) {
     );
   return value;
 }
-function personalEntry(signalId, input, now = Date.now()) {
+function personalEntry(userId, signalId, input, now = Date.now()) {
   positive(input.price, "מחיר");
   positive(input.shares, "כמות");
-  const signal = store.get("signal", signalId);
+  const signal = store.getUser(userId, "signal", signalId);
   if (!signal) throw new Error("האיתות לא נמצא");
   now = executionTime(input, signal.createdAt, now);
   if (input.price <= signal.stop || input.price >= signal.target)
@@ -37,7 +37,7 @@ function personalEntry(signalId, input, now = Date.now()) {
   return store.transaction(() => {
     if (
       store
-        .list("trade")
+        .listUser(userId, "trade")
         .some(
           (t) =>
             t.signalId === signalId &&
@@ -46,9 +46,9 @@ function personalEntry(signalId, input, now = Date.now()) {
         )
     )
       throw new Error("כבר דיווחת על כניסה לאיתות זה");
-    const settings = config.read();
+    const settings = config.read(userId);
     const id = randomUUID();
-    return store.put("trade", id, {
+    return store.putUser(userId, "trade", id, {
       id,
       signalId,
       ticker: signal.ticker,
@@ -70,7 +70,7 @@ function personalEntry(signalId, input, now = Date.now()) {
     });
   });
 }
-function personalClose(id, input, now = Date.now()) {
+function personalClose(userId, id, input, now = Date.now()) {
   positive(input.price, "מחיר יציאה");
   if (
     input.fees != null &&
@@ -80,17 +80,17 @@ function personalClose(id, input, now = Date.now()) {
   )
     throw new Error("עמלה לא תקינה");
   return store.transaction(() => {
-    const trade = store.get("trade", id);
+    const trade = store.getUser(userId, "trade", id);
     if (!trade || trade.source !== "personal" || trade.status !== "open")
       throw new Error("עסקה פתוחה לא נמצאה");
     now = executionTime(input, trade.enteredAt, now);
-    return close(trade, input.price, "reported", now, input.fees);
+    return close(userId, trade, input.price, "reported", now, input.fees);
   });
 }
-function close(trade, price, reason, now, fees) {
+function close(userId, trade, price, reason, now, fees) {
   const exitFee = fees ?? config.fee(trade.shares, price, trade.feeMode);
   const pnl = (price - trade.entry) * trade.shares - trade.entryFee - exitFee;
-  return store.put("trade", trade.id, {
+  return store.putUser(userId, "trade", trade.id, {
     ...trade,
     status: "closed",
     exit: price,
@@ -111,7 +111,7 @@ function exitFromBar(trade, bar) {
   if (bar.h >= trade.target) return { price: trade.target, reason: "target" };
   return null;
 }
-function track(trade, bars, quote, now = Date.now()) {
+function track(userId, trade, bars, quote, now = Date.now()) {
   // Never use the whole entry candle (which contains pre-entry prices). A missing interval is
   // explicitly marked as unobserved; we never claim tick-accurate execution from OHLC bars.
   const since = Date.parse(trade.lastCheckedAt || trade.enteredAt);
@@ -148,6 +148,7 @@ function track(trade, bars, quote, now = Date.now()) {
   }
   if (!hit && now >= Date.parse(trade.deadline) && !quote) {
     notices.event(
+      userId,
       `overdue:${trade.id}`,
       "מועד היציאה הגיע",
       `${trade.ticker}: אין מחיר טרי; בדוק את העסקה ב־Blink`,
@@ -169,21 +170,22 @@ function track(trade, bars, quote, now = Date.now()) {
   if (hit && trade.source === "simulation") {
     const slippage =
       hit.reason === "target" ? 0 : (trade.slippagePct || 0) / 100;
-    return close(updated, hit.price * (1 - slippage), hit.reason, at);
+    return close(userId, updated, hit.price * (1 - slippage), hit.reason, at);
   }
   if (hit && trade.source === "personal") {
     updated.exitAlert = hit.reason;
     notices.event(
+      userId,
       `exit:${trade.id}:${hit.reason}`,
       "בדוק יציאה ב־Blink",
       `${trade.ticker}: ${hit.reason === "stop" ? "המחיר הגיע לסטופ" : hit.reason === "target" ? "המחיר הגיע ליעד" : "הגיע מועד היציאה"}. לא בוצעה מכירה.`,
       "exit",
     );
   }
-  store.put("trade", trade.id, updated);
+  store.putUser(userId, "trade", trade.id, updated);
   return updated;
 }
-function simulate(signal, quote, now = Date.now()) {
+function simulate(userId, signal, quote, now = Date.now()) {
   if (
     !signal.sizing?.feasible ||
     !quote ||
@@ -191,22 +193,22 @@ function simulate(signal, quote, now = Date.now()) {
     now >= Date.parse(signal.expiresAt)
   )
     return;
-  const settings = config.read();
+  const settings = config.read(userId);
   const entry = quote.price * (1 + settings.slippagePct / 100);
   if (entry < signal.entry || entry > signal.maxEntry || entry >= signal.target)
     return;
   const opened = store
-    .list("trade")
+    .listUser(userId, "trade")
     .filter((t) => t.source === "simulation" && t.status === "open");
   if (
     opened.some((t) => t.ticker === signal.ticker) ||
-    store.get("trade", `sim:${signal.id}`) ||
+    store.getUser(userId, "trade", `sim:${signal.id}`) ||
     opened.length >= settings.maxPositions
   )
     return;
   const today = nyDate(now);
   const loss = store
-    .list("trade")
+    .listUser(userId, "trade")
     .filter(
       (t) =>
         t.source === "simulation" &&
@@ -222,7 +224,7 @@ function simulate(signal, quote, now = Date.now()) {
   const sizing = config.size({ ...signal, entry }, settings, reserved);
   if (!sizing.feasible) return;
   const id = `sim:${signal.id}`;
-  store.put("trade", id, {
+  store.putUser(userId, "trade", id, {
     id,
     signalId: signal.id,
     ticker: signal.ticker,

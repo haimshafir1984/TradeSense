@@ -38,6 +38,23 @@ function put(kind, id, body) {
 function remove(kind, id) {
   database().prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, id);
 }
+function userKind(userId, kind) {
+  if (!userId || typeof userId !== "string" || userId.length > 80)
+    throw new Error("משתמש לא תקין");
+  return `user:${userId}:${kind}`;
+}
+function getUser(userId, kind, id) {
+  return get(userKind(userId, kind), id);
+}
+function listUser(userId, kind) {
+  return list(userKind(userId, kind));
+}
+function putUser(userId, kind, id, body) {
+  return put(userKind(userId, kind), id, body);
+}
+function removeUser(userId, kind, id) {
+  return remove(userKind(userId, kind), id);
+}
 function transaction(fn) {
   database().exec("BEGIN IMMEDIATE");
   try {
@@ -62,4 +79,16 @@ function close() {
     db = null;
   }
 }
-module.exports = { get, list, put, remove, transaction, lease, close };
+module.exports = {
+  get,
+  list,
+  put,
+  remove,
+  getUser,
+  listUser,
+  putUser,
+  removeUser,
+  transaction,
+  lease,
+  close,
+};

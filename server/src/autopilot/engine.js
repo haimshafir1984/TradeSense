@@ -4,6 +4,7 @@ const market = require("./market");
 const { STRATEGIES, evaluate } = require("./strategies");
 const tracking = require("./tracking");
 const notices = require("./notifications");
+const users = require("./users");
 const alpaca = require("../providers/alpacaService");
 const finnhub = require("../providers/finnhubService");
 const universe = require("../services/universeBuilderService");
@@ -106,11 +107,17 @@ async function scan(now, calendar, today) {
   scanRunning = true;
   state({ scanning: true });
   try {
-    const settings = config.read(),
-      rows = await prepare(now);
+    const profiles = users
+      .all()
+      .map((u) => ({ id: u.id, settings: config.read(u.id) }))
+      .filter((u) => u.settings.enabled);
+    if (!profiles.length) {
+      state({ lastScanAt: new Date().toISOString(), scanning: false });
+      return;
+    }
+    const rows = await prepare(now);
     const snap = await snapshots(rows.map((r) => r.symbol));
     const ranked = rows
-      .filter((r) => !settings.excludedSymbols.includes(r.symbol))
       .map((row) => {
         const s = snap.get(row.symbol),
           price = market.freshPrice(s, Date.now());
@@ -128,10 +135,12 @@ async function scan(now, calendar, today) {
       .filter((r) => r.price && r.price.price >= 5 && r.activity > 0)
       .sort((a, b) => b.activity - a.activity)
       .slice(0, 25);
-    const active = store
-      .list("trade")
-      .filter((t) => t.status === "open")
-      .map((t) => t.ticker);
+    const active = profiles.flatMap((user) =>
+      store
+        .listUser(user.id, "trade")
+        .filter((t) => t.status === "open")
+        .map((t) => t.ticker),
+    );
     const selected = [
       ...new Set([...active, ...ranked.map((r) => r.symbol)]),
     ].slice(0, 28);
@@ -180,23 +189,12 @@ async function scan(now, calendar, today) {
         gapPct,
         hasNews: news.count > 0,
       })) {
-        if (!config.read().enabled) return;
         const strategy = STRATEGIES.find((s) => s.key === plan.strategy);
-        if (
-          !settings.strategies.includes(strategy.key) ||
-          (settings.mode !== "both" && settings.mode !== strategy.mode) ||
-          (settings.risk === "balanced" && strategy.risk === "aggressive")
-        )
-          continue;
-        if (asOf >= today.close - 900000) continue;
-        // One setup per symbol/strategy/session. Stable IDs survive restarts and repeated scans.
-        const id = `${today.date}:${row.symbol}:${strategy.key}:${strategy.version}`;
-        if (store.get("signal", id)) continue;
         const endSession =
           strategy.mode === "day"
             ? today
             : calendar.filter((s) => s.open >= today.open)[4];
-        if (!endSession) continue;
+        if (!endSession || asOf >= today.close - 900000) continue;
         const current = liveQuote(row.symbol, row.snapshot, Date.now());
         if (
           !current ||
@@ -205,36 +203,50 @@ async function scan(now, calendar, today) {
         )
           continue;
         const livePlan = { ...plan, entry: current.price };
-        const signal = {
-          ...livePlan,
-          id,
-          ticker: row.symbol,
-          company: row.companyName,
-          exchange: row.exchange,
-          version: strategy.version,
-          mode: strategy.mode,
-          evidence: "experimental",
-          feed: "iex",
-          priceAt: current.at,
-          rvol,
-          gapPct,
-          createdAt: new Date(asOf).toISOString(),
-          expiresAt: new Date(
-            Math.min(asOf + 600000, today.close - 900000),
-          ).toISOString(),
-          deadline: new Date(endSession.close - 300000).toISOString(),
-          status: "active",
-          sizing: config.size(livePlan, settings),
-        };
-        store.put("signal", id, signal);
-        matches++;
-        if (signal.sizing.feasible && settings.setupComplete)
-          notices.event(
-            `signal:${id}`,
-            `${row.symbol} · ${strategy.label}`,
-            `איתות ניסיוני: כניסה $${plan.entry.toFixed(2)}–$${plan.maxEntry.toFixed(2)}. תוקף עד 10 דקות; בדוק זמינות ב־Blink.`,
-            "signal",
-          );
+        for (const user of profiles) {
+          const settings = user.settings;
+          if (
+            settings.excludedSymbols.includes(row.symbol) ||
+            !settings.strategies.includes(strategy.key) ||
+            (settings.mode !== "both" && settings.mode !== strategy.mode) ||
+            (settings.risk === "balanced" && strategy.risk === "aggressive")
+          )
+            continue;
+          // One setup per symbol/strategy/session. Stable IDs survive restarts and repeated scans.
+          const id = `${today.date}:${row.symbol}:${strategy.key}:${strategy.version}`;
+          if (store.getUser(user.id, "signal", id)) continue;
+          const signal = {
+            ...livePlan,
+            id,
+            ticker: row.symbol,
+            company: row.companyName,
+            exchange: row.exchange,
+            version: strategy.version,
+            mode: strategy.mode,
+            evidence: "experimental",
+            feed: "iex",
+            priceAt: current.at,
+            rvol,
+            gapPct,
+            createdAt: new Date(asOf).toISOString(),
+            expiresAt: new Date(
+              Math.min(asOf + 600000, today.close - 900000),
+            ).toISOString(),
+            deadline: new Date(endSession.close - 300000).toISOString(),
+            status: "active",
+            sizing: config.size(livePlan, settings),
+          };
+          store.putUser(user.id, "signal", id, signal);
+          matches++;
+          if (signal.sizing.feasible && settings.setupComplete)
+            notices.event(
+              user.id,
+              `signal:${id}`,
+              `${row.symbol} · ${strategy.label}`,
+              `איתות ניסיוני: כניסה $${plan.entry.toFixed(2)}–$${plan.maxEntry.toFixed(2)}. תוקף עד 10 דקות; בדוק זמינות ב־Blink.`,
+              "signal",
+            );
+        }
       }
     }
     state({
@@ -253,8 +265,18 @@ async function scan(now, calendar, today) {
   }
 }
 async function monitor(now) {
-  const signals = store.list("signal").filter((s) => s.status === "active");
-  const trades = store.list("trade").filter((t) => t.status === "open");
+  const profiles = users.all().map((u) => ({ id: u.id }));
+  const rows = profiles.map((user) => ({
+    ...user,
+    signals: store
+      .listUser(user.id, "signal")
+      .filter((s) => s.status === "active"),
+    trades: store
+      .listUser(user.id, "trade")
+      .filter((t) => t.status === "open"),
+  }));
+  const signals = rows.flatMap((r) => r.signals);
+  const trades = rows.flatMap((r) => r.trades);
   const symbols = [
     ...new Set([
       ...signals.map((s) => s.ticker),
@@ -263,31 +285,41 @@ async function monitor(now) {
   ];
   if (!symbols.length) return;
   const snap = await snapshots(symbols);
-  for (const signal of signals) {
-    const q = liveQuote(signal.ticker, snap.get(signal.ticker), Date.now());
-    if (now >= Date.parse(signal.expiresAt))
-      store.put("signal", signal.id, { ...signal, status: "expired" });
-    else if (q && (q.price <= signal.stop || q.price > signal.maxEntry))
-      store.put("signal", signal.id, { ...signal, status: "invalidated" });
-    else if (q) {
-      store.put("signal", signal.id, { ...signal, priceAt: q.at });
-      if (config.read().enabled) tracking.simulate(signal, q, Date.now());
+  for (const user of rows) {
+    for (const signal of user.signals) {
+      const q = liveQuote(signal.ticker, snap.get(signal.ticker), Date.now());
+      if (now >= Date.parse(signal.expiresAt))
+        store.putUser(user.id, "signal", signal.id, {
+          ...signal,
+          status: "expired",
+        });
+      else if (q && (q.price <= signal.stop || q.price > signal.maxEntry))
+        store.putUser(user.id, "signal", signal.id, {
+          ...signal,
+          status: "invalidated",
+        });
+      else if (q) {
+        store.putUser(user.id, "signal", signal.id, { ...signal, priceAt: q.at });
+        if (config.read(user.id).enabled)
+          tracking.simulate(user.id, signal, q, Date.now());
+      }
     }
-  }
-  for (const trade of trades) {
-    const start = trade.lastCheckedAt || trade.enteredAt;
-    const bars = await alpaca.getIntradayBars({
-      symbols: [trade.ticker],
-      timeframe: "5Min",
-      start,
-      end: new Date(now).toISOString(),
-    });
-    tracking.track(
-      trade,
-      bars.get(trade.ticker) || [],
-      liveQuote(trade.ticker, snap.get(trade.ticker), now),
-      now,
-    );
+    for (const trade of user.trades) {
+      const start = trade.lastCheckedAt || trade.enteredAt;
+      const bars = await alpaca.getIntradayBars({
+        symbols: [trade.ticker],
+        timeframe: "5Min",
+        start,
+        end: new Date(now).toISOString(),
+      });
+      tracking.track(
+        user.id,
+        trade,
+        bars.get(trade.ticker) || [],
+        liveQuote(trade.ticker, snap.get(trade.ticker), now),
+        now,
+      );
+    }
   }
 }
 async function tick() {
@@ -295,10 +327,14 @@ async function tick() {
   running = true;
   try {
     const now = Date.now(),
-      settings = config.read();
+      profiles = users.all().map((u) => ({
+        id: u.id,
+        settings: config.read(u.id),
+      })),
+      anyEnabled = profiles.some((u) => u.settings.enabled);
     state({
       heartbeatAt: new Date(now).toISOString(),
-      enabled: settings.enabled,
+      enabled: anyEnabled,
       stream: streamStatus,
       configured: alpaca.isConfigured(),
     });
@@ -320,7 +356,7 @@ async function tick() {
     if (clock.is_open && streamKey) watch(streamKey.split(","));
     await monitor(now);
     if (
-      settings.enabled &&
+      anyEnabled &&
       today &&
       now >= today.open - 3600000 &&
       now < today.open &&
@@ -328,7 +364,7 @@ async function tick() {
     )
       prepare(now).catch((e) => state({ error: e.message }));
     if (
-      settings.enabled &&
+      anyEnabled &&
       clock.is_open &&
       today &&
       now >= today.open + 900000 &&
@@ -343,27 +379,31 @@ async function tick() {
       socket = null;
       streamKey = "";
     }
-    if (
-      today &&
-      now > today.close + 900000 &&
-      store.lease(`report:${today.date}`, 86400000, now)
-    ) {
-      const stats = tracking.statistics(store.list("trade"));
-      notices.event(
-        `report:${today.date}`,
-        "סיכום יום המסחר",
-        `מעקבים פתוחים: ${store.list("trade").filter((t) => t.status === "open").length}. ${stats[0].n} עסקאות סימולטיביות סגורות בסך הכול.`,
-        "report",
-      );
+    if (today && now > today.close + 900000) {
+      for (const user of profiles) {
+        if (!store.lease(`report:${user.id}:${today.date}`, 86400000, now))
+          continue;
+        const trades = store.listUser(user.id, "trade");
+        const stats = tracking.statistics(trades);
+        notices.event(
+          user.id,
+          `report:${today.date}`,
+          "סיכום יום המסחר",
+          `מעקבים פתוחים: ${trades.filter((t) => t.status === "open").length}. ${stats[0].n} עסקאות סימולטיביות סגורות בסך הכול.`,
+          "report",
+        );
+      }
     }
   } catch (error) {
     state({ error: error.message });
-    notices.event(
-      `engine-error:${market.nyDate()}`,
-      "המעקב דורש בדיקה",
-      "שירות נתוני השוק אינו זמין. פתח את המערכת ובדוק עסקאות פתוחות ב־Blink.",
-      "warning",
-    );
+    for (const user of users.all())
+      notices.event(
+        user.id,
+        `engine-error:${market.nyDate()}`,
+        "המעקב דורש בדיקה",
+        "שירות נתוני השוק אינו זמין. פתח את המערכת ובדוק עסקאות פתוחות ב־Blink.",
+        "warning",
+      );
   } finally {
     try {
       await notices.flush();
@@ -375,10 +415,6 @@ async function tick() {
 }
 function start() {
   if (timer || process.env.AUTOPILOT_DISABLED === "true") return;
-  if (process.env.NODE_ENV === "production" && !process.env.APP_ACCESS_TOKEN) {
-    state({ error: "נדרש APP_ACCESS_TOKEN להפעלה מוגנת בשרת" });
-    return;
-  }
   state({ startedAt: new Date().toISOString(), scanning: false });
   tick();
   timer = setInterval(tick, 30000);

@@ -16,8 +16,11 @@ const DEFAULTS = {
   excludedSymbols: [],
   setupComplete: false,
 };
-function read() {
-  return { ...DEFAULTS, ...store.get("config", "settings") };
+function read(userId) {
+  const saved = userId
+    ? store.getUser(userId, "config", "settings")
+    : store.get("config", "settings");
+  return { ...DEFAULTS, ...saved };
 }
 function validate(input) {
   const out = {};
@@ -78,7 +81,12 @@ function validate(input) {
   }
   return out;
 }
-function save(input) {
+function save(input, userId) {
+  if (userId)
+    return store.putUser(userId, "config", "settings", {
+      ...read(userId),
+      ...validate(input),
+    });
   return store.put("config", "settings", { ...read(), ...validate(input) });
 }
 // Published Blink schedule; conservative paid estimate unless the user confirms BOTH legs fit

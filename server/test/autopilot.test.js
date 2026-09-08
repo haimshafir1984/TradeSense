@@ -13,6 +13,8 @@ const strategy = require("../src/autopilot/strategies");
 const tracking = require("../src/autopilot/tracking");
 const alpaca = require("../src/providers/alpacaService");
 const notices = require("../src/autopilot/notifications");
+const users = require("../src/autopilot/users");
+const USER = "unit-user";
 test.after(() => {
   store.close();
   fs.rmSync(scratch, { recursive: true, force: true });
@@ -67,9 +69,16 @@ test("sizing respects cash plus entry fee and total stop risk", () => {
   );
 });
 test("invalid settings cannot enable unsupported strategies or excessive risk", () => {
-  assert.throws(() => config.save({ riskPct: 20 }));
-  assert.throws(() => config.save({ enabled: "yes" }));
-  assert.throws(() => config.save({ strategies: ["madeup"] }));
+  assert.throws(() => config.save({ riskPct: 20 }, USER));
+  assert.throws(() => config.save({ enabled: "yes" }, USER));
+  assert.throws(() => config.save({ strategies: ["madeup"] }, USER));
+});
+test("first login creates a separate profile even with a simple code", () => {
+  const first = users.session({ code: "1234" });
+  const second = users.session({ code: "1234" });
+  assert.notEqual(first.userId, second.userId);
+  assert.equal(users.session({ userId: first.userId, code: "1234" }).userId, first.userId);
+  assert.throws(() => users.session({ userId: first.userId, code: "4321" }));
 });
 test("market timestamps follow New York DST, and stale prices fail closed", () => {
   assert.equal(
@@ -145,16 +154,17 @@ test("persisted lease and transaction survive reopen without duplicate run", () 
   assert.equal(store.get("rollback", "x"), null);
 });
 test("simulation cannot enter before signal and cannot reuse entry candle", () => {
-  config.save({ fees: "free", slippagePct: 0 });
+  config.save({ fees: "free", slippagePct: 0 }, USER);
   const s = signal("simulation");
-  tracking.simulate(s, { price: 100, at: s.createdAt }, start);
-  assert.equal(store.get("trade", "sim:simulation"), null);
-  tracking.simulate(s, { price: 100, at: iso(start + 30000) }, start + 30000);
-  let trade = store.get("trade", "sim:simulation");
+  tracking.simulate(USER, s, { price: 100, at: s.createdAt }, start);
+  assert.equal(store.getUser(USER, "trade", "sim:simulation"), null);
+  tracking.simulate(USER, s, { price: 100, at: iso(start + 30000) }, start + 30000);
+  let trade = store.getUser(USER, "trade", "sim:simulation");
   assert.ok(trade);
-  tracking.simulate(s, { price: 100, at: iso(start + 40000) }, start + 40000);
-  assert.equal(store.list("trade").filter((t) => t.id === trade.id).length, 1);
+  tracking.simulate(USER, s, { price: 100, at: iso(start + 40000) }, start + 40000);
+  assert.equal(store.listUser(USER, "trade").filter((t) => t.id === trade.id).length, 1);
   trade = tracking.track(
+    USER,
     trade,
     [bar(0, { l: 90, h: 110 })],
     null,
@@ -162,6 +172,7 @@ test("simulation cannot enter before signal and cannot reuse entry candle", () =
   );
   assert.equal(trade.status, "open");
   trade = tracking.track(
+    USER,
     trade,
     [bar(1, { o: 95, l: 94, h: 110 })],
     null,
@@ -172,21 +183,24 @@ test("simulation cannot enter before signal and cannot reuse entry candle", () =
 });
 test("personal stop alert never sells; actual fills and late reports are distinct", () => {
   const s = signal("personal");
-  store.put("signal", s.id, s);
+  store.putUser(USER, "signal", s.id, s);
   assert.throws(() =>
     tracking.personalEntry(
+      USER,
       s.id,
       { price: 100, shares: 1, executedAt: iso(start - 1000) },
       start + 60000,
     ),
   );
   let trade = tracking.personalEntry(
+    USER,
     s.id,
     { price: 100, shares: 0.2, fees: 0, executedAt: iso(start + 1000) },
     start + 60000,
   );
   assert.equal(trade.enteredAt, iso(start + 1000));
   trade = tracking.track(
+    USER,
     trade,
     [],
     { price: 97, at: iso(start + 120000) },
@@ -196,18 +210,20 @@ test("personal stop alert never sells; actual fills and late reports are distinc
   assert.equal(trade.exitAlert, "stop");
   assert.throws(() =>
     tracking.personalClose(
+      USER,
       trade.id,
       { price: 98, executedAt: iso(start) },
       start + 180000,
     ),
   );
   trade = tracking.personalClose(
+    USER,
     trade.id,
     { price: 98, fees: 0.1 },
     start + 180000,
   );
   assert.equal(trade.pnl, -0.5);
-  const stats = tracking.statistics(store.list("trade"));
+  const stats = tracking.statistics(store.listUser(USER, "trade"));
   assert.equal(stats.find((s) => s.source === "personal").n, 1);
 });
 test("time exit uses final completed bar even if no fresh quote remains", () => {
@@ -223,6 +239,7 @@ test("time exit uses final completed bar even if no fresh quote remains", () => 
     deadline: iso(start + 600000),
   };
   const result = tracking.track(
+    USER,
     trade,
     [bar(0), bar(1, { c: 101 })],
     null,
@@ -243,7 +260,8 @@ test("scheduler monitors an existing position with no browser requests", async (
     flush: notices.flush,
   };
   try {
-    config.save({ enabled: false });
+    users.session({ userId: "scheduler-user", code: "1234" });
+    config.save({ enabled: false }, "scheduler-user");
     const now = Date.now();
     const date = market.nyDate(now);
     const trade = {
@@ -258,7 +276,7 @@ test("scheduler monitors an existing position with no browser requests", async (
       lastCheckedAt: iso(now - 600000),
       deadline: iso(now + 3600000),
     };
-    store.put("trade", trade.id, trade);
+    store.putUser("scheduler-user", "trade", trade.id, trade);
     alpaca.isConfigured = () => true;
     alpaca.getClock = async () => ({
       is_open: false,
@@ -270,7 +288,7 @@ test("scheduler monitors an existing position with no browser requests", async (
     alpaca.getIntradayBars = async () => new Map();
     notices.flush = async () => {};
     await engine.tick();
-    assert.equal(store.get("trade", trade.id).exitAlert, "stop");
+    assert.equal(store.getUser("scheduler-user", "trade", trade.id).exitAlert, "stop");
     assert.ok(store.get("runtime", "engine").heartbeatAt);
   } finally {
     Object.assign(alpaca, { ...originals });
@@ -281,7 +299,8 @@ test("full scan produces a fresh priced signal and deduplicates repeated scans",
   const engine = require("../src/autopilot/engine");
   const now = start + 1200000;
   t.mock.method(Date, "now", () => now);
-  config.save({ enabled: true, fees: "free" });
+  users.session({ userId: "scan-user", code: "1234" });
+  config.save({ enabled: true, fees: "free" }, "scan-user");
   const calendar = Array.from({ length: 6 }, (_, i) => ({
     date: market.nyDate(start - (5 - i) * 86400000),
     open: start - (5 - i) * 86400000,
@@ -326,14 +345,14 @@ test("full scan produces a fresh priced signal and deduplicates repeated scans",
   t.mock.method(alpaca, "openStream", () => ({ readyState: 1, close() {} }));
   try {
     await engine.scan(now, calendar, today);
-    const rows = store.list("signal").filter((s) => s.ticker === "SCAN");
+    const rows = store.listUser("scan-user", "signal").filter((s) => s.ticker === "SCAN");
     assert.equal(rows.length, 1);
     assert.equal(rows[0].entry, 102);
     assert.equal(rows[0].strategy, "orb15");
     assert.equal(rows[0].status, "active");
     await engine.scan(now, calendar, today);
     assert.equal(
-      store.list("signal").filter((s) => s.ticker === "SCAN").length,
+      store.listUser("scan-user", "signal").filter((s) => s.ticker === "SCAN").length,
       1,
     );
   } finally {
@@ -341,20 +360,29 @@ test("full scan produces a fresh priced signal and deduplicates repeated scans",
   }
 });
 
-test("production API requires token and rejects unauthorized writes", async () => {
-  const oldToken = process.env.APP_ACCESS_TOKEN,
-    oldEnv = process.env.NODE_ENV;
+test("production API creates a browser profile and rejects unauthorized writes", async () => {
+  const oldEnv = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
-  process.env.APP_ACCESS_TOKEN = "unit-test-only-token";
   const server = require("../src/app").listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
   const url = `http://127.0.0.1:${server.address().port}/api/autopilot`;
   try {
     assert.equal((await fetch(`${url}/dashboard`)).status, 401);
+    const session = await (
+      await fetch(`${url}/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: "1234" }),
+      })
+    ).json();
+    assert.ok(session.userId);
     assert.equal(
       (
         await fetch(`${url}/dashboard`, {
-          headers: { Authorization: "Bearer unit-test-only-token" },
+          headers: {
+            Authorization: "Bearer 1234",
+            "X-TradeSense-User": session.userId,
+          },
         })
       ).status,
       200,
@@ -364,7 +392,8 @@ test("production API requires token and rejects unauthorized writes", async () =
         await fetch(`${url}/settings`, {
           method: "PATCH",
           headers: {
-            Authorization: "Bearer unit-test-only-token",
+            Authorization: "Bearer 1234",
+            "X-TradeSense-User": session.userId,
             Origin: "https://wrong.example",
             "Content-Type": "application/json",
           },
@@ -373,12 +402,8 @@ test("production API requires token and rejects unauthorized writes", async () =
       ).status,
       403,
     );
-    delete process.env.APP_ACCESS_TOKEN;
-    assert.equal((await fetch(`${url}/dashboard`)).status, 503);
   } finally {
     await new Promise((r) => server.close(r));
-    if (oldToken === undefined) delete process.env.APP_ACCESS_TOKEN;
-    else process.env.APP_ACCESS_TOKEN = oldToken;
     if (oldEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = oldEnv;
   }

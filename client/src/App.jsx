@@ -47,12 +47,14 @@ export default function App() {
         .catch(() => {});
   }, [tab]);
   const token = useRef(sessionStorage.getItem("tradesense.access") || "");
+  const userId = useRef(localStorage.getItem("tradesense.user") || "");
   async function api(path, options = {}) {
     const response = await fetch(`${BASE}/api/autopilot${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",
         ...(token.current ? { Authorization: `Bearer ${token.current}` } : {}),
+        ...(userId.current ? { "X-TradeSense-User": userId.current } : {}),
         ...options.headers,
       },
       signal: AbortSignal.timeout(20000),
@@ -63,7 +65,25 @@ export default function App() {
     }
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "הבקשה לא הושלמה");
+    if (result.userId && result.userId !== userId.current) {
+      userId.current = result.userId;
+      localStorage.setItem("tradesense.user", result.userId);
+    }
     return result;
+  }
+  async function login(event) {
+    event.preventDefault();
+    token.current = code;
+    sessionStorage.setItem("tradesense.access", code);
+    await act(
+      () =>
+        api("/session", {
+          method: "POST",
+          body: JSON.stringify({ userId: userId.current, code }),
+        }),
+      "הכניסה נשמרה למכשיר הזה",
+    );
+    await load();
   }
   async function load() {
     try {
@@ -213,17 +233,12 @@ export default function App() {
             </div>
           )}
           {auth ? (
-            <form
-              className="panel login"
-              onSubmit={(e) => {
-                e.preventDefault();
-                token.current = code;
-                sessionStorage.setItem("tradesense.access", code);
-                load();
-              }}
-            >
+            <form className="panel login" onSubmit={login}>
               <h1>כניסה למערכת שלך</h1>
-              <p>קוד הגישה שהוגדר בשרת שומר על ההגדרות והעסקאות שלך.</p>
+              <p>
+                בפעם הראשונה בחר קוד פשוט. בפעמים הבאות הזן את אותו קוד כדי
+                לפתוח את הפרופיל שנשמר במכשיר הזה.
+              </p>
               <label>
                 קוד גישה
                 <input

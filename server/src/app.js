@@ -16,7 +16,6 @@ const playbooksRouter = require("./routes/playbooks");
 const ledgerRouter = require("./routes/ledger");
 
 const app = express();
-const { timingSafeEqual } = require("node:crypto");
 
 app.use(
   cors({
@@ -29,20 +28,9 @@ app.get("/api/health", (_request, response) => {
   response.json({ ok: true });
 });
 
-// Single-user access control for the public deployment, including legacy personal data routes.
+// Basic origin guard for the public deployment. Autopilot user separation is handled
+// inside routes/autopilot.js because each browser profile owns its own code.
 app.use("/api", (req, res, next) => {
-  const secret = process.env.APP_ACCESS_TOKEN;
-  if (!secret && process.env.NODE_ENV === "production")
-    return res
-      .status(503)
-      .json({ error: "יש להגדיר APP_ACCESS_TOKEN בשרת לפני הפעלה" });
-  if (secret) {
-    const supplied = (req.headers.authorization || "").replace(/^Bearer /, "");
-    const a = Buffer.from(supplied),
-      b = Buffer.from(secret);
-    if (a.length !== b.length || !timingSafeEqual(a, b))
-      return res.status(401).json({ error: "נדרש קוד גישה" });
-  }
   const origin = req.headers.origin;
   if (
     !["GET", "HEAD", "OPTIONS"].includes(req.method) &&

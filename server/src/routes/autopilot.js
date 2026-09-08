@@ -5,18 +5,27 @@ const settings = require("../autopilot/settings");
 const tracking = require("../autopilot/tracking");
 const engine = require("../autopilot/engine");
 const notices = require("../autopilot/notifications");
+const users = require("../autopilot/users");
 const { STRATEGIES } = require("../autopilot/strategies");
-router.get("/legacy", async (_req, res, next) => {
+
+router.post("/session", (req, res, next) => {
   try {
-    res.json(await require("../services/portfolioStore").readPortfolio());
+    res.json(users.session(req.body));
   } catch (e) {
+    e.status = e.status || 400;
     next(e);
   }
 });
-router.get("/dashboard", (_req, res) => {
+
+router.use(users.requireUser);
+
+router.get("/legacy", (_req, res) => {
+  res.json({ holdings: [], watchlist: [] });
+});
+router.get("/dashboard", (req, res) => {
   const now = Date.now();
   const signals = store
-    .list("signal")
+    .listUser(req.userId, "signal")
     .slice(0, 250)
     .map((s) => ({
       ...s,
@@ -29,10 +38,11 @@ router.get("/dashboard", (_req, res) => {
               : "active"
           : s.status,
     }));
-  const trades = store.list("trade");
+  const trades = store.listUser(req.userId, "trade");
   const runtime = store.get("runtime", "engine") || {};
   res.json({
-    settings: settings.read(),
+    userId: req.userId,
+    settings: settings.read(req.userId),
     runtime: {
       ...runtime,
       healthy: now - Date.parse(runtime.heartbeatAt) < 120000,
@@ -41,13 +51,13 @@ router.get("/dashboard", (_req, res) => {
     signals,
     trades: trades.slice(0, 500),
     stats: tracking.statistics(trades),
-    events: store.list("event").slice(0, 60),
-    pushDevices: store.list("subscription").length,
+    events: store.listUser(req.userId, "event").slice(0, 60),
+    pushDevices: store.listUser(req.userId, "subscription").length,
   });
 });
 router.patch("/settings", (req, res, next) => {
   try {
-    res.json(settings.save(req.body));
+    res.json(settings.save(req.body, req.userId));
   } catch (e) {
     e.status = 400;
     next(e);
@@ -59,7 +69,9 @@ router.post("/scan", (_req, res) => {
 });
 router.post("/signals/:id/entry", (req, res, next) => {
   try {
-    res.status(201).json(tracking.personalEntry(req.params.id, req.body));
+    res
+      .status(201)
+      .json(tracking.personalEntry(req.userId, req.params.id, req.body));
   } catch (e) {
     e.status = 400;
     next(e);
@@ -67,7 +79,7 @@ router.post("/signals/:id/entry", (req, res, next) => {
 });
 router.post("/trades/:id/close", (req, res, next) => {
   try {
-    res.json(tracking.personalClose(req.params.id, req.body));
+    res.json(tracking.personalClose(req.userId, req.params.id, req.body));
   } catch (e) {
     e.status = 400;
     next(e);
@@ -78,34 +90,35 @@ router.get("/push/key", (_req, res) =>
 );
 router.post("/push/subscribe", (req, res, next) => {
   try {
-    notices.subscribe(req.body);
+    notices.subscribe(req.userId, req.body);
     res.json({ ok: true });
   } catch (e) {
     e.status = 400;
     next(e);
   }
 });
-router.post("/push/test", async (_req, res, next) => {
+router.post("/push/test", async (req, res, next) => {
   try {
     notices.event(
+      req.userId,
       `test:${Date.now()}`,
       "ההתראות מחוברות",
       "תקבל כאן איתותים חדשים ועדכוני מעקב.",
     );
-    await notices.flush();
+    await notices.flush([req.userId]);
     res.json({ ok: true });
   } catch (e) {
     next(e);
   }
 });
-router.get("/export", (_req, res) => {
+router.get("/export", (req, res) => {
   res
     .attachment("tradesense-history.json")
     .json({
       exportedAt: new Date().toISOString(),
-      signals: store.list("signal"),
-      trades: store.list("trade"),
-      settings: settings.read(),
+      signals: store.listUser(req.userId, "signal"),
+      trades: store.listUser(req.userId, "trade"),
+      settings: settings.read(req.userId),
     });
 });
 router.use((err, _req, res, _next) => {
