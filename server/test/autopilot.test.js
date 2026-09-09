@@ -13,6 +13,7 @@ const strategy = require("../src/autopilot/strategies");
 const selection = require("../src/autopilot/selection");
 const tracking = require("../src/autopilot/tracking");
 const autopilotHistory = require("../src/autopilot/history");
+const autopilotUniverse = require("../src/autopilot/universe");
 const alpaca = require("../src/providers/alpacaService");
 const notices = require("../src/autopilot/notifications");
 const users = require("../src/autopilot/users");
@@ -307,6 +308,52 @@ test("partial daily history does not cache failed symbols as usable features", a
   assert.equal(result.complete, false);
   assert.equal(result.features.has(symbol), false);
   assert.equal(store.get("history", autopilotHistory.cacheKey({ symbol, feed: "sip", timeframe: "1Day" })), null);
+});
+test("universe build processes market history in bounded batches without changing eligibility", async (t) => {
+  const now = Date.parse("2026-09-10T16:00:00Z");
+  const symbols = Array.from({ length: 151 }, (_, index) => {
+    const first = String.fromCharCode(65 + Math.floor(index / 26));
+    const second = String.fromCharCode(65 + (index % 26));
+    return `${first}${second}`;
+  });
+  const requestedBatches = [];
+  store.remove("cache", "v3-universe");
+  t.mock.method(alpaca, "getActiveAssets", async ({ exchange }) =>
+    symbols
+      .filter((_, index) => (exchange === "NASDAQ" ? index % 2 === 0 : index % 2 === 1))
+      .map((symbol) => ({ symbol, name: symbol, exchange })),
+  );
+  t.mock.method(alpaca, "getBarsDetailed", async ({ symbols: batch }) => {
+    requestedBatches.push([...batch]);
+    return {
+      bars: new Map(
+        batch.map((symbol) => [
+          symbol,
+          Array.from({ length: 20 }, (_, index) => ({
+            t: iso(now - (21 - index) * 86400000),
+            o: 10,
+            h: 11,
+            l: 9,
+            c: 10,
+            v: 300000,
+          })),
+        ]),
+      ),
+      complete: true,
+      failedSymbols: [],
+      errors: [],
+    };
+  });
+
+  const rows = await autopilotUniverse.ensure(now);
+
+  assert.equal(rows.length, symbols.length);
+  assert.ok(requestedBatches.length > 1);
+  assert.ok(requestedBatches.every((batch) => batch.length <= 75));
+  assert.deepEqual(
+    new Set(requestedBatches.flat()),
+    new Set(symbols),
+  );
 });
 test("intraday history refreshes fully on a new session and does not mix old split-adjusted bars", async (t) => {
   const symbol = "SPLT";

@@ -122,7 +122,10 @@ async function ensureDailyFeatures(symbols, now = Date.now()) {
   };
 }
 
-async function ensureIntradayBars(symbols, { now = Date.now(), keepSymbols = [] } = {}) {
+async function ensureIntradayBars(
+  symbols,
+  { now = Date.now(), keepSymbols = [], evict = true } = {},
+) {
   const unique = [...new Set(symbols)].filter(Boolean);
   const result = new Map();
   const missing = [];
@@ -206,7 +209,7 @@ async function ensureIntradayBars(symbols, { now = Date.now(), keepSymbols = [] 
     }
   }
 
-  evictIntraday({ now, keepSymbols });
+  if (evict) evictIntraday({ now, keepSymbols });
   return { bars: result, complete, failedSymbols, errors, cacheHits };
 }
 

@@ -10,7 +10,12 @@ const finnhub = require("../providers/finnhubService");
 const universe = require("./universe");
 const history = require("./history");
 const selection = require("./selection");
+const { logMemory } = require("../memoryDiagnostics");
 const SELECTION_INTRADAY_CACHE_LIMIT = 200;
+const INTRADAY_BATCH_SIZE = Math.min(
+  20,
+  Math.max(5, Number(process.env.AUTOPILOT_INTRADAY_BATCH_SIZE || 10) || 10),
+);
 let running = false,
   timer,
   scanRunning = false,
@@ -91,6 +96,7 @@ async function scan(now, calendar, today) {
   state({ scanning: true });
   const scanId = `${today.date}:${now}`;
   const startedAt = Date.now();
+  logMemory("scan:start");
   try {
     const profiles = users
       .all()
@@ -113,6 +119,7 @@ async function scan(now, calendar, today) {
         .map((s) => s.ticker),
     );
     let rows = await prepare(now);
+    logMemory("scan:universe-ready");
     const universeStatus = universe.status(now);
     if (!rows.length) {
       state({
@@ -161,14 +168,11 @@ async function scan(now, calendar, today) {
     });
     const ranked = picked.selected;
     const dailyResult = await history.ensureDailyFeatures(ranked.map((r) => r.symbol), Date.now());
+    logMemory("scan:daily-ready");
     const streamSymbols = [
       ...new Set([...active, ...activeSignals, ...ranked.map((r) => r.symbol)]),
     ].slice(0, 28);
     watch(streamSymbols);
-    const intraday = await history.ensureIntradayBars(ranked.map((r) => r.symbol), {
-      now: Date.now(),
-      keepSymbols: [...active, ...activeSignals],
-    });
     const latestSelectedSnapshots = await snapshots(ranked.map((r) => r.symbol));
     for (const row of ranked) {
       const refreshed = latestSelectedSnapshots.get(row.symbol);
@@ -183,6 +187,12 @@ async function scan(now, calendar, today) {
       historyUnavailable = 0;
     const marketCandidates = [];
     const reasonCounts = {};
+    const intradaySummary = {
+      complete: true,
+      cacheHits: 0,
+      failedSymbols: [],
+      errors: [],
+    };
     const personalCounters = new Map(
       profiles.map((user) => [
         user.id,
@@ -196,8 +206,20 @@ async function scan(now, calendar, today) {
         },
       ]),
     );
-    for (const row of ranked) {
-      const asOf = Date.now(),
+    for (let batchStart = 0; batchStart < ranked.length; batchStart += INTRADAY_BATCH_SIZE) {
+      const batch = ranked.slice(batchStart, batchStart + INTRADAY_BATCH_SIZE);
+      const intraday = await history.ensureIntradayBars(batch.map((row) => row.symbol), {
+        now: Date.now(),
+        keepSymbols: [...active, ...activeSignals],
+        evict: batchStart + INTRADAY_BATCH_SIZE >= ranked.length,
+      });
+      intradaySummary.complete &&= intraday.complete;
+      intradaySummary.cacheHits += intraday.cacheHits;
+      intradaySummary.failedSymbols.push(...intraday.failedSymbols);
+      intradaySummary.errors.push(...intraday.errors);
+
+      for (const row of batch) {
+        const asOf = Date.now(),
         dailyPack = dailyResult.features.get(row.symbol),
         daily = dailyPack?.features || dailyPack,
         bars = intraday.bars.get(row.symbol) || [];
@@ -352,7 +374,10 @@ async function scan(now, calendar, today) {
             );
         }
       }
+      }
+      await new Promise((resolve) => setImmediate(resolve));
     }
+    logMemory("scan:intraday-ready");
     const freshCandidates = marketCandidates.filter(
       (candidate, index, list) =>
         list.findIndex((item) => item.ticker === candidate.ticker && item.strategy === candidate.strategy) === index,
@@ -395,9 +420,12 @@ async function scan(now, calendar, today) {
         selectedCount: ranked.length,
         evaluatedCount,
         historyUnavailable,
-        cacheHits: dailyResult.cacheHits + intraday.cacheHits,
+        cacheHits: dailyResult.cacheHits + intradaySummary.cacheHits,
         requestsByProvider: { alpaca: "batched", finnhub: "gap-only" },
-        partialData: !dailyResult.complete || !intraday.complete || universeStatus.diagnostics?.partialData,
+        partialData:
+          !dailyResult.complete ||
+          !intradaySummary.complete ||
+          universeStatus.diagnostics?.partialData,
         missingData,
         reasonCounts,
       },

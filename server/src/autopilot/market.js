@@ -1,21 +1,23 @@
 const alpaca = require("../providers/alpacaService");
 const store = require("./store");
+const NY_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const NY_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hourCycle: "h23",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 function nyDate(time = Date.now()) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(time));
+  return NY_DATE_FORMATTER.format(new Date(time));
 }
 function nyTimestamp(date, hhmm) {
   const guess = Date.parse(`${date}T${hhmm}:00Z`);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    hourCycle: "h23",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(new Date(guess));
+  const parts = NY_TIME_FORMATTER.formatToParts(new Date(guess));
   const actual =
     Number(parts.find((p) => p.type === "hour").value) * 60 +
     Number(parts.find((p) => p.type === "minute").value);
