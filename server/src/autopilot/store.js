@@ -27,6 +27,12 @@ function list(kind) {
     .all(kind)
     .map((r) => JSON.parse(r.body));
 }
+function listIds(kind) {
+  return database()
+    .prepare("SELECT id FROM records WHERE kind=? ORDER BY rowid DESC")
+    .all(kind)
+    .map((r) => r.id);
+}
 function put(kind, id, body) {
   database()
     .prepare(
@@ -82,6 +88,7 @@ function close() {
 module.exports = {
   get,
   list,
+  listIds,
   put,
   remove,
   getUser,

@@ -10,6 +10,7 @@ const finnhub = require("../providers/finnhubService");
 const universe = require("./universe");
 const history = require("./history");
 const selection = require("./selection");
+const SELECTION_INTRADAY_CACHE_LIMIT = 200;
 let running = false,
   timer,
   scanRunning = false,
@@ -70,6 +71,20 @@ async function snapshots(symbols) {
       out.set(s, q);
   return out;
 }
+function symbolsForSelectionIntradayCache(rows, snap, today, now) {
+  return rows
+    .map((row) => {
+      const snapshot = snap.get(row.symbol);
+      const price = market.freshPrice(snapshot, now);
+      const sameDay = market.nyDate(Date.parse(snapshot?.dailyBar?.t || 0)) === today.date;
+      const volume = sameDay ? Number(snapshot?.dailyBar?.v || 0) * Number(snapshot?.dailyBar?.c || 0) : 0;
+      return { symbol: row.symbol, score: price && price.price >= 5 ? volume : 0 };
+    })
+    .filter((row) => row.score > 0)
+    .sort((left, right) => right.score - left.score || left.symbol.localeCompare(right.symbol))
+    .slice(0, SELECTION_INTRADAY_CACHE_LIMIT)
+    .map((row) => row.symbol);
+}
 async function scan(now, calendar, today) {
   if (scanRunning) return;
   scanRunning = true;
@@ -115,8 +130,8 @@ async function scan(now, calendar, today) {
       });
       return;
     }
-    const dailyResult = await history.ensureDailyFeatures(rows.map((r) => r.symbol), now);
     const snap = await snapshots(rows.map((r) => r.symbol));
+    const selectionNow = Date.now();
     const activeStrategies = [
       ...new Set(
         profiles.flatMap((user) =>
@@ -134,14 +149,18 @@ async function scan(now, calendar, today) {
     const picked = selection.selectCandidates({
       rows,
       snapshots: snap,
-      dailyFeatures: dailyResult.features,
-      intradayCache: history.cachedIntradayBars(rows.map((r) => r.symbol), now),
+      dailyFeatures: new Map(),
+      intradayCache: history.cachedIntradayBars(
+        symbolsForSelectionIntradayCache(rows, snap, today, selectionNow),
+        selectionNow,
+      ),
       activeStrategies,
       calendar,
       today,
-      now: Date.now(),
+      now: selectionNow,
     });
     const ranked = picked.selected;
+    const dailyResult = await history.ensureDailyFeatures(ranked.map((r) => r.symbol), Date.now());
     const streamSymbols = [
       ...new Set([...active, ...activeSignals, ...ranked.map((r) => r.symbol)]),
     ].slice(0, 28);

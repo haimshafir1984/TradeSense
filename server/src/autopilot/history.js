@@ -212,9 +212,11 @@ async function ensureIntradayBars(symbols, { now = Date.now(), keepSymbols = [] 
 
 function evictIntraday({ now = Date.now(), keepSymbols = [] } = {}) {
   const keep = new Set(keepSymbols);
-  const records = store
-    .list("history")
-    .filter((record) => record?.feed === "iex" && record?.timeframe === "5Min")
+  const ids = typeof store.listIds === "function" ? store.listIds("history") : [];
+  const records = ids
+    .filter((id) => id.includes(":iex:5Min:"))
+    .map((id) => store.get("history", id))
+    .filter(Boolean)
     .map((record) => ({ ...record, usedMs: Date.parse(record.lastUsedAt || record.fetchedAt || 0) || 0 }))
     .sort((a, b) => b.usedMs - a.usedMs);
   const staleBefore = now - 7 * 86400000;
