@@ -12,6 +12,7 @@
     "research:mine": "node scripts/mineAnomalies.js",
     "research:match": "node scripts/matchAnomalies.js",
     "research:github": "node scripts/surveyGithub.js",
+    "autopilot:compare-selection": "node scripts/compareV3Selection.js",
     "ledger:backfill": "node scripts/runLedgerBackfill.js",
     "ledger:resolve": "node scripts/runLedgerResolve.js"
   },

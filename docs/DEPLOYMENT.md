@@ -53,6 +53,7 @@ FMP/דמו הישן - בדיוק התסמין שדחף לכתיבת docs/SPEC_UN
 ### משתני הסביבה שמצביעים לדיסק (Backend בלבד)
 
 ```env
+AUTOPILOT_DB_PATH=/var/data/autopilot.sqlite
 PORTFOLIO_STORE_FILE_PATH=/var/data/portfolio.json
 SCAN_HISTORY_FILE_PATH=/var/data/scanHistory.json
 WATCHLIST_STORE_FILE_PATH=/var/data/watchlistCache.json
@@ -63,6 +64,11 @@ REGIME_HISTORY_FILE_PATH=/var/data/regimeHistory.json
 
 בלי `Mount Path` תואם בפועל, הכתיבה תיכשל (`ENOENT`, כי `/var/data` לא
 קיים כתיקייה) - הוספת משתני הסביבה לבד **לא מספיקה**, צריך גם את ה-Disk.
+
+ב־v3.1 גם מאגר המניות הרחב, מטמון נרות SIP יומי, מטמון נרות IEX תוך־יומי,
+משתמשים, איתותים ועסקאות נשמרים בתוך `AUTOPILOT_DB_PATH`. אם המשתנה הזה לא
+מצביע ל־`/var/data`, המערכת תעבוד אחרי deploy אבל תאבד היסטוריה ומטמון בפריסה
+הבאה.
 
 ### איך לוודא שזה עובד (Web Shell)
 
@@ -98,6 +104,17 @@ Alpaca+Finnhub הוא בפועל המסלול הראשי שעובד (לא Nasdaq
 רבעוניים קרובים והעשרת שווי שוק/סקטור בזמן סריקה (ראו
 docs/SPEC_PROVIDER_REBALANCE.md). ראו את `docs/SPEC_PROVIDER_REBALANCE.md`
 סעיף 10 להוראות קבלת מפתח (חינמי, finnhub.io).
+
+ל־v3.1 אין משתני סביבה חובה חדשים מעבר למפתחות הקיימים. אם רוצים לשנות עומס,
+אפשר להגדיר ב־Backend בלבד:
+
+```env
+AUTOPILOT_UNIVERSE_MAX=2000
+AUTOPILOT_DEEP_SCAN_MAX=120
+```
+
+אלו תקרות עומס בלבד. הגדלה שלהן יכולה להגדיל זמני סריקה וגודל מטמון בדיסק,
+והיא לא מבטיחה יותר איתותים.
 
 ## מלכודת נפוצה: הקלדת סימול (ticker) בעברית
 

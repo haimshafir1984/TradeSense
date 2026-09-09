@@ -36,7 +36,7 @@ const STRATEGIES = [
       "אישור התאוששות אחרי ירידה חדה, כשהמגמה הארוכה עדיין חיובית. עד 5 ימי מסחר.",
     source: "https://doi.org/10.1093/rfs/3.2.175",
   },
-].map((s) => ({ ...s, version: "3.0.0", evidence: "experimental" }));
+].map((s) => ({ ...s, version: "3.1.0", evidence: "experimental" }));
 function completed(bars, asOf, intervalMs = 300000) {
   return (bars || [])
     .filter(
@@ -188,4 +188,72 @@ function evaluate({
   }
   return matches;
 }
-module.exports = { STRATEGIES, evaluate, completed, vwap };
+function evaluateDetailed(args) {
+  const plans = evaluate(args);
+  const byStrategy = new Map(plans.map((plan) => [plan.strategy, { matched: true, plan }]));
+  const candles = completed(args.bars, args.asOf).filter(
+    (bar) => Date.parse(bar.t) >= args.sessionOpen && Date.parse(bar.t) < args.sessionClose,
+  );
+  const last = candles.at(-1);
+  const prev = candles.at(-2);
+  const minutes = (args.asOf - args.sessionOpen) / 60000;
+  const range = candles.filter((bar) => Date.parse(bar.t) < args.sessionOpen + 900000);
+  const rangeComplete =
+    range.length === 3 &&
+    range.every((bar, index) => Date.parse(bar.t) === args.sessionOpen + index * 300000);
+  const high = rangeComplete ? Math.max(...range.map((bar) => bar.h)) : null;
+  const vw = vwap(candles);
+  const prevVw = vwap(candles.slice(0, -1));
+
+  function setReason(strategy, reasonCode) {
+    if (!byStrategy.has(strategy)) byStrategy.set(strategy, { matched: false, reasonCode });
+  }
+
+  if (!Number.isFinite(args.daily?.atr14) || args.daily.atr14 <= 0) {
+    for (const strategy of STRATEGIES) setReason(strategy.key, "daily_missing");
+    return { plans, results: byStrategy };
+  }
+  if (!last || !prev || args.asOf - Date.parse(last.t) > 420000) {
+    for (const strategy of STRATEGIES) setReason(strategy.key, "intraday_missing");
+    return { plans, results: byStrategy };
+  }
+
+  if (minutes < 20 || minutes > 120) setReason("orb15", "outside_window");
+  else if (!rangeComplete) setReason("orb15", "opening_range_incomplete");
+  else if (args.rvol == null) setReason("orb15", "rvol_missing");
+  else if (args.rvol < 1.5) setReason("orb15", "rvol_below_threshold");
+  else if (!(prev.c <= high && last.c > high && last.c > last.o)) setReason("orb15", "trigger_not_met");
+
+  if (minutes < 20 || minutes > 120) setReason("gap_pullback", "outside_window");
+  else if (!(args.gapPct >= 3)) setReason("gap_pullback", "daily_missing");
+  else if (args.rvol == null) setReason("gap_pullback", "rvol_missing");
+  else if (args.rvol < 1.5) setReason("gap_pullback", "rvol_below_threshold");
+  else if (
+    candles.length < 4 ||
+    !(candles.at(-2).c < candles.at(-2).o) ||
+    !(candles.at(-2).l > candles[0].l) ||
+    !(candles.at(-3).c > candles.at(-3).o) ||
+    !(last.c > candles.at(-2).h)
+  )
+    setReason("gap_pullback", "trigger_not_met");
+  else if (args.hasNews == null) setReason("gap_pullback", "news_needed");
+  else if (args.hasNews === "unavailable") setReason("gap_pullback", "news_unavailable");
+  else if (args.hasNews === false) setReason("gap_pullback", "news_absent");
+
+  if (minutes < 30 || minutes > 300) setReason("vwap_reclaim", "outside_window");
+  else if (args.rvol == null) setReason("vwap_reclaim", "rvol_missing");
+  else if (args.rvol < 1.2) setReason("vwap_reclaim", "rvol_below_threshold");
+  else if (!vw || !prevVw) setReason("vwap_reclaim", "intraday_missing");
+  else if (!(prev.c <= prevVw && last.c > vw && last.c > last.o)) setReason("vwap_reclaim", "trigger_not_met");
+
+  if (minutes < 20 || minutes > 330) setReason("reversal5", "outside_window");
+  else if (!(args.daily?.price > args.daily?.ma200)) setReason("reversal5", "daily_missing");
+  else if (!(args.daily?.return5d <= -5 && args.daily?.rsi14 < 35)) setReason("reversal5", "daily_missing");
+  else if (!(last.c > prev.h)) setReason("reversal5", "trigger_not_met");
+
+  for (const strategy of STRATEGIES) {
+    if (!byStrategy.has(strategy.key)) setReason(strategy.key, "invalid_plan");
+  }
+  return { plans, results: byStrategy };
+}
+module.exports = { STRATEGIES, evaluate, evaluateDetailed, completed, vwap };

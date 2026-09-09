@@ -383,6 +383,42 @@ summary {
   font-size: 12px;
   margin: 8px 0;
 }
+.watch-panel {
+  margin: 22px 0 16px;
+}
+.watch-panel > summary {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 13px 16px;
+  color: #2d4452;
+}
+.watch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.watch-card {
+  padding: 18px;
+}
+.watch-card .signal-title h2 {
+  font-size: 24px;
+}
+.watch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.empty.compact {
+  min-height: 150px;
+  margin-top: 14px;
+}
 .bottom-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr;
@@ -920,7 +956,8 @@ footer {
   }
   .bottom-grid,
   .signal-grid,
-  .strategy-grid {
+  .strategy-grid,
+  .watch-grid {
     grid-template-columns: 1fr;
   }
   .panel {

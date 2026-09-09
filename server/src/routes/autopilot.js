@@ -7,6 +7,7 @@ const engine = require("../autopilot/engine");
 const notices = require("../autopilot/notifications");
 const users = require("../autopilot/users");
 const { STRATEGIES } = require("../autopilot/strategies");
+const market = require("../autopilot/market");
 
 router.post("/session", (req, res, next) => {
   try {
@@ -40,15 +41,35 @@ router.get("/dashboard", (req, res) => {
     }));
   const trades = store.listUser(req.userId, "trade");
   const runtime = store.get("runtime", "engine") || {};
+  const candidateRecord = store.getUser(req.userId, "candidate", "latest");
+  const currentSettings = settings.read(req.userId);
+  const candidates = (candidateRecord?.rows || []).filter((candidate) => {
+    const observed = Date.parse(candidate.observedAt || 0);
+    const strategy = STRATEGIES.find((item) => item.key === candidate.strategy);
+    return (
+      Number.isFinite(observed) &&
+      now - observed <= 600000 &&
+      market.nyDate(observed) === market.nyDate(now) &&
+      strategy &&
+      !currentSettings.excludedSymbols.includes(candidate.ticker) &&
+      currentSettings.strategies.includes(candidate.strategy) &&
+      (currentSettings.mode === "both" || currentSettings.mode === strategy.mode) &&
+      !(currentSettings.risk === "balanced" && strategy.risk === "aggressive")
+    );
+  });
   res.json({
     userId: req.userId,
-    settings: settings.read(req.userId),
+    settings: currentSettings,
     runtime: {
       ...runtime,
       healthy: now - Date.parse(runtime.heartbeatAt) < 120000,
+      marketDiagnostics: runtime.marketDiagnostics || null,
+      personalDiagnostics:
+        runtime.personalDiagnostics?.[req.userId] || candidateRecord?.counters || null,
     },
     strategies: STRATEGIES,
     signals,
+    candidates: candidates.slice(0, 20),
     trades: trades.slice(0, 500),
     stats: tracking.statistics(trades),
     events: store.listUser(req.userId, "event").slice(0, 60),

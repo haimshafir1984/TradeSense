@@ -44,6 +44,8 @@ const DEFAULT_HISTORY_DAYS = 90;
 // Cheap "just the latest session" lookback for the coarse stage-1 filter - small enough that a
 // short window can't accidentally miss the most recent trading day around a long weekend.
 const LATEST_BAR_LOOKBACK_DAYS = 7;
+const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MAX_RETRIES = 2;
 
 function isConfigured() {
   return Boolean(process.env.ALPACA_API_KEY_ID && process.env.ALPACA_API_SECRET_KEY);
@@ -94,7 +96,32 @@ async function throttle() {
   requestTimestamps.push(Date.now());
 }
 
-async function fetchAlpaca(url, label) {
+function retryAfterMs(response) {
+  const value = response?.headers?.get?.('retry-after');
+  if (!value) {
+    return null;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) {
+    return Math.min(seconds * 1000, 5000);
+  }
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.min(Math.max(0, date - Date.now()), 5000) : null;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function errorKind(status) {
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 429) return 'rate_limit';
+  if (status >= 500) return 'temporary';
+  if (status > 0) return 'http';
+  return 'network';
+}
+
+async function fetchAlpacaDetailed(url, label, { retries = 0 } = {}) {
   try {
     const slot = throttleQueue.then(throttle);
     throttleQueue = slot.catch(() => {});
@@ -103,14 +130,57 @@ async function fetchAlpaca(url, label) {
 
     if (!response.ok) {
       console.warn(`[alpaca] ${label} failed: HTTP ${response.status}`);
-      return null;
+      if (retries < MAX_RETRIES && RETRYABLE_STATUSES.has(response.status)) {
+        await wait(retryAfterMs(response) ?? 250 * (retries + 1));
+        return fetchAlpacaDetailed(url, label, { retries: retries + 1 });
+      }
+      return { ok: false, status: response.status, kind: errorKind(response.status), data: null };
     }
 
-    return await response.json();
+    return { ok: true, status: response.status, kind: 'ok', data: await response.json() };
   } catch (error) {
     console.warn(`[alpaca] ${label} failed: ${error.message}`);
-    return null;
+    if (retries < MAX_RETRIES) {
+      await wait(250 * (retries + 1));
+      return fetchAlpacaDetailed(url, label, { retries: retries + 1 });
+    }
+    return { ok: false, status: 0, kind: error.name === 'TimeoutError' ? 'timeout' : 'network', data: null };
   }
+}
+
+async function fetchAlpaca(url, label) {
+  const response = await fetchAlpacaDetailed(url, label);
+  return response.ok ? response.data : null;
+}
+
+function nyDate(time = Date.now()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date(time));
+}
+
+function nyTimestamp(date, hhmm) {
+  const guess = Date.parse(`${date}T${hhmm}:00Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).formatToParts(new Date(guess));
+  const actual =
+    Number(parts.find((part) => part.type === 'hour').value) * 60 +
+    Number(parts.find((part) => part.type === 'minute').value);
+  const [hour, minute] = hhmm.split(':').map(Number);
+  return guess + ((hour * 60 + minute - actual + 1440) % 1440) * 60000;
+}
+
+function sipDailyEnd(now = Date.now()) {
+  const today = nyDate(now);
+  const nyMidnight = nyTimestamp(today, '00:00');
+  return new Date(Math.min(nyMidnight, now - 16 * 60000)).toISOString();
 }
 
 // GET /v2/assets - the "stage 1 universe" source: every active, tradable US equity on the
@@ -210,6 +280,116 @@ async function getDailyBars({ symbols = [], days = DEFAULT_HISTORY_DAYS, feed = 
   }
 
   return result;
+}
+
+async function getBarsDetailed({
+  symbols = [],
+  timeframe = '1Day',
+  days,
+  start,
+  end,
+  feed = 'iex',
+  adjustment = 'split',
+  now = Date.now()
+} = {}) {
+  const result = new Map();
+  const errors = [];
+
+  if (!Array.isArray(symbols) || symbols.length === 0) {
+    return { bars: result, complete: true, failedSymbols: [], errors };
+  }
+
+  let startValue = start;
+  if (!startValue) {
+    const startDate = new Date(now);
+    startDate.setUTCDate(startDate.getUTCDate() - (days || DEFAULT_HISTORY_DAYS));
+    startValue = timeframe === '1Day' ? startDate.toISOString().slice(0, 10) : startDate.toISOString();
+  }
+  let endValue = end;
+  if (!endValue && timeframe === '1Day' && feed === 'sip') {
+    endValue = sipDailyEnd(now);
+  }
+
+  const today = nyDate(now);
+  const requestedSymbols = new Set(symbols);
+  const failedSymbols = new Set();
+
+  for (const symbolChunk of chunk(symbols, SYMBOLS_PER_CHUNK)) {
+    let pageToken = null;
+    let chunkFailed = false;
+
+    do {
+      const params = new URLSearchParams({
+        symbols: symbolChunk.join(','),
+        timeframe,
+        start: timeframe === '1Day' && /^\d{4}-\d{2}-\d{2}$/.test(String(startValue))
+          ? String(startValue)
+          : new Date(startValue).toISOString(),
+        limit: '10000',
+        adjustment,
+        feed,
+        sort: 'asc'
+      });
+
+      if (endValue) {
+        params.set(
+          'end',
+          timeframe === '1Day' && /^\d{4}-\d{2}-\d{2}$/.test(String(endValue))
+            ? String(endValue)
+            : new Date(endValue).toISOString()
+        );
+      }
+
+      if (pageToken) {
+        params.set('page_token', pageToken);
+      }
+
+      const url = `${DATA_BASE_URL}/v2/stocks/bars?${params.toString()}`;
+      const response = await fetchAlpacaDetailed(url, `getBarsDetailed:${timeframe}:${feed}`);
+
+      if (!response.ok) {
+        chunkFailed = true;
+        errors.push({ status: response.status, kind: response.kind });
+        pageToken = null;
+        break;
+      }
+
+      const barsBySymbol = response.data?.bars || {};
+      for (const [symbol, bars] of Object.entries(barsBySymbol)) {
+        if (!requestedSymbols.has(symbol) || !Array.isArray(bars) || !bars.length) {
+          continue;
+        }
+        const filtered =
+          timeframe === '1Day'
+            ? bars.filter((bar) => nyDate(Date.parse(bar.t)) < today)
+            : bars;
+        if (!filtered.length) {
+          continue;
+        }
+        const existing = result.get(symbol) || [];
+        result.set(symbol, existing.concat(filtered));
+      }
+
+      pageToken = response.data?.next_page_token || null;
+    } while (pageToken);
+
+    if (chunkFailed) {
+      for (const symbol of symbolChunk) {
+        failedSymbols.add(symbol);
+      }
+    }
+  }
+
+  for (const bars of result.values()) {
+    bars.sort((left, right) => new Date(left.t).getTime() - new Date(right.t).getTime());
+  }
+
+  return {
+    bars: result,
+    complete: failedSymbols.size === 0,
+    failedSymbols: [...failedSymbols],
+    errors
+  };
 }
 
 // Cheap variant of getDailyBars for the coarse stage-1 filter: only the most recent bar per
@@ -322,6 +502,7 @@ module.exports = {
   isConfigured,
   getActiveAssets,
   getDailyBars,
+  getBarsDetailed,
   getLatestDailyBars,
   getIntradayBars,
   getSnapshots,

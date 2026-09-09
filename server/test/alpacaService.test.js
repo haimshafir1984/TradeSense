@@ -454,3 +454,70 @@ test('getIntradayBars returns an empty map on HTTP failure instead of throwing',
 
   assert.equal(result.size, 0);
 });
+
+test('getBarsDetailed requests SIP daily history with a safe end and filters the current NY session', async (t) => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+  const now = Date.parse('2026-09-09T15:00:00Z');
+  let capturedParams = null;
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    capturedParams = new URL(url).searchParams;
+    return jsonResponse({
+      bars: {
+        AAA: [
+          { t: '2026-09-08T04:00:00Z', o: 10, h: 11, l: 9, c: 10, v: 1000 },
+          { t: '2026-09-09T04:00:00Z', o: 11, h: 12, l: 10, c: 11, v: 2000 }
+        ]
+      },
+      next_page_token: null
+    });
+  };
+
+  const result = await alpacaService.getBarsDetailed({
+    symbols: ['AAA'],
+    timeframe: '1Day',
+    days: 40,
+    feed: 'sip',
+    now
+  });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(capturedParams.get('feed'), 'sip');
+  assert.equal(capturedParams.get('timeframe'), '1Day');
+  assert.ok(Date.parse(capturedParams.get('end')) <= now - 16 * 60000);
+  assert.equal(result.complete, true);
+  assert.equal(result.bars.get('AAA').length, 1);
+  assert.equal(result.bars.get('AAA')[0].t, '2026-09-08T04:00:00Z');
+});
+
+test('getBarsDetailed marks failed chunks partial and reports failed symbols', async () => {
+  process.env.ALPACA_API_KEY_ID = 'key';
+  process.env.ALPACA_API_SECRET_KEY = 'secret';
+  const alpacaService = freshAlpacaService();
+  const symbols = Array.from({ length: 201 }, (_, index) => `S${index}`);
+  const originalFetch = global.fetch;
+  let call = 0;
+  global.fetch = async () => {
+    call += 1;
+    if (call === 1) return jsonResponse({ bars: {}, next_page_token: null });
+    return jsonResponse(null, false, 403);
+  };
+
+  const result = await alpacaService.getBarsDetailed({
+    symbols,
+    timeframe: '5Min',
+    start: '2026-09-09T13:30:00Z',
+    end: '2026-09-09T13:35:00Z'
+  });
+
+  global.fetch = originalFetch;
+  clearAlpacaEnv();
+
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.failedSymbols, ['S200']);
+  assert.equal(result.errors[0].status, 403);
+});

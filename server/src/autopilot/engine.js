@@ -1,14 +1,15 @@
 const store = require("./store");
 const config = require("./settings");
 const market = require("./market");
-const { STRATEGIES, evaluate } = require("./strategies");
+const { STRATEGIES, evaluateDetailed } = require("./strategies");
 const tracking = require("./tracking");
 const notices = require("./notifications");
 const users = require("./users");
 const alpaca = require("../providers/alpacaService");
 const finnhub = require("../providers/finnhubService");
-const universe = require("../services/universeBuilderService");
-const { computeFeaturesFromBars } = require("../playbooks/features");
+const universe = require("./universe");
+const history = require("./history");
+const selection = require("./selection");
 let running = false,
   timer,
   scanRunning = false,
@@ -56,42 +57,9 @@ function watch(symbols) {
   );
 }
 async function prepare(now) {
-  const date = market.nyDate(now);
-  const cache = store.get("cache", "universe");
-  if (cache?.date === date && cache.rows.length) return cache.rows;
-  if (Date.now() - lastUniverseAttempt < 300000) return cache?.rows || [];
+  if (Date.now() - lastUniverseAttempt < 300000) return universe.getRows(now);
   lastUniverseAttempt = Date.now();
-  const rows = [];
-  for (const exchange of ["NASDAQ", "NYSE"]) {
-    const data = await universe.getUniverseWithLazyRefresh(exchange);
-    for (const row of data?.rows || [])
-      if (/^[A-Z]{1,5}$/.test(row.symbol)) rows.push({ ...row, exchange });
-  }
-  if (rows.length) store.put("cache", "universe", { date, rows });
-  return rows;
-}
-async function dailyFeatures(symbols, now) {
-  const date = market.nyDate(now),
-    result = new Map();
-  const missing = [];
-  for (const symbol of symbols) {
-    const cached = store.get("daily", symbol);
-    if (cached?.date === date) result.set(symbol, cached.features);
-    else missing.push(symbol);
-  }
-  if (missing.length) {
-    const bars = await alpaca.getDailyBars({ symbols: missing, days: 420 });
-    for (const symbol of missing) {
-      const closed = (bars.get(symbol) || []).filter(
-        (b) => market.nyDate(Date.parse(b.t)) < date,
-      );
-      if (closed.length < 200) continue;
-      const features = computeFeaturesFromBars(closed);
-      store.put("daily", symbol, { date, features });
-      result.set(symbol, features);
-    }
-  }
-  return result;
+  return universe.ensure(now);
 }
 async function snapshots(symbols) {
   const out = new Map();
@@ -106,6 +74,8 @@ async function scan(now, calendar, today) {
   if (scanRunning) return;
   scanRunning = true;
   state({ scanning: true });
+  const scanId = `${today.date}:${now}`;
+  const startedAt = Date.now();
   try {
     const profiles = users
       .all()
@@ -115,62 +85,109 @@ async function scan(now, calendar, today) {
       state({ lastScanAt: new Date().toISOString(), scanning: false });
       return;
     }
-    const rows = await prepare(now);
-    const snap = await snapshots(rows.map((r) => r.symbol));
-    const ranked = rows
-      .map((row) => {
-        const s = snap.get(row.symbol),
-          price = market.freshPrice(s, Date.now());
-        const sameDay =
-          market.nyDate(Date.parse(s?.dailyBar?.t || 0)) === today.date;
-        return {
-          ...row,
-          snapshot: s,
-          price,
-          activity: sameDay
-            ? Number(s?.dailyBar?.v) * Number(s?.dailyBar?.c)
-            : 0,
-        };
-      })
-      .filter((r) => r.price && r.price.price >= 5 && r.activity > 0)
-      .sort((a, b) => b.activity - a.activity)
-      .slice(0, 25);
     const active = profiles.flatMap((user) =>
       store
         .listUser(user.id, "trade")
         .filter((t) => t.status === "open")
         .map((t) => t.ticker),
     );
-    const selected = [
-      ...new Set([...active, ...ranked.map((r) => r.symbol)]),
-    ].slice(0, 28);
-    watch(selected);
-    const features = await dailyFeatures(
-      ranked.map((r) => r.symbol),
-      now,
+    const activeSignals = profiles.flatMap((user) =>
+      store
+        .listUser(user.id, "signal")
+        .filter((s) => s.status === "active")
+        .map((s) => s.ticker),
     );
-    const history = await alpaca.getIntradayBars({
-      symbols: ranked.map((r) => r.symbol),
-      timeframe: "5Min",
-      start: new Date(now - 26 * 86400000).toISOString(),
-      end: new Date().toISOString(),
+    let rows = await prepare(now);
+    const universeStatus = universe.status(now);
+    if (!rows.length) {
+      state({
+        lastScanAt: new Date().toISOString(),
+        diagnostics: {
+          scanId,
+          universeSize: 0,
+          dailyReady: false,
+          selectedCount: 0,
+          evaluatedCount: 0,
+          partialData: true,
+        },
+        marketDiagnostics: { universe: universeStatus },
+        error: "מכין נתוני שוק; איתותים חדשים יופיעו אחרי שהמאגר יושלם",
+      });
+      return;
+    }
+    const dailyResult = await history.ensureDailyFeatures(rows.map((r) => r.symbol), now);
+    const snap = await snapshots(rows.map((r) => r.symbol));
+    const activeStrategies = [
+      ...new Set(
+        profiles.flatMap((user) =>
+          user.settings.strategies.filter((key) => {
+            const strategy = STRATEGIES.find((s) => s.key === key);
+            return (
+              strategy &&
+              (user.settings.mode === "both" || user.settings.mode === strategy.mode) &&
+              !(user.settings.risk === "balanced" && strategy.risk === "aggressive")
+            );
+          }),
+        ),
+      ),
+    ];
+    const picked = selection.selectCandidates({
+      rows,
+      snapshots: snap,
+      dailyFeatures: dailyResult.features,
+      intradayCache: history.cachedIntradayBars(rows.map((r) => r.symbol), now),
+      activeStrategies,
+      calendar,
+      today,
+      now: Date.now(),
     });
+    const ranked = picked.selected;
+    const streamSymbols = [
+      ...new Set([...active, ...activeSignals, ...ranked.map((r) => r.symbol)]),
+    ].slice(0, 28);
+    watch(streamSymbols);
+    const intraday = await history.ensureIntradayBars(ranked.map((r) => r.symbol), {
+      now: Date.now(),
+      keepSymbols: [...active, ...activeSignals],
+    });
+    const latestSelectedSnapshots = await snapshots(ranked.map((r) => r.symbol));
+    for (const row of ranked) {
+      const refreshed = latestSelectedSnapshots.get(row.symbol);
+      if (refreshed) {
+        row.snapshot = refreshed;
+        row.price = market.freshPrice(refreshed, Date.now());
+      }
+    }
     let matches = 0,
-      missingData = 0;
+      missingData = 0,
+      evaluatedCount = 0,
+      historyUnavailable = 0;
+    const marketCandidates = [];
+    const reasonCounts = {};
+    const personalCounters = new Map(
+      profiles.map((user) => [
+        user.id,
+        {
+          strategy_disabled: 0,
+          risk_or_mode_filtered: 0,
+          excluded: 0,
+          duplicate: 0,
+          newSignals: 0,
+          infeasibleSizing: 0,
+        },
+      ]),
+    );
     for (const row of ranked) {
       const asOf = Date.now(),
-        daily = features.get(row.symbol),
-        bars = history.get(row.symbol) || [];
+        dailyPack = dailyResult.features.get(row.symbol),
+        daily = dailyPack?.features || dailyPack,
+        bars = intraday.bars.get(row.symbol) || [];
       if (!daily) {
         missingData++;
+        reasonCounts.daily_missing = (reasonCounts.daily_missing || 0) + 1;
         continue;
       }
-      let news = store.get("news", row.symbol);
-      if (!news || asOf - news.at > 1800000) {
-        const count = await finnhub.getRecentNewsCount(row.symbol);
-        news = { at: Date.now(), count };
-        store.put("news", row.symbol, news);
-      }
+      if (!bars.length) historyUnavailable++;
       const sessionBars = bars.filter((b) => Date.parse(b.t) >= today.open);
       const prevClose = daily.price;
       const open = sessionBars[0]?.o;
@@ -179,7 +196,7 @@ async function scan(now, calendar, today) {
           ? ((open - prevClose) / prevClose) * 100
           : null;
       const rvol = market.openingRvol(bars, calendar, today, asOf);
-      for (const plan of evaluate({
+      let detailed = evaluateDetailed({
         daily,
         bars,
         asOf,
@@ -187,8 +204,50 @@ async function scan(now, calendar, today) {
         sessionClose: today.close,
         rvol,
         gapPct,
-        hasNews: news.count > 0,
-      })) {
+        hasNews: null,
+      });
+      const gapResult = detailed.results.get("gap_pullback");
+      if (row.eligibleStrategies?.includes("gap_pullback") && gapResult?.reasonCode === "news_needed") {
+        let news = store.get("news", row.symbol);
+        if (!news || asOf - news.at > 1800000) {
+          const count = await finnhub.getRecentNewsCount(row.symbol);
+          news = { at: Date.now(), count };
+          store.put("news", row.symbol, news);
+        }
+        detailed = evaluateDetailed({
+          daily,
+          bars,
+          asOf,
+          sessionOpen: today.open,
+          sessionClose: today.close,
+          rvol,
+          gapPct,
+          hasNews: news.count == null ? "unavailable" : news.count > 0,
+        });
+      }
+      evaluatedCount++;
+      for (const [strategyKey, result] of detailed.results) {
+        if (!row.eligibleStrategies?.includes(strategyKey)) continue;
+        if (!result.matched) {
+          reasonCounts[result.reasonCode] = (reasonCounts[result.reasonCode] || 0) + 1;
+          if (["trigger_not_met", "rvol_below_threshold"].includes(result.reasonCode)) {
+            marketCandidates.push({
+              ticker: row.symbol,
+              company: row.companyName,
+              exchange: row.exchange,
+              strategy: strategyKey,
+              reasonCode: result.reasonCode,
+              reasonText: selection.reasonText(result.reasonCode),
+              observedAt: new Date(asOf).toISOString(),
+              priceAt: row.price?.at || market.freshPrice(row.snapshot, asOf)?.at || null,
+              dailyFeed: "sip",
+              intradayFeed: "iex",
+            });
+          }
+        }
+      }
+      for (const plan of detailed.plans) {
+        if (!row.eligibleStrategies?.includes(plan.strategy)) continue;
         const strategy = STRATEGIES.find((s) => s.key === plan.strategy);
         const endSession =
           strategy.mode === "day"
@@ -196,25 +255,42 @@ async function scan(now, calendar, today) {
             : calendar.filter((s) => s.open >= today.open)[4];
         if (!endSession || asOf >= today.close - 900000) continue;
         const current = liveQuote(row.symbol, row.snapshot, Date.now());
-        if (
-          !current ||
-          current.price > plan.maxEntry ||
-          current.price < plan.entry
-        )
+        if (!current) {
+          reasonCounts.live_price_stale = (reasonCounts.live_price_stale || 0) + 1;
           continue;
+        }
+        if (current.price > plan.maxEntry || current.price < plan.entry) {
+          reasonCounts.price_outside_entry = (reasonCounts.price_outside_entry || 0) + 1;
+          continue;
+        }
         const livePlan = { ...plan, entry: current.price };
         for (const user of profiles) {
           const settings = user.settings;
+          const counters = personalCounters.get(user.id);
+          if (settings.excludedSymbols.includes(row.symbol)) {
+            counters.excluded++;
+            continue;
+          }
+          if (!settings.strategies.includes(strategy.key)) {
+            counters.strategy_disabled++;
+            continue;
+          }
           if (
-            settings.excludedSymbols.includes(row.symbol) ||
-            !settings.strategies.includes(strategy.key) ||
             (settings.mode !== "both" && settings.mode !== strategy.mode) ||
             (settings.risk === "balanced" && strategy.risk === "aggressive")
-          )
+          ) {
+            counters.risk_or_mode_filtered++;
             continue;
+          }
           // One setup per symbol/strategy/session. Stable IDs survive restarts and repeated scans.
           const id = `${today.date}:${row.symbol}:${strategy.key}:${strategy.version}`;
-          if (store.getUser(user.id, "signal", id)) continue;
+          const duplicate = store
+            .listUser(user.id, "signal")
+            .some((s) => s.id === id || s.id?.startsWith(`${today.date}:${row.symbol}:${strategy.key}:`));
+          if (duplicate) {
+            counters.duplicate++;
+            continue;
+          }
           const signal = {
             ...livePlan,
             id,
@@ -225,6 +301,13 @@ async function scan(now, calendar, today) {
             mode: strategy.mode,
             evidence: "experimental",
             feed: "iex",
+            provenance: {
+              dailyFeed: "sip",
+              intradayFeed: "iex",
+              priceFeed: "iex",
+              dailySessionDate: row.lastSessionDate || dailyPack?.bars?.at(-1)?.t || null,
+              priceAt: current.at,
+            },
             priceAt: current.at,
             rvol,
             gapPct,
@@ -238,6 +321,8 @@ async function scan(now, calendar, today) {
           };
           store.putUser(user.id, "signal", id, signal);
           matches++;
+          counters.newSignals++;
+          if (!signal.sizing.feasible) counters.infeasibleSizing++;
           if (signal.sizing.feasible && settings.setupComplete)
             notices.event(
               user.id,
@@ -249,14 +334,60 @@ async function scan(now, calendar, today) {
         }
       }
     }
+    const freshCandidates = marketCandidates.filter(
+      (candidate, index, list) =>
+        list.findIndex((item) => item.ticker === candidate.ticker && item.strategy === candidate.strategy) === index,
+    );
+    for (const user of profiles) {
+      const personal = freshCandidates
+        .filter((candidate) => {
+          const settings = user.settings;
+          const strategy = STRATEGIES.find((item) => item.key === candidate.strategy);
+          return (
+            strategy &&
+            !settings.excludedSymbols.includes(candidate.ticker) &&
+            settings.strategies.includes(candidate.strategy) &&
+            (settings.mode === "both" || settings.mode === strategy.mode) &&
+            !(settings.risk === "balanced" && strategy.risk === "aggressive")
+          );
+        })
+        .slice(0, 20);
+      store.putUser(user.id, "candidate", "latest", {
+        scanId,
+        date: today.date,
+        observedAt: new Date().toISOString(),
+        rows: personal,
+        counters: personalCounters.get(user.id),
+      });
+    }
     state({
       lastScanAt: new Date().toISOString(),
       diagnostics: {
+        scanId,
+        startedAt: new Date(startedAt).toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
         universe: rows.length,
+        universeSize: rows.length,
+        dailyReady: dailyResult.features.size,
+        snapshotAvailable: snap.size,
+        freshPriceCount: picked.selected.filter((row) => row.price).length,
         live: ranked.length,
+        selectedCount: ranked.length,
+        evaluatedCount,
+        historyUnavailable,
+        cacheHits: dailyResult.cacheHits + intraday.cacheHits,
+        requestsByProvider: { alpaca: "batched", finnhub: "gap-only" },
+        partialData: !dailyResult.complete || !intraday.complete || universeStatus.diagnostics?.partialData,
         missingData,
-        matches,
+        reasonCounts,
       },
+      personalDiagnostics: Object.fromEntries(personalCounters),
+      marketDiagnostics: {
+        universe: universe.status(now),
+        selection: picked.diagnostics,
+      },
+      matches: undefined,
       error: null,
     });
   } finally {

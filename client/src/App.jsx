@@ -149,6 +149,11 @@ export default function App() {
   }
   const runtime = data?.runtime || {},
     settings = data?.settings;
+  const diagnostics = runtime.diagnostics || {},
+    marketDiagnostics = runtime.marketDiagnostics || {},
+    universeStatus = marketDiagnostics.universe || {},
+    selectionStatus = marketDiagnostics.selection || {},
+    candidates = data?.candidates || [];
   const active = (data?.signals || []).filter(
     (s) =>
       s.status === "active" &&
@@ -312,14 +317,18 @@ export default function App() {
                       sub="מתעדכנים אוטומטית"
                     />
                     <Metric
-                      label="במעקב האישי שלך"
-                      value={open.length}
-                      sub="לפי עסקאות שדיווחת"
+                      label="מניות במאגר"
+                      value={number(universeStatus.size ?? diagnostics.universeSize)}
+                      sub={
+                        universeStatus.running
+                          ? "מכין נתוני שוק"
+                          : "סינון יומי לפי SIP"
+                      }
                     />
                     <Metric
-                      label="הון זמין שהגדרת"
-                      value={money(settings.availableCash)}
-                      sub="אינו מסונכרן עם Blink"
+                      label="נבדקו במחזור"
+                      value={number(diagnostics.evaluatedCount)}
+                      sub={`סריקה אחרונה: ${time(runtime.lastScanAt)}`}
                     />
                   </div>
                   <div
@@ -424,16 +433,50 @@ export default function App() {
                       </span>
                     </div>
                   )}
+                  <details className="watch-panel" open>
+                    <summary>מניות במעקב — עדיין אין איתות כניסה</summary>
+                    {candidates.length ? (
+                      <div className="watch-grid">
+                        {candidates.map((candidate) => (
+                          <WatchCard
+                            key={`${candidate.ticker}:${candidate.strategy}`}
+                            candidate={candidate}
+                            label={strategy(candidate.strategy)?.label}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="panel empty compact">
+                        <h2>
+                          {universeStatus.running || runtime.scanning
+                            ? "מכינים היסטוריה וסורקים מועמדות"
+                            : runtime.error
+                              ? "נתוני השוק אינם זמינים כרגע"
+                              : "לא נמצאו תנאים מתאימים למעקב"}
+                        </h2>
+                        <p>
+                          כרטיסי מעקב יופיעו רק למניות שעברו סינון בסיסי ומחכות
+                          לטריגר כניסה או לנפח יחסי גבוה יותר.
+                        </p>
+                      </div>
+                    )}
+                  </details>
                   <details className="diagnostics">
                     <summary>מה נבדק בסריקה האחרונה?</summary>
                     <p>
                       {runtime.diagnostics
-                        ? `${runtime.diagnostics.universe} מניות ברשימה · ${runtime.diagnostics.live} עם נתונים חיים ברשימה המצומצמת · ${runtime.diagnostics.matches} איתותים חדשים`
+                        ? `${number(diagnostics.universeSize)} מניות במאגר · ${number(diagnostics.selectedCount)} נבחרו לבדיקה עמוקה · ${number(diagnostics.evaluatedCount)} נבדקו · ${number(runtime.personalDiagnostics?.newSignals)} איתותים חדשים בפרופיל שלך`
                         : "עדיין לא הושלמה סריקה."}
                     </p>
                     <p>
-                      נתוני נפח ו־VWAP מ־IEX בלבד, עם כיסוי חלקי. נתון ישן אינו
-                      מוצג כמחיר לביצוע. כל הגרסאות החדשות נמצאות בשלב בדיקה.
+                      היסטוריה יומית מכלל הבורסות דרך SIP; נתונים חיים, נרות
+                      תוך־יומיים, RVOL ו־VWAP מבורסת IEX. המחיר עשוי להיות שונה
+                      מהמחיר שתראה ב־Blink.
+                    </p>
+                    <p>
+                      {selectionStatus.listSizes
+                        ? `פיזור בחירה: ORB ${number(selectionStatus.listSizes.orb15)} · Gap ${number(selectionStatus.listSizes.gap_pullback)} · VWAP ${number(selectionStatus.listSizes.vwap_reclaim)} · Reversal ${number(selectionStatus.listSizes.reversal5)}`
+                        : ""}
                     </p>
                   </details>
                   <div className="bottom-grid">
@@ -832,6 +875,25 @@ function Signal({ s, label, onEntry, onCopy }) {
         <button className="secondary" onClick={onCopy}>
           העתק תוכנית
         </button>
+      </div>
+    </article>
+  );
+}
+function WatchCard({ candidate, label }) {
+  return (
+    <article className="panel watch-card">
+      <div className="section-heading">
+        <span className="badge">במעקב</span>
+        <span className="subtle">{label}</span>
+      </div>
+      <div className="signal-title">
+        <h2 dir="ltr">{candidate.ticker}</h2>
+        <span>{candidate.company}</span>
+      </div>
+      <p className="reason">{candidate.reasonText}</p>
+      <div className="watch-meta">
+        <span>נבדק ב־{time(candidate.observedAt)}</span>
+        <span>היסטוריה SIP · חי IEX</span>
       </div>
     </article>
   );
