@@ -5,6 +5,7 @@ const rootEnvPath = path.resolve(__dirname, "../../.env");
 dotenv.config({ path: rootEnvPath });
 
 const app = require("./app");
+const { startMemoryDiagnostics } = require("./memoryDiagnostics");
 
 const port = Number(process.env.PORT || 4000);
 
@@ -12,6 +13,7 @@ console.log(`[startup] Loaded env from ${rootEnvPath}`);
 console.log(
   `[startup] DATA_MODE=${process.env.DATA_MODE || "undefined"} FINNHUB_API_KEY=${process.env.FINNHUB_API_KEY ? "present" : "missing"} CLIENT_ORIGIN=${process.env.CLIENT_ORIGIN || "undefined"}`,
 );
+startMemoryDiagnostics();
 
 // The server owns the persistent v3 scheduler; browser visits never trigger monitoring.
 app.listen(port, () => {
