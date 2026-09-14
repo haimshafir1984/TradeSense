@@ -10,7 +10,7 @@ const DEFAULTS = {
   maxPositions: 3,
   dailyLossPct: 2,
   fractional: true,
-  fees: "paid",
+  fees: "none",
   slippagePct: 0.1,
   strategies: ["orb15", "gap_pullback", "vwap_reclaim", "reversal5"],
   excludedSymbols: [],
@@ -49,7 +49,7 @@ function validate(input) {
   for (const [key, allowed] of Object.entries({
     risk: ["balanced", "aggressive"],
     mode: ["both", "day", "swing"],
-    fees: ["paid", "free"],
+    fees: ["none", "paid", "free"],
   }))
     if (key in input) {
       if (!allowed.includes(input[key])) throw new Error(`ערך לא תקין: ${key}`);
@@ -90,12 +90,11 @@ function save(input, userId) {
     });
   return store.put("config", "settings", { ...read(), ...validate(input) });
 }
-// Published Blink schedule; conservative paid estimate unless the user confirms BOTH legs fit
-// the remaining monthly allowance. Actual broker fees can be recorded on manual fills.
-function fee(shares, price, mode = "paid") {
-  return mode === "free"
-    ? 0
-    : Math.min(Math.max(shares * 0.01, 1.5), shares * price * 0.018);
+// Broker-neutral calculations: commissions, taxes and FX costs are outside the system's model.
+function fee() {
+  // TradeSense is broker-neutral. Broker commissions are recorded outside the
+  // recommendation and tracking workflow and never constrain position sizing.
+  return 0;
 }
 function size(plan, settings, reserved = 0) {
   const cash = Math.max(

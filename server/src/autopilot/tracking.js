@@ -35,7 +35,6 @@ function samePayload(trade, input, mode, additionalLot, signalId) {
     trade.signalId === signalId &&
     trade.entry === input.price &&
     trade.shares === input.shares &&
-    (input.fees == null ? trade.feeSource === "estimated" : trade.entryFee === input.fees) &&
     trade.enteredAt === input.executedAt &&
     trade.trackingPlanMode === mode &&
     trade.additionalLot === additionalLot;
@@ -82,13 +81,6 @@ function personalEntry(userId, signalId, input, now = Date.now()) {
     error.code = "plan_invalid";
     throw error;
   }
-  if (
-    input.fees != null &&
-    (typeof input.fees !== "number" ||
-      input.fees < 0 ||
-      !Number.isFinite(input.fees))
-  )
-    throw new Error("עמלה לא תקינה");
   // Entries are user reports of trades already executed, not order submission or authorization.
   return store.transaction(() => {
     const trades = store.listUser(userId, "trade");
@@ -125,10 +117,9 @@ function personalEntry(userId, signalId, input, now = Date.now()) {
       mode: signal.mode,
       enteredAt: new Date(now).toISOString(),
       lastCheckedAt: new Date(now).toISOString(),
-      entryFee:
-        input.fees ?? config.fee(input.shares, input.price, settings.fees),
-      feeSource: input.fees == null ? "estimated" : "reported",
-      feeMode: settings.fees,
+      entryFee: 0,
+      feeSource: "none",
+      feeMode: "none",
       schemaVersion: 2,
       requestId,
       additionalLot,
@@ -147,24 +138,17 @@ function personalEntry(userId, signalId, input, now = Date.now()) {
 }
 function personalClose(userId, id, input, now = Date.now()) {
   positive(input.price, "מחיר יציאה");
-  if (
-    input.fees != null &&
-    (typeof input.fees !== "number" ||
-      input.fees < 0 ||
-      !Number.isFinite(input.fees))
-  )
-    throw new Error("עמלה לא תקינה");
   return store.transaction(() => {
     const trade = store.getUser(userId, "trade", id);
     if (!trade || trade.source !== "personal" || trade.status !== "open")
       throw new Error("עסקה פתוחה לא נמצאה");
     now = executionTime(input, trade.enteredAt, now);
-    return close(userId, trade, input.price, "reported", now, input.fees);
+    return close(userId, trade, input.price, "reported", now);
   });
 }
-function close(userId, trade, price, reason, now, fees) {
-  const exitFee = fees ?? config.fee(trade.shares, price, trade.feeMode);
-  const pnl = (price - trade.entry) * trade.shares - trade.entryFee - exitFee;
+function close(userId, trade, price, reason, now) {
+  const exitFee = 0;
+  const pnl = (price - trade.entry) * trade.shares;
   return store.putUser(userId, "trade", trade.id, {
     ...trade,
     status: "closed",
@@ -177,7 +161,7 @@ function close(userId, trade, price, reason, now, fees) {
       ? pnl /
         (trade.shares * (trade.entry - trade.stop) +
           trade.entryFee +
-          config.fee(trade.shares, trade.stop, trade.feeMode))
+          0)
       : null,
   });
 }
@@ -237,7 +221,7 @@ function track(userId, trade, bars, quote, now = Date.now()) {
       userId,
       `overdue:${trade.id}`,
       "מועד היציאה הגיע",
-      `${trade.ticker}: אין מחיר טרי; בדוק את העסקה ב־Blink`,
+      `${trade.ticker}: אין מחיר טרי; בדוק את העסקה אצל הברוקר`,
       "warning",
     );
   }
@@ -263,7 +247,7 @@ function track(userId, trade, bars, quote, now = Date.now()) {
     notices.event(
       userId,
       `exit:${trade.id}:${hit.reason}`,
-      "בדוק יציאה ב־Blink",
+      "בדוק יציאה אצל הברוקר",
       `${trade.ticker}: ${hit.reason === "stop" ? "המחיר הגיע לסטופ" : hit.reason === "target" ? "המחיר הגיע ליעד" : "הגיע מועד היציאה"}. לא בוצעה מכירה.`,
       "exit",
     );

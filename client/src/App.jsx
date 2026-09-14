@@ -52,7 +52,11 @@ export default function App() {
         .then(setLegacy)
         .catch(() => {});
   }, [tab]);
-  const token = useRef(sessionStorage.getItem("tradesense.access") || "");
+  const token = useRef(
+    localStorage.getItem("tradesense.access") ||
+      sessionStorage.getItem("tradesense.access") ||
+      "",
+  );
   const userId = useRef(localStorage.getItem("tradesense.user") || "");
   async function api(path, options = {}) {
     const response = await fetch(`${BASE}/api/autopilot${path}`, {
@@ -80,7 +84,7 @@ export default function App() {
   async function login(event) {
     event.preventDefault();
     token.current = code;
-    sessionStorage.setItem("tradesense.access", code);
+    localStorage.setItem("tradesense.access", code);
     await act(
       () =>
         api("/session", {
@@ -186,7 +190,7 @@ export default function App() {
           {runtime.marketOpen ? "השוק האמריקאי פתוח" : "השוק האמריקאי סגור"}
         </div>
         <span className="broker-label">
-          ביצוע ידני ב־<b>Blink</b>
+          ביצוע ידני אצל הברוקר שלך
         </span>
       </header>
       <div className="workspace">
@@ -221,7 +225,7 @@ export default function App() {
             <small>
               המערכת עוקבת ומתריעה.
               <br />
-              את העסקאות מבצעים ב־Blink.
+              את העסקאות מבצעים אצל הברוקר שלך.
             </small>
           </div>
         </aside>
@@ -247,8 +251,8 @@ export default function App() {
             <form className="panel login" onSubmit={login}>
               <h1>כניסה למערכת שלך</h1>
               <p>
-                בפעם הראשונה בחר קוד פשוט. בפעמים הבאות הזן את אותו קוד כדי
-                לפתוח את הפרופיל שנשמר במכשיר הזה.
+                בפעם הראשונה בחר קוד פשוט. הקוד נשמר במכשיר הזה והכניסות הבאות
+                ייפתחו אוטומטית באותו דפדפן.
               </p>
               <label>
                 קוד גישה
@@ -276,7 +280,7 @@ export default function App() {
                   <div>
                     <strong>מתחילים מהחשבון שלך</strong>
                     <p>
-                      הגדר את ההון הזמין ואת העמלות. המעקב הסימולטיבי כבר יכול
+                      הגדר את ההון הזמין. המעקב הסימולטיבי כבר יכול
                       לעבוד ברקע.
                     </p>
                   </div>
@@ -477,7 +481,7 @@ export default function App() {
                     <p>
                       היסטוריה יומית מכלל הבורסות דרך SIP; נתונים חיים, נרות
                       תוך־יומיים, RVOL ו־VWAP מבורסת IEX. המחיר עשוי להיות שונה
-                      מהמחיר שתראה ב־Blink.
+                      ממחיר הביצוע בפועל.
                     </p>
                     <p>
                       {selectionStatus.listSizes
@@ -535,7 +539,7 @@ export default function App() {
                 <>
                   <div className="page-heading">
                     <div>
-                      <span className="eyebrow">החשבון שלך ב־Blink</span>
+                      <span className="eyebrow">העסקאות שלך</span>
                       <h1>העסקאות שלי</h1>
                       <p>
                         כניסות ויציאות לפי הדיווח שלך. המערכת אינה מחוברת
@@ -554,8 +558,8 @@ export default function App() {
                         </div>
                         {t.exitAlert && (
                           <div className="banner warning">
-                            התקבל סימן יציאה: {names[t.exitAlert]}. בדוק
-                            ב־Blink; לא בוצעה מכירה.
+                            התקבל סימן יציאה: {names[t.exitAlert]}. בדוק את
+                            העסקה אצל הברוקר; לא בוצעה מכירה.
                           </div>
                         )}
                         <div className="trade-values">
@@ -579,7 +583,7 @@ export default function App() {
                           className="primary"
                           onClick={() => setModal({ kind: "close", trade: t })}
                         >
-                          דיווח על מכירה ב־Blink
+                          דיווח על מכירה
                         </button>
                       </div>
                     ))
@@ -588,8 +592,8 @@ export default function App() {
                       <span className="empty-icon">↗</span>
                       <h2>עדיין אין עסקאות במעקב אישי</h2>
                       <p>
-                        אחרי ביצוע עסקה ב־Blink, לחץ על ״ביצעתי קנייה״ בכרטיס
-                        האיתות והזן את המחיר והכמות שקיבלת.
+                        אחרי ביצוע עסקה אצל הברוקר, לחץ על ״דיווח על קנייה״
+                        בכרטיס האיתות והזן את המחיר, הכמות וזמן הביצוע.
                       </p>
                       <button
                         className="secondary"
@@ -703,7 +707,7 @@ export default function App() {
                             : `${s.winRate.toFixed(1)}% רווחיות`}
                         </p>
                         <small>
-                          לאחר עמלות שהוגדרו, לפני מס והמרת מט״ח.{" "}
+                          לפני מס והמרת מט״ח.{" "}
                           {s.source === "simulation"
                             ? "הביצוע מדומה ואינו תשואת החשבון."
                             : ""}
@@ -747,7 +751,7 @@ export default function App() {
                   />
                   <p className="muted">
                     תוצאות v2 הישנות לא הועברו לגרסאות החדשות. סימולציה לפי
-                    מחירי IEX אינה מבטיחה מחיר ביצוע ב־Blink.
+                     מחירי IEX אינה מבטיחה מחיר ביצוע אצל הברוקר.
                   </p>
                 </>
               )}
@@ -849,34 +853,31 @@ function Signal({ s, label, onEntry, onCopy }) {
           <b>{number(s.sizing.shares)}</b>
         </div>
       </div>
-      <p className="cost">
-        עלות כולל עמלת כניסה: <b>{money(s.sizing.cost)}</b> · סיכון מחושב:{" "}
-        <b>{money(s.sizing.riskUsd)}</b>
-      </p>
+       <p className="cost">
+         עלות משוערת: <b>{money(s.sizing.cost)}</b> · סיכון מחושב:{" "}
+         <b>{money(s.sizing.riskUsd)}</b>
+       </p>
       {!s.sizing.feasible && (
         <p className="banner warning">
-          ההון או העמלות שהוגדרו אינם מאפשרים עסקה מעשית בתוכנית זו.
+           ההון שהוגדר אינו מאפשר עסקה מעשית בתוכנית זו.
         </p>
       )}
       <p className="expiry">
         בתוקף עד {time(s.expiresAt)} · מעל {money(s.maxEntry)} האיתות מתבטל
       </p>
       <details>
-        <summary>לפני מעבר ל־Blink</summary>
+         <summary>לפני ביצוע העסקה</summary>
         <p>
-          בדוק שהמניה זמינה בחשבון שלך, כולל תמיכה בשברים ובפקודת הסטופ הרצויה.
-          הנתונים כאן מ־IEX, ויכולים להיות שונים מהמחיר ב־Blink.
+           בדוק שהמניה זמינה אצל הברוקר שלך, כולל תמיכה בשברים ובפקודת הסטופ הרצויה.
+           הנתונים כאן מ־IEX, ויכולים להיות שונים ממחיר הביצוע.
         </p>
         <p>
           יציאה מתוכננת: {time(s.deadline)}. סיכון מחושב אינו הפסד מרבי מובטח.
         </p>
-        <a href="https://heyblink.com/" target="_blank" rel="noreferrer">
-          אתר Blink ↗
-        </a>
       </details>
       <div className="card-actions">
         <button className="primary" onClick={onEntry}>
-          ביצעתי קנייה ב־Blink
+           דיווח על קנייה
         </button>
         <button className="secondary" onClick={onCopy}>
           העתק תוכנית
@@ -959,7 +960,7 @@ function Settings({ settings, strategies, busy, onSave, onPush }) {
         <div>
           <span className="eyebrow">הגדרה אחת, מעקב מתמשך</span>
           <h1>מותאם לחשבון שלך</h1>
-          <p>הסכומים מוזנים ידנית. עדכן אותם לאחר פעילות ב־Blink.</p>
+          <p>הסכומים מוזנים ידנית. עדכן אותם לאחר ביצוע או סגירת עסקה.</p>
         </div>
       </div>
       <form
@@ -970,7 +971,7 @@ function Settings({ settings, strategies, busy, onSave, onPush }) {
         className="settings-layout"
       >
         <section className="panel">
-          <h2>החשבון ב־Blink</h2>
+          <h2>החשבון שלך</h2>
           <div className="form-grid">
             <label>
               שווי החשבון בדולרים
@@ -1024,32 +1025,8 @@ function Settings({ settings, strategies, busy, onSave, onPush }) {
               checked={form.fractional}
               onChange={(e) => set("fractional", e.target.checked)}
             />
-            חשב גם שברי מניות — בכפוף לזמינות ב־Blink
+            חשב גם שברי מניות — בכפוף לזמינות אצל הברוקר
           </label>
-          <label>
-            הערכת עמלות
-            <select
-              value={form.fees}
-              onChange={(e) => set("fees", e.target.value)}
-            >
-              <option value="paid">לפי התעריף בתשלום — הערכה שמרנית</option>
-              <option value="free">
-                אישרתי שנותרה מכסה חינמית לקנייה ולמכירה
-              </option>
-            </select>
-          </label>
-          <p className="muted">
-            אין חיבור למכסת הפעולות שלך. התעריף המשוער: 1 סנט למניה, מינימום
-            $1.50 ועד 1.8% לפעולה. עמלות בפועל, מס והמרת מט״ח עשויים לשנות את
-            התוצאה.{" "}
-            <a
-              href="https://heyblink.com/pricing/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              תעריפון Blink ↗
-            </a>
-          </p>
         </section>
         <section className="panel">
           <h2>גבולות הסימולציה והכמות</h2>
@@ -1086,7 +1063,7 @@ function Settings({ settings, strategies, busy, onSave, onPush }) {
             ))}
           </div>
           <p className="muted">
-            עצירת הסימולציה אינה סוגרת עסקה ב־Blink. הכמות האישית נשמרת לפי
+            עצירת הסימולציה אינה סוגרת עסקה אצל הברוקר. הכמות האישית נשמרת לפי
             הביצוע שתדווח.
           </p>
         </section>
@@ -1115,7 +1092,7 @@ function Settings({ settings, strategies, busy, onSave, onPush }) {
             </label>
           ))}
           <label>
-            מניות שלא זמינות לך ב־Blink (מופרדות בפסיק)
+            מניות שלא זמינות לך אצל הברוקר (מופרדות בפסיק)
             <input
               dir="ltr"
               placeholder="ABC, XYZ"
@@ -1195,7 +1172,6 @@ function TradeDialog({ modal, error, busy, onClose, onSubmit }) {
               ? { executedAt: new Date(f.get("executedAt")).toISOString() }
               : {}),
             ...(entry ? { shares: Number(f.get("shares")) } : {}),
-            ...(f.get("fees") !== "" ? { fees: Number(f.get("fees")) } : {}),
           });
         }}
       >
@@ -1212,7 +1188,7 @@ function TradeDialog({ modal, error, busy, onClose, onSubmit }) {
             ×
           </button>
         </div>
-        <p>ממלאים רק אחרי שהעסקה בוצעה ב־Blink. הפעולה כאן שומרת דיווח בלבד.</p>
+        <p>הזן את המחיר, הכמות וזמן הביצוע בפועל. הפעולה כאן שומרת דיווח בלבד.</p>
         {error && (
           <div className="banner error" role="alert">
             {error}
@@ -1257,7 +1233,7 @@ function TradeDialog({ modal, error, busy, onClose, onSubmit }) {
           </p>
           <label>
             תוכנית מעקב
-            <select name="trackingPlanMode" defaultValue={item.stop < item.entry && item.entry < item.target ? "signal" : "none"}>
+            <select name="trackingPlanMode" defaultValue={item.stop < item.entry && item.entry < item.target && (!item.deadline || Date.parse(item.deadline) > Date.now()) ? "signal" : "none"}>
               <option value="signal">איתות — התראות סטופ/יעד/מועד</option>
               <option value="none">מחיר בלבד — ללא התראות סטופ/יעד/מועד</option>
             </select>
@@ -1268,16 +1244,6 @@ function TradeDialog({ modal, error, busy, onClose, onSubmit }) {
           </label>
           </>
         )}
-        <label>
-          עמלה בפועל ($, אופציונלי)
-          <input
-            type="number"
-            name="fees"
-            min="0"
-            step="0.01"
-            placeholder="ריק = הערכה לפי ההגדרות"
-          />
-        </label>
         <div className="card-actions">
           <button className="primary" disabled={busy}>
             שמירת הדיווח

@@ -379,7 +379,7 @@ async function scan(now, calendar, today) {
               user.id,
               `signal:${id}`,
               `${row.symbol} · ${strategy.label}`,
-              `איתות ניסיוני: כניסה $${plan.entry.toFixed(2)}–$${plan.maxEntry.toFixed(2)}. תוקף עד 10 דקות; בדוק זמינות ב־Blink.`,
+              `איתות ניסיוני: כניסה $${plan.entry.toFixed(2)}–$${plan.maxEntry.toFixed(2)}. תוקף עד 10 דקות; בדוק זמינות אצל הברוקר.`,
               "signal",
             );
         }
@@ -589,7 +589,7 @@ async function tick() {
         user.id,
         `engine-error:${market.nyDate()}`,
         "המעקב דורש בדיקה",
-        "שירות נתוני השוק אינו זמין. פתח את המערכת ובדוק עסקאות פתוחות ב־Blink.",
+        "שירות נתוני השוק אינו זמין. פתח את המערכת ובדוק עסקאות פתוחות אצל הברוקר.",
         "warning",
       );
   } finally {

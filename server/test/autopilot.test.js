@@ -50,11 +50,10 @@ const signal = (id) => ({
   sizing: { feasible: true },
 });
 
-test("Blink paid fee handles fractional small orders and minimum", () => {
-  assert.equal(config.fee(0.7, 100), 1.26);
-  assert.equal(config.fee(1, 100), 1.5);
-  assert.equal(config.fee(200, 100), 2);
-  assert.equal(config.fee(1, 100, "free"), 0);
+test("broker-neutral sizing does not apply broker fees", () => {
+  assert.equal(config.fee(0.7, 100), 0);
+  assert.equal(config.fee(1, 100), 0);
+  assert.equal(config.fee(200, 100), 0);
 });
 test("sizing respects cash plus entry fee and total stop risk", () => {
   const s = { ...config.DEFAULTS, equity: 100, availableCash: 100 };
@@ -471,7 +470,7 @@ test("personal stop alert never sells; actual fills and late reports are distinc
     { price: 98, fees: 0.1 },
     start + 180000,
   );
-  assert.equal(trade.pnl, -0.5);
+  assert.equal(trade.pnl, -0.4);
   const stats = tracking.statistics(store.listUser(USER, "trade"));
   assert.equal(stats.find((s) => s.source === "personal").n, 1);
 });
