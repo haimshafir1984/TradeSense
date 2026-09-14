@@ -20,6 +20,9 @@ function getRecord(key) {
 function putRecord(key, record) {
   return store.put("history", key, record);
 }
+function featureKey(symbol) {
+  return `features:${SCHEMA}:${symbol}:sip:1Day`;
+}
 
 function uniqueBars(bars) {
   const byTime = new Map();
@@ -63,65 +66,50 @@ async function once(key, fn) {
 async function ensureDailyFeatures(symbols, now = Date.now()) {
   const unique = [...new Set(symbols)].filter(Boolean);
   const result = new Map();
-  const missing = [];
-
-  for (const symbol of unique) {
-    const key = cacheKey({ symbol, feed: "sip", timeframe: "1Day" });
-    const cached = getRecord(key);
-    const bars = cached?.bars || [];
-    if (dailyCacheUsable(cached, now)) {
-      result.set(symbol, { features: computeFeaturesFromBars(bars), bars, cached: true });
-    } else {
-      missing.push(symbol);
+  const failedSymbols = [], errors = [];
+  const progressKey = `history-progress:daily:${market.nyDate(now)}`;
+  let cacheHits = 0;
+  // Each compact record is the durable checkpoint. Never retain batch response bodies.
+  for (let offset = 0; offset < unique.length; offset += 25) {
+    const group = unique.slice(offset, offset + 25);
+    const missing = [];
+    for (const symbol of group) {
+      const compact = getRecord(featureKey(symbol));
+      if (compact?.featureSchema === 2 && compact.complete &&
+          market.nyDate(Date.parse(compact.fetchedAt)) === market.nyDate(now) &&
+          compact.sessionDate < market.nyDate(now)) {
+        result.set(symbol, { features: compact.features, lastSessionDate: compact.sessionDate, cached: true });
+        cacheHits++;
+      } else missing.push(symbol);
     }
+    if (!missing.length) continue;
+    const detail = await once(`daily:${missing.join(",")}:${market.nyDate(now)}`, () =>
+      alpaca.getBarsDetailed({ symbols: missing, timeframe: "1Day", days: 420,
+        feed: "sip", adjustment: "split", now }));
+    const failed = new Set(detail.failedSymbols || []);
+    errors.push(...(detail.errors || []));
+    store.transaction(() => {
+      for (const symbol of missing) {
+        if (failed.has(symbol)) { failedSymbols.push(symbol); continue; }
+        const closed = uniqueBars(detail.bars.get(symbol) || [])
+          .filter(bar => market.nyDate(Date.parse(bar.t)) < market.nyDate(now));
+        if (!closed.length) { failedSymbols.push(symbol); continue; }
+        const sessionDate = market.nyDate(Date.parse(closed.at(-1).t));
+        const features = computeFeaturesFromBars(closed);
+        putRecord(featureKey(symbol), { symbol, feed: "sip", timeframe: "1Day",
+          adjustment: "split", featureSchema: 2, sessionDate,
+          fetchedAt: new Date(now).toISOString(), complete: true, features });
+        result.set(symbol, { features, lastSessionDate: sessionDate, cached: false });
+      }
+      store.put("runtime", progressKey, { completedSymbols: [...result.keys()],
+        failedSymbols, updatedAt: new Date(now).toISOString() });
+    });
+    detail.bars.clear();
+    await new Promise(resolve => setImmediate(resolve));
   }
-
-  if (!missing.length) {
-    return { features: result, complete: true, failedSymbols: [], errors: [], cacheHits: unique.length };
-  }
-
-  const sortedMissing = [...missing].sort();
-  const detail = await once(`daily:${sortedMissing.join(",")}:${market.nyDate(now)}`, () =>
-    alpaca.getBarsDetailed({
-      symbols: sortedMissing,
-      timeframe: "1Day",
-      days: 420,
-      feed: "sip",
-      adjustment: "split",
-      now,
-    }),
-  );
-
-  const failed = new Set(detail.failedSymbols || []);
-  for (const symbol of missing) {
-    if (failed.has(symbol)) continue;
-    const bars = uniqueBars(detail.bars.get(symbol) || []);
-    const closed = bars.filter((bar) => market.nyDate(Date.parse(bar.t)) < market.nyDate(now));
-    if (!closed.length) continue;
-    const lastSessionDate = market.nyDate(Date.parse(closed.at(-1).t));
-    const record = {
-      symbol,
-      feed: "sip",
-      timeframe: "1Day",
-      adjustment: "split",
-      schema: SCHEMA,
-      bars: closed,
-      lastSessionDate,
-      fetchedAt: new Date(now).toISOString(),
-    };
-    putRecord(cacheKey({ symbol, feed: "sip", timeframe: "1Day" }), record);
-    result.set(symbol, { features: computeFeaturesFromBars(closed), bars: closed, cached: false });
-  }
-
-  return {
-    features: result,
-    complete: detail.complete,
-    failedSymbols: detail.failedSymbols,
-    errors: detail.errors,
-    cacheHits: unique.length - missing.length,
-  };
+  return { features: result, complete: failedSymbols.length === 0 && errors.length === 0,
+    failedSymbols, errors, cacheHits };
 }
-
 async function ensureIntradayBars(
   symbols,
   { now = Date.now(), keepSymbols = [], evict = true } = {},
@@ -209,17 +197,20 @@ async function ensureIntradayBars(
     }
   }
 
+    store.put("runtime", `history-progress:intraday:${market.nyDate(now)}`, {
+      feed: "iex", timeframe: "5Min", sessionDate: market.nyDate(now),
+      completedSymbols: [...result.keys()], failedSymbols: [...new Set(failedSymbols)],
+      updatedAt: new Date().toISOString(),
+    });
   if (evict) evictIntraday({ now, keepSymbols });
   return { bars: result, complete, failedSymbols, errors, cacheHits };
 }
 
 function evictIntraday({ now = Date.now(), keepSymbols = [] } = {}) {
   const keep = new Set(keepSymbols);
-  const ids = typeof store.listIds === "function" ? store.listIds("history") : [];
-  const records = ids
-    .filter((id) => id.includes(":iex:5Min:"))
-    .map((id) => store.get("history", id))
-    .filter(Boolean)
+  const metadata = typeof store.listMetadata === "function" ? store.listMetadata("history") : [];
+  const records = metadata
+    .filter((record) => record.id.includes(":iex:5Min:"))
     .map((record) => ({ ...record, usedMs: Date.parse(record.lastUsedAt || record.fetchedAt || 0) || 0 }))
     .sort((a, b) => b.usedMs - a.usedMs);
   const staleBefore = now - 7 * 86400000;
@@ -244,6 +235,16 @@ function cachedIntradayBars(symbols, now = Date.now()) {
   return result;
 }
 
+function cachedRvolScores(symbols, calendar, today, now) {
+  const scores = new Map();
+  for (const symbol of symbols) {
+    const cached = getRecord(cacheKey({symbol, feed: "iex", timeframe: "5Min"}));
+    if (intradayCacheUsable(cached, now))
+      scores.set(symbol, market.openingRvol(cached.bars || [], calendar, today, now));
+  }
+  return scores;
+}
+
 module.exports = {
   cacheKey,
   ensureDailyFeatures,
@@ -252,5 +253,7 @@ module.exports = {
   dailyCacheUsable,
   intradayCacheUsable,
   cachedIntradayBars,
+  cachedRvolScores,
+  evictIntraday,
   uniqueBars,
 };

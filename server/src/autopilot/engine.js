@@ -137,8 +137,7 @@ async function scan(now, calendar, today) {
       });
       return;
     }
-    const snap = await snapshots(rows.map((r) => r.symbol));
-    const selectionNow = Date.now();
+
     const activeStrategies = [
       ...new Set(
         profiles.flatMap((user) =>
@@ -153,12 +152,17 @@ async function scan(now, calendar, today) {
         ),
       ),
     ];
+    const dailyResult = await history.ensureDailyFeatures(rows.map((r) => r.symbol), Date.now());
+    logMemory("scan:daily-ready");
+    const snap = await snapshots(rows.map((r) => r.symbol));
+    const selectionNow = Date.now();
     const picked = selection.selectCandidates({
       rows,
       snapshots: snap,
-      dailyFeatures: new Map(),
-      intradayCache: history.cachedIntradayBars(
+      dailyFeatures: dailyResult.features,
+      rvolScores: history.cachedRvolScores(
         symbolsForSelectionIntradayCache(rows, snap, today, selectionNow),
+        calendar, today,
         selectionNow,
       ),
       activeStrategies,
@@ -167,8 +171,6 @@ async function scan(now, calendar, today) {
       now: selectionNow,
     });
     const ranked = picked.selected;
-    const dailyResult = await history.ensureDailyFeatures(ranked.map((r) => r.symbol), Date.now());
-    logMemory("scan:daily-ready");
     const streamSymbols = [
       ...new Set([...active, ...activeSignals, ...ranked.map((r) => r.symbol)]),
     ].slice(0, 28);
@@ -217,6 +219,14 @@ async function scan(now, calendar, today) {
       intradaySummary.cacheHits += intraday.cacheHits;
       intradaySummary.failedSymbols.push(...intraday.failedSymbols);
       intradaySummary.errors.push(...intraday.errors);
+      const batchSnapshots = await snapshots(batch.map((row) => row.symbol));
+      for (const row of batch) {
+        const fresh = batchSnapshots.get(row.symbol);
+        if (fresh) {
+          row.snapshot = fresh;
+          row.price = market.freshPrice(fresh, Date.now());
+        }
+      }
 
       for (const row of batch) {
         const asOf = Date.now(),
@@ -346,7 +356,7 @@ async function scan(now, calendar, today) {
               dailyFeed: "sip",
               intradayFeed: "iex",
               priceFeed: "iex",
-              dailySessionDate: row.lastSessionDate || dailyPack?.bars?.at(-1)?.t || null,
+              dailySessionDate: row.lastSessionDate || dailyPack?.lastSessionDate || null,
               priceAt: current.at,
             },
             priceAt: current.at,
@@ -354,7 +364,7 @@ async function scan(now, calendar, today) {
             gapPct,
             createdAt: new Date(asOf).toISOString(),
             expiresAt: new Date(
-              Math.min(asOf + 600000, today.close - 900000),
+              Math.min(asOf + 600000, today.close - (strategy.origin === "custom_hypothesis" ? 3600000 : 900000)),
             ).toISOString(),
             deadline: new Date(endSession.close - 300000).toISOString(),
             status: "active",

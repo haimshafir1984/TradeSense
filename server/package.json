@@ -13,6 +13,8 @@
     "research:match": "node scripts/matchAnomalies.js",
     "research:github": "node scripts/surveyGithub.js",
     "autopilot:compare-selection": "node scripts/compareV3Selection.js",
+    "autopilot:backtest": "node scripts/backtestV3Strategies.js",
+    "autopilot:stress-memory": "node scripts/stressV3Memory.js",
     "ledger:backfill": "node scripts/runLedgerBackfill.js",
     "ledger:resolve": "node scripts/runLedgerResolve.js"
   },

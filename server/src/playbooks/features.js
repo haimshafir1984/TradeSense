@@ -108,6 +108,7 @@ function computeFeaturesFromBars(bars) {
   const price = Number(last?.c);
   const open = Number(last?.o);
   const previousClose = Number(previous?.c);
+  const previousTwo = safeBars[safeBars.length - 3];
   const dailyChangePct =
     Number.isFinite(price) && Number.isFinite(previousClose) && previousClose > 0
       ? ((price - previousClose) / previousClose) * 100
@@ -145,6 +146,12 @@ function computeFeaturesFromBars(bars) {
     low52w: range52w.low,
     high20d: range20d.high,
     low20d: range20d.low
+    ,previousClose1: Number.isFinite(previousClose) ? previousClose : null
+    ,previousClose2: Number.isFinite(Number(previousTwo?.c)) ? Number(previousTwo.c) : null
+    ,previousLow1: Number.isFinite(Number(last?.l)) ? Number(last.l) : null
+    ,previousLow2: Number.isFinite(Number(previous?.l)) ? Number(previous.l) : null
+    ,high20: range20d.high
+    ,avgDollarVolume20d: safeBars.length >= 20 ? safeBars.slice(-20).reduce((sum, bar) => sum + Number(bar.c) * Number(bar.v), 0) / 20 : null
   };
 }
 

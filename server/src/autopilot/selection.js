@@ -1,5 +1,6 @@
 const store = require("./store");
 const market = require("./market");
+const { swingEligible } = require("./strategies");
 
 const MAX_SELECTED = Math.min(200, Math.max(1, Number(process.env.AUTOPILOT_DEEP_SCAN_MAX || 120) || 120));
 const MAX_STRATEGY_SELECTED = 100;
@@ -42,7 +43,7 @@ function pushSorted(lists, key, item) {
   lists[key].push(item);
 }
 
-function buildLists({ rows, snapshots, dailyFeatures, intradayCache, activeStrategies, calendar, today, now }) {
+function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores, activeStrategies, calendar, today, now }) {
   const lists = {};
   const strategySet = new Set(activeStrategies);
   const todayDate = today.date;
@@ -75,7 +76,7 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, activeStrat
       });
     }
     if (strategySet.has("vwap_reclaim") && volume > 0) {
-      const rvolScore = comparableRvolScore(row.symbol, intradayCache, calendar, today, now);
+      const rvolScore = rvolScores ? rvolScores.get(row.symbol) : comparableRvolScore(row.symbol, intradayCache, calendar, today, now);
       pushSorted(lists, "vwap_reclaim", {
         ...row,
         price,
@@ -103,6 +104,13 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, activeStrat
         candidateFor: "reversal5",
       });
     }
+    const return2 = daily?.previousClose2 > 0 ? ((daily.price / daily.previousClose2) - 1) * 100 : null;
+    if (strategySet.has("pullback2_v1") && swingEligible("pullback2_v1", daily)) {
+      pushSorted(lists, "pullback2_v1", { ...row, price, snapshot, daily, score: return2, volume, candidateFor: "pullback2_v1" });
+    }
+    if (strategySet.has("breakout20_v1") && swingEligible("breakout20_v1", daily)) {
+      pushSorted(lists, "breakout20_v1", { ...row, price, snapshot, daily, score: (daily.high20 - daily.price) / daily.atr14, volume, candidateFor: "breakout20_v1" });
+    }
   }
 
   for (const key of Object.keys(lists)) {
@@ -115,6 +123,9 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, activeStrat
         const rightScore = right.score == null ? -Infinity : right.score;
         return rightScore - leftScore || right.volume - left.volume || left.symbol.localeCompare(right.symbol);
       }
+      if (key === "pullback2_v1" || key === "breakout20_v1") {
+        return left.score - right.score || right.volume - left.volume || left.symbol.localeCompare(right.symbol);
+      }
       return right.score - left.score || right.volume - left.volume || left.symbol.localeCompare(right.symbol);
     });
   }
@@ -123,7 +134,7 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, activeStrat
 }
 
 function roundRobin(lists, limit = MAX_STRATEGY_SELECTED) {
-  const keys = ["orb15", "gap_pullback", "vwap_reclaim", "reversal5"].filter((key) => lists[key]?.length);
+  const keys = ["orb15", "gap_pullback", "vwap_reclaim", "reversal5", "pullback2_v1", "breakout20_v1"].filter((key) => lists[key]?.length);
   const selected = [];
   const seen = new Set();
   const indexes = Object.fromEntries(keys.map((key) => [key, 0]));
@@ -174,7 +185,12 @@ function selectCandidates(input) {
     }
   }
   for (const item of selected) {
-    item.eligibleStrategies = [...(memberships.get(item.symbol) || new Set())];
+    const daily = input.dailyFeatures.get(item.symbol)?.features || input.dailyFeatures.get(item.symbol);
+    const return2 = daily?.previousClose2 > 0 ? ((daily.price / daily.previousClose2) - 1) * 100 : null;
+    const eligible = new Set(memberships.get(item.symbol) || []);
+    if (daily?.ma20 > daily?.ma50 && return2 >= -5 && return2 <= -1 && daily.price >= daily.ma20 - daily.atr14) eligible.add("pullback2_v1");
+    if (daily?.ma20 > daily?.ma50 && daily?.ma50 > daily?.ma200 && Number.isFinite(daily?.high20) && daily.high20 - daily.price <= daily.atr14) eligible.add("breakout20_v1");
+    item.eligibleStrategies = [...eligible].filter((key) => input.activeStrategies.includes(key));
   }
   return {
     selected,

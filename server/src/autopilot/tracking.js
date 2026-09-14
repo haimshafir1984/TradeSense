@@ -7,6 +7,39 @@ function positive(value, label) {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
     throw new Error(`${label} חייב להיות מספר חיובי`);
 }
+function finitePositive(value, label) {
+  positive(value, label);
+  if (!Number.isFinite(value) || value * 1 !== value)
+    throw new Error(`${label} חייב להיות מספר סופי`);
+}
+function requestKey(value) {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    const error = new Error("requestId לא תקין");
+    error.code = "request_invalid";
+    throw error;
+  }
+  return value;
+}
+function validSignalPlan(signal, price, now) {
+  return (
+    Number.isFinite(signal?.stop) &&
+    Number.isFinite(signal?.target) &&
+    signal.stop < price &&
+    price < signal.target &&
+    (!signal.deadline || now < Date.parse(signal.deadline))
+  );
+}
+function samePayload(trade, input, mode, additionalLot, signalId) {
+  return trade.requestId === input.requestId &&
+    trade.signalId === signalId &&
+    trade.entry === input.price &&
+    trade.shares === input.shares &&
+    (input.fees == null ? trade.feeSource === "estimated" : trade.entryFee === input.fees) &&
+    trade.enteredAt === input.executedAt &&
+    trade.trackingPlanMode === mode &&
+    trade.additionalLot === additionalLot;
+}
 function executionTime(input, earliest, now) {
   if (!input.executedAt) return now;
   const value = Date.parse(input.executedAt);
@@ -17,15 +50,38 @@ function executionTime(input, earliest, now) {
   return value;
 }
 function personalEntry(userId, signalId, input, now = Date.now()) {
-  positive(input.price, "מחיר");
-  positive(input.shares, "כמות");
+  finitePositive(input.price, "מחיר");
+  finitePositive(input.shares, "כמות");
+  positive(input.price * input.shares, "סכום העסקה");
   const signal = store.getUser(userId, "signal", signalId);
   if (!signal) throw new Error("האיתות לא נמצא");
   now = executionTime(input, signal.createdAt, now);
-  if (input.price <= signal.stop || input.price >= signal.target)
-    throw new Error(
-      "מחיר הביצוע מחוץ לטווח הסטופ והיעד; אי אפשר להצמיד תוכנית זו",
-    );
+  const requestId = requestKey(input.requestId);
+  const additionalLot = input.additionalLot === true;
+  const requestedMode = input.trackingPlanMode;
+  if (requestedMode != null && !["signal", "none"].includes(requestedMode)) {
+    const error = new Error("trackingPlanMode לא תקין");
+    error.code = "request_invalid";
+    throw error;
+  }
+  const previousRequest = requestId ? store.listUser(userId, "trade").find(t => t.requestId === requestId) : null;
+  if (previousRequest) {
+    const normalized = { ...input, requestId,
+      executedAt: input.executedAt ? new Date(input.executedAt).toISOString() : previousRequest.enteredAt };
+    if (samePayload(previousRequest, normalized, requestedMode || previousRequest.trackingPlanMode, additionalLot, signalId))
+      return previousRequest;
+    const error = new Error("requestId כבר שימש לדיווח אחר");
+    error.code = "request_conflict";
+    error.status = 409;
+    throw error;
+  }
+  const planValid = validSignalPlan(signal, input.price, now);
+  const trackingPlanMode = requestedMode || (planValid ? "signal" : "none");
+  if (trackingPlanMode === "signal" && !planValid) {
+    const error = new Error("תוכנית המעקב אינה מתאימה למחיר או למועד הביצוע");
+    error.code = "plan_invalid";
+    throw error;
+  }
   if (
     input.fees != null &&
     (typeof input.fees !== "number" ||
@@ -35,17 +91,22 @@ function personalEntry(userId, signalId, input, now = Date.now()) {
     throw new Error("עמלה לא תקינה");
   // Entries are user reports of trades already executed, not order submission or authorization.
   return store.transaction(() => {
-    if (
-      store
-        .listUser(userId, "trade")
-        .some(
-          (t) =>
-            t.signalId === signalId &&
-            t.source === "personal" &&
-            t.status === "open",
-        )
-    )
-      throw new Error("כבר דיווחת על כניסה לאיתות זה");
+    const trades = store.listUser(userId, "trade");
+    if (requestId) {
+      const existing = trades.find((t) => t.requestId === requestId);
+      if (existing) {
+        if (samePayload(existing, { ...input, requestId, executedAt: input.executedAt || existing.enteredAt }, trackingPlanMode, additionalLot, signalId)) return existing;
+        const error = new Error("requestId כבר שימש לדיווח אחר");
+        error.code = "request_conflict";
+        error.status = 409;
+        throw error;
+      }
+    }
+    if (!additionalLot && trades.some((t) => t.signalId === signalId && t.source === "personal" && t.status === "open")) {
+      const error = new Error("כבר דיווחת על כניסה לאיתות זה; בחר דיווח על קנייה נוספת");
+      error.code = "duplicate_entry";
+      throw error;
+    }
     const settings = config.read(userId);
     const id = randomUUID();
     return store.putUser(userId, "trade", id, {
@@ -58,15 +119,29 @@ function personalEntry(userId, signalId, input, now = Date.now()) {
       status: "open",
       entry: input.price,
       shares: input.shares,
-      stop: signal.stop,
-      target: signal.target,
-      deadline: signal.deadline,
+      stop: trackingPlanMode === "signal" ? signal.stop : null,
+      target: trackingPlanMode === "signal" ? signal.target : null,
+      deadline: trackingPlanMode === "signal" ? signal.deadline : null,
       mode: signal.mode,
       enteredAt: new Date(now).toISOString(),
       lastCheckedAt: new Date(now).toISOString(),
       entryFee:
         input.fees ?? config.fee(input.shares, input.price, settings.fees),
+      feeSource: input.fees == null ? "estimated" : "reported",
       feeMode: settings.fees,
+      schemaVersion: 2,
+      requestId,
+      additionalLot,
+      trackingPlanMode,
+      originalRecommendation: {
+        entry: signal.entry,
+        shares: signal.sizing?.shares ?? null,
+        stop: signal.stop,
+        target: signal.target,
+        deadline: signal.deadline,
+        strategy: signal.strategy,
+        version: signal.version,
+      },
     });
   });
 }
@@ -98,11 +173,12 @@ function close(userId, trade, price, reason, now, fees) {
     pnl,
     exitReason: reason,
     closedAt: new Date(now).toISOString(),
-    r:
-      pnl /
-      (trade.shares * (trade.entry - trade.stop) +
-        trade.entryFee +
-        config.fee(trade.shares, trade.stop, trade.feeMode)),
+    r: Number.isFinite(trade.stop) && trade.stop < trade.entry && trade.entryFee != null
+      ? pnl /
+        (trade.shares * (trade.entry - trade.stop) +
+          trade.entryFee +
+          config.fee(trade.shares, trade.stop, trade.feeMode))
+      : null,
   });
 }
 function exitFromBar(trade, bar) {
@@ -112,6 +188,16 @@ function exitFromBar(trade, bar) {
   return null;
 }
 function track(userId, trade, bars, quote, now = Date.now()) {
+  if (trade.trackingPlanMode === "none" || (trade.trackingPlanMode == null && (!Number.isFinite(trade.stop) || !Number.isFinite(trade.target)))) {
+    const updated = {
+      ...trade,
+      lastPrice: quote?.price ?? trade.lastPrice,
+      priceAt: quote?.at ?? trade.priceAt,
+      lastCheckedAt: new Date(now).toISOString(),
+    };
+    store.putUser(userId, "trade", trade.id, updated);
+    return updated;
+  }
   // Never use the whole entry candle (which contains pre-entry prices). A missing interval is
   // explicitly marked as unobserved; we never claim tick-accurate execution from OHLC bars.
   const since = Date.parse(trade.lastCheckedAt || trade.enteredAt);
@@ -257,9 +343,11 @@ function statistics(trades) {
       winRate: rows.length
         ? (rows.filter((t) => t.pnl > 0).length / rows.length) * 100
         : null,
-      avgR: rows.length
-        ? rows.reduce((s, t) => s + t.r, 0) / rows.length
+      avgR: rows.filter((t) => Number.isFinite(t.r)).length
+        ? rows.filter((t) => Number.isFinite(t.r)).reduce((s, t) => s + t.r, 0) /
+          rows.filter((t) => Number.isFinite(t.r)).length
         : null,
+      rObservations: rows.filter((t) => Number.isFinite(t.r)).length,
     };
   });
 }

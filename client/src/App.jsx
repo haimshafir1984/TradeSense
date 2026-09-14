@@ -10,7 +10,13 @@ const money = (n) =>
     : "—";
 const number = (n) =>
   Number.isFinite(n)
-    ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(n)
+    ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 8 }).format(n)
+    : "—";
+const amount = (n) =>
+  Number.isFinite(n)
+    ? n > 0 && n < 0.01
+      ? `$${n.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")}`
+      : money(n)
     : "—";
 const time = (s) =>
   s
@@ -1158,6 +1164,12 @@ function Settings({ settings, strategies, busy, onSave, onPush }) {
 }
 function TradeDialog({ modal, error, busy, onClose, onSubmit }) {
   const ref = useRef(null);
+  const requestId = useRef(globalThis.crypto?.randomUUID?.() || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const value = Math.random() * 16 | 0;
+    const digit = char === "x" ? value : (value & 0x3 | 0x8);
+    return digit.toString(16);
+  }));
+  const [calculation, setCalculation] = useState({});
   const entry = modal.kind === "entry",
     item = entry ? modal.signal : modal.trade;
   useEffect(() => {
@@ -1178,6 +1190,7 @@ function TradeDialog({ modal, error, busy, onClose, onSubmit }) {
           const f = new FormData(e.currentTarget);
           onSubmit({
             price: Number(f.get("price")),
+            ...(entry ? { requestId: requestId.current, trackingPlanMode: f.get("trackingPlanMode"), additionalLot: f.get("additionalLot") === "on" } : {}),
             ...(f.get("executedAt")
               ? { executedAt: new Date(f.get("executedAt")).toISOString() }
               : {}),
@@ -1216,22 +1229,44 @@ function TradeDialog({ modal, error, busy, onClose, onSubmit }) {
             autoFocus
             type="number"
             name="price"
-            min="0.0001"
+            min="0"
             step="any"
             required
+            onChange={(e) => setCalculation((current) => ({ ...current, price: Number(e.target.value) }))}
           />
         </label>
         {entry && (
+          <>
+          <p className="muted">
+            הכמות המוצעת: <b dir="ltr">{number(item.sizing?.shares)}</b> · זו הצעה בלבד; הזן את הכמות שקנית בפועל.
+          </p>
+          <p className="muted">לדוגמה: קנית 0.25 מניה במחיר $100 למניה? הכמות היא 0.25 והסכום הוא $25.</p>
           <label>
-            כמות מניות בפועל
+            כמות מניות בפועל · סכום העסקה מחושב כמחיר × כמות
             <input
               type="number"
               name="shares"
-              min="0.0001"
+              min="0"
               step="any"
               required
+              onChange={(e) => setCalculation((current) => ({ ...current, shares: Number(e.target.value) }))}
             />
           </label>
+          <p className="muted" aria-live="polite">
+            סכום העסקה המחושב: <b dir="ltr">{Number.isFinite(calculation.price * calculation.shares) && calculation.price > 0 && calculation.shares > 0 ? amount(calculation.price * calculation.shares) : "—"}</b>
+          </p>
+          <label>
+            תוכנית מעקב
+            <select name="trackingPlanMode" defaultValue={item.stop < item.entry && item.entry < item.target ? "signal" : "none"}>
+              <option value="signal">איתות — התראות סטופ/יעד/מועד</option>
+              <option value="none">מחיר בלבד — ללא התראות סטופ/יעד/מועד</option>
+            </select>
+          </label>
+          <label>
+            <input type="checkbox" name="additionalLot" />
+            זו קנייה נוספת לאותו איתות — שמור כעסקה נפרדת
+          </label>
+          </>
         )}
         <label>
           עמלה בפועל ($, אופציונלי)

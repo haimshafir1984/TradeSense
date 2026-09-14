@@ -94,7 +94,7 @@ router.post("/signals/:id/entry", (req, res, next) => {
       .status(201)
       .json(tracking.personalEntry(req.userId, req.params.id, req.body));
   } catch (e) {
-    e.status = 400;
+    e.status = e.status || (e.code === "request_conflict" ? 409 : e.code === "plan_invalid" ? 400 : 400);
     next(e);
   }
 });

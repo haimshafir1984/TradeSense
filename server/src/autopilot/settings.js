@@ -16,6 +16,7 @@ const DEFAULTS = {
   excludedSymbols: [],
   setupComplete: false,
 };
+const ALLOWED_STRATEGIES = ["orb15", "gap_pullback", "vwap_reclaim", "reversal5", "pullback2_v1", "breakout20_v1"];
 function read(userId) {
   const saved = userId
     ? store.getUser(userId, "config", "settings")
@@ -63,7 +64,7 @@ function validate(input) {
   if ("strategies" in input) {
     if (
       !Array.isArray(input.strategies) ||
-      input.strategies.some((k) => !DEFAULTS.strategies.includes(k))
+      input.strategies.some((k) => !ALLOWED_STRATEGIES.includes(k))
     )
       throw new Error("אסטרטגיה לא מוכרת");
     out.strategies = [...new Set(input.strategies)];

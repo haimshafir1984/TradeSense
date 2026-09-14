@@ -129,3 +129,7 @@ AUTOPILOT_INTRADAY_BATCH_SIZE=10
 ל-fallback של נתוני דמו. **תמיד לוודא שהמקלדת על אנגלית לפני הקלדת סימול
 מניה**, ולבדוק ב-`cat /var/data/portfolio.json` שה-`ticker` שנשמר הוא
 אכן אותיות לועזיות.
+
+## v3 deployment gate
+
+שינויי ה־flexible fills מומשו מקומית אך לא נפרסו. לפני פריסה ל־Render יש להריץ את כל בדיקות השרת וה־build, לאמת גיבוי/שחזור SQLite, ולהשלים בדיקת יום מסחר של price-only ו־Push. אין להריץ את ה־backtest ההיסטורי ב־Render או ב־scheduler; הוא מקומי בלבד.

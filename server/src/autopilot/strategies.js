@@ -36,7 +36,27 @@ const STRATEGIES = [
       "אישור התאוששות אחרי ירידה חדה, כשהמגמה הארוכה עדיין חיובית. עד 5 ימי מסחר.",
     source: "https://doi.org/10.1093/rfs/3.2.175",
   },
-].map((s) => ({ ...s, version: "3.1.0", evidence: "experimental" }));
+  {
+    key: "pullback2_v1",
+    label: "תיקון יומיים במגמה",
+    mode: "swing",
+    risk: "balanced",
+    description: "שתי ירידות בתוך מגמה עולה ואישור התאוששות בנר סגור.",
+    source: "custom hypothesis",
+    enabledByDefault: false,
+    origin: "custom_hypothesis",
+  },
+  {
+    key: "breakout20_v1",
+    label: "פריצת שיא 20 יום",
+    mode: "swing",
+    risk: "aggressive",
+    description: "פריצה בנר סגור של שיא 20 סשנים במגמה עולה.",
+    source: "custom hypothesis",
+    enabledByDefault: false,
+    origin: "custom_hypothesis",
+  },
+].map((s) => ({ ...s, version: s.key.endsWith("_v1") ? "1.0.0" : "3.1.0", evidence: "experimental" }));
 function completed(bars, asOf, intervalMs = 300000) {
   return (bars || [])
     .filter(
@@ -54,6 +74,19 @@ function vwap(bars) {
   if (!bars.length || bars.some((b) => !Number.isFinite(b.vw))) return null;
   const vol = bars.reduce((s, b) => s + b.v, 0);
   return vol > 0 ? bars.reduce((s, b) => s + b.v * b.vw, 0) / vol : null;
+}
+function swingEligible(key, daily) {
+  if (!(daily?.barCount >= 200 && daily.price >= 5 && daily.price > daily.ma200 &&
+        daily.avgDollarVolume20d >= 20000000 && daily.atr14 > 0)) return false;
+  if (key === "pullback2_v1") {
+    const ret = (daily.price / daily.previousClose2 - 1) * 100;
+    return daily.ma20 > daily.ma50 && daily.price < daily.previousClose1 &&
+      daily.previousClose1 < daily.previousClose2 && ret >= -5 && ret <= -1 &&
+      daily.price >= daily.ma20 - daily.atr14 &&
+      daily.previousLow1 > 0 && daily.previousLow2 > 0;
+  }
+  return daily.ma20 > daily.ma50 && daily.ma50 > daily.ma200 &&
+    Number.isFinite(daily.high20) && daily.high20 - daily.price <= daily.atr14;
 }
 function evaluate({
   daily,
@@ -186,6 +219,38 @@ function evaluate({
       "ירידה של 5% לפחות ואישור התאוששות מעל מגמה ארוכה",
     );
   }
+  const p1 = candles.at(-2);
+  const dailyReturn2 = daily?.previousClose2 > 0
+    ? ((daily.price / daily.previousClose2) - 1) * 100
+    : null;
+  if (
+    swingEligible("pullback2_v1", daily) &&
+    minutes >= 30 && asOf <= sessionClose - 3600000 &&
+    Date.parse(last.t) - Date.parse(p1?.t) === 300000 &&
+    daily?.ma20 > daily?.ma50 &&
+    dailyReturn2 >= -5 && dailyReturn2 <= -1 &&
+    daily?.price >= daily.ma20 - daily.atr14 &&
+    p1 && last.c > p1.h && last.c > last.o
+  ) {
+    const stop = Math.min(daily.previousLow1 || last.l, daily.previousLow2 || last.l) - 0.1 * daily.atr14;
+    const risk = last.c - stop;
+    if (stop > 0 && risk / last.c >= 0.005 && risk / last.c <= 0.08)
+      matches.push({ strategy: "pullback2_v1", entry: last.c, maxEntry: last.c + 0.15 * risk, stop, target: last.c + 2 * risk, reason: "תיקון יומיים ואישור התאוששות", barAt: last.t });
+  }
+  const high20 = daily?.high20;
+  if (
+    swingEligible("breakout20_v1", daily) &&
+    minutes >= 30 && asOf <= sessionClose - 3600000 &&
+    Date.parse(last.t) - Date.parse(p1?.t) === 300000 &&
+    daily?.ma20 > daily?.ma50 && daily?.ma50 > daily?.ma200 &&
+    Number.isFinite(high20) && high20 - daily.price <= daily.atr14 &&
+    p1 && p1.c <= high20 && last.c > high20 && last.c > last.o
+  ) {
+    const stop = last.c - 1.5 * daily.atr14;
+    const risk = last.c - stop;
+    if (stop > 0 && risk / last.c >= 0.005 && risk / last.c <= 0.08)
+      matches.push({ strategy: "breakout20_v1", entry: last.c, maxEntry: last.c + 0.15 * risk, stop, target: last.c + 2 * risk, reason: "פריצת שיא 20 יום", barAt: last.t });
+  }
   return matches;
 }
 function evaluateDetailed(args) {
@@ -251,9 +316,17 @@ function evaluateDetailed(args) {
   else if (!(args.daily?.return5d <= -5 && args.daily?.rsi14 < 35)) setReason("reversal5", "daily_missing");
   else if (!(last.c > prev.h)) setReason("reversal5", "trigger_not_met");
 
+  if (minutes < 30 || args.asOf > args.sessionClose - 3600000) setReason("pullback2_v1", "outside_window");
+  else if (!(args.daily?.ma20 > args.daily?.ma50) || !Number.isFinite(args.daily?.previousClose2)) setReason("pullback2_v1", "daily_missing");
+  else if (!(last.c > prev.h && last.c > last.o)) setReason("pullback2_v1", "trigger_not_met");
+
+  if (minutes < 30 || args.asOf > args.sessionClose - 3600000) setReason("breakout20_v1", "outside_window");
+  else if (!(args.daily?.ma20 > args.daily?.ma50 && args.daily?.ma50 > args.daily?.ma200) || !Number.isFinite(args.daily?.high20)) setReason("breakout20_v1", "daily_missing");
+  else if (!(prev.c <= args.daily.high20 && last.c > args.daily.high20 && last.c > last.o)) setReason("breakout20_v1", "trigger_not_met");
+
   for (const strategy of STRATEGIES) {
     if (!byStrategy.has(strategy.key)) setReason(strategy.key, "invalid_plan");
   }
   return { plans, results: byStrategy };
 }
-module.exports = { STRATEGIES, evaluate, evaluateDetailed, completed, vwap };
+module.exports = { STRATEGIES, evaluate, evaluateDetailed, completed, vwap, swingEligible };
