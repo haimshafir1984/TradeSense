@@ -53,6 +53,31 @@ function freshPrice(snapshot, now, ageMs = 90000) {
     ? { price, time, at: new Date(time).toISOString() }
     : null;
 }
+function delayedSipCutoff(wallNow) {
+  const fiveMinutes = 300000;
+  return Math.floor((wallNow - 16 * 60000) / fiveMinutes) * fiveMinutes;
+}
+function acceptDelayedSipBar(bar, cutoff) {
+  const start = Date.parse(bar?.t);
+  return Number.isFinite(start) && start + 300000 <= cutoff;
+}
+function delayedSipOpeningRvol(bars, calendar, today, wallNow, cutoff = delayedSipCutoff(wallNow)) {
+  const session = calendar.find((item) => item.date === today.date);
+  if (!session || cutoff < session.open + 15 * 60000 || cutoff > session.close) return null;
+  const elapsed = Math.floor((cutoff - session.open) / 300000) * 300000;
+  if (elapsed < 900000) return null;
+  const safeBars = (bars || []).filter((bar) => acceptDelayedSipBar(bar, cutoff));
+  function volume(s) {
+    if (s.close - s.open < elapsed) return null;
+    const sample = safeBars.filter((bar) => Date.parse(bar.t) >= s.open && Date.parse(bar.t) + 300000 <= s.open + elapsed);
+    if (sample.length !== elapsed / 300000 || sample.some((bar, index) => Date.parse(bar.t) !== s.open + index * 300000 || !(bar.v > 0))) return null;
+    return sample.reduce((sum, bar) => sum + bar.v, 0);
+  }
+  const current = volume(session);
+  const prior = calendar.filter((item) => item.open < session.open).slice(-14);
+  const history = prior.map(volume).filter((value) => value > 0);
+  return current > 0 && history.length >= 5 ? current / (history.reduce((a, b) => a + b, 0) / history.length) : null;
+}
 function openingRvol(bars, calendar, today, now) {
   const elapsed =
     Math.floor(Math.min(now - today.open, today.close - today.open) / 300000) *
@@ -84,4 +109,4 @@ function openingRvol(bars, calendar, today, now) {
     ? current / (history.reduce((a, b) => a + b, 0) / history.length)
     : null;
 }
-module.exports = { nyDate, nyTimestamp, sessions, freshPrice, openingRvol };
+module.exports = { nyDate, nyTimestamp, sessions, freshPrice, openingRvol, delayedSipCutoff, acceptDelayedSipBar, delayedSipOpeningRvol };

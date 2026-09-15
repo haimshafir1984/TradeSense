@@ -39,8 +39,9 @@ async function main() {
   const user=users.session({code:"1234"});
   settings.save({fees:"free",strategies:["vwap_reclaim"]},user.userId);
   store.put("cache","v3-universe",{date:today.date,rows:symbols.map(symbol=>({symbol,close:100,exchange:"NASDAQ",avgDollarVolume20d:30000000})),diagnostics:{complete:true}});
-  for(const symbol of symbols.slice(0,500)) store.put("history",history.cacheKey({symbol,feed:"iex",timeframe:"5Min"}),{symbol,feed:"iex",timeframe:"5Min",sessionDate:today.date,watermarkAt:iso(now),fetchedAt:iso(now),lastUsedAt:iso(now),bars});
-  await engine.scan(now,calendar,today); // Cold bootstrap of all 2,000 daily features.
+  for(const symbol of symbols.slice(0,400)) store.put("history",history.cacheKey({symbol,feed:"iex",timeframe:"5Min"}),{symbol,feed:"iex",timeframe:"5Min",sessionDate:today.date,watermarkAt:iso(now),fetchedAt:iso(now),lastUsedAt:iso(now),bars});
+  for(const symbol of symbols.slice(400,500)) store.put("history",history.cacheKey({symbol,feed:"sip",timeframe:"5Min"}),{symbol,feed:"sip",timeframe:"5Min",sessionDate:today.date,watermarkAt:iso(now),fetchedAt:iso(now),lastUsedAt:iso(now),bars});
+    await engine.scan(now,calendar,today); // Cold bootstrap of all 2,000 daily features.
   const coldRequests=dailyRequests;
   const tails=[];
   for(let i=0;i<12;i++) {
@@ -51,8 +52,10 @@ async function main() {
   }
   const peak=Math.max(...samples.map(s=>s.rss));
   const growth=tails.at(-1)-tails[0];
-  const pass=peak<350*1024*1024 && growth<50*1024*1024 && dailyRequests===coldRequests && coldRequests===80;
-  console.log(JSON.stringify({status:pass?"pass":"fail",coldDailyRequests:coldRequests,warmDailyRequests:dailyRequests-coldRequests,features:2000,intradayHistories:500,barsPerHistory:bars.length,warmScans:12,peakMB:peak/1024/1024,tailGrowthMB:growth/1024/1024,tailMB:tails.map(x=>x/1024/1024)},null,2));
+  const metadata=store.listMetadata("history").filter(r=>r.timeframe==="5Min");
+  const iexRecords=metadata.filter(r=>r.feed==="iex").length, sipRecords=metadata.filter(r=>r.feed==="sip").length;
+  const pass=peak<350*1024*1024 && growth<50*1024*1024 && dailyRequests===coldRequests && coldRequests===80 && metadata.length<=500 && sipRecords<=100 && iexRecords===400 && sipRecords===100;
+  console.log(JSON.stringify({status:pass?"pass":"fail",coldDailyRequests:coldRequests,warmDailyRequests:dailyRequests-coldRequests,features:2000,intradayHistories:metadata.length,iexRecords,sipRecords,barsPerHistory:bars.length,warmScans:12,peakMB:peak/1024/1024,tailGrowthMB:growth/1024/1024,tailMB:tails.map(x=>x/1024/1024)},null,2));
   if(!pass) process.exitCode=1;
  } finally { engine.stop(); store.close(); fs.rmSync(root,{recursive:true,force:true}); }
 }

@@ -111,15 +111,27 @@ docs/SPEC_PROVIDER_REBALANCE.md). ראו את `docs/SPEC_PROVIDER_REBALANCE.md`
 ```env
 AUTOPILOT_UNIVERSE_MAX=2000
 AUTOPILOT_DEEP_SCAN_MAX=120
-AUTOPILOT_UNIVERSE_BATCH_SIZE=75
+AUTOPILOT_UNIVERSE_BATCH_SIZE=10
 AUTOPILOT_INTRADAY_BATCH_SIZE=10
+AUTOPILOT_SCAN_PROFILE=balanced
+AUTOPILOT_SIP_CONTEXT_MODE=shadow
+AUTOPILOT_SIP_CONTEXT_MAX=40
+AUTOPILOT_API_RPM_BUDGET=150
 ```
 
 שני המשתנים הראשונים קובעים את היקף הכיסוי. שני משתני ה־batch קובעים רק כמה
 סמלים מעובדים יחד בזיכרון ואינם משנים את תנאי הבחירה או את מספר המניות
-הסופי. ערכי ברירת המחדל `75` ו־`10` מותאמים לשרת Render עם 512MB; אין
+הסופי. ערכי ברירת המחדל `10` ו־`10` מותאמים לשרת Render עם 512MB; אין
 להגדיל אותם בשרת כזה. הגדלת תקרות הכיסוי יכולה להאריך סריקות ולהגדיל את
 המטמון בדיסק, והיא לא מבטיחה יותר איתותים.
+
+לסריקה המשופרת ברירת מחדל `balanced` עם SIP במצב `shadow`: נפח SIP מושהה
+נרשם כהקשר בלבד ואינו מייצר איתות, סימולציה או התראה. חזרה בטוחה למסלול
+הקודם: `AUTOPILOT_SCAN_PROFILE=legacy` ו־`AUTOPILOT_SIP_CONTEXT_MODE=off`.
+הגדרת `enabled` דורשת אישור מפעיל לאחר בדיקה נפרדת. תקרת SIP מוגבלת ל־40
+מועמדות ותקציב Alpaca ל־150 בקשות לדקה. לפני פריסה יש לבדוק את
+`docs/V3_SCAN_IMPROVEMENT_VALIDATION.md`; מעבר בדיקות אוטומטיות אינו הוכחת
+רווחיות או אישור production.
 
 ## מלכודת נפוצה: הקלדת סימול (ticker) בעברית
 

@@ -30,9 +30,33 @@ const ALLOWED_EXCHANGES = new Set(['NASDAQ', 'NYSE']);
 // Alpaca's free tier allows 200 requests/minute; stay a bit under that so we never actually hit
 // a 429 from normal usage, and no new dependency is pulled in for the throttling itself.
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 190;
+const configuredRpm = Number(process.env.AUTOPILOT_API_RPM_BUDGET || 150);
+const RATE_LIMIT_MAX_REQUESTS = Number.isFinite(configuredRpm) ? Math.min(150, Math.max(1, Math.floor(configuredRpm))) : 150;
+const RESERVED_REQUESTS = Math.ceil(20 / 150 * RATE_LIMIT_MAX_REQUESTS);
 let requestTimestamps = [];
 let throttleQueue = Promise.resolve();
+let pendingRequests = 0;
+let activeHistoryRequests = 0;
+const historyWaiters = [];
+
+function historySlotRelease() {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = historyWaiters.shift();
+    if (next) next(historySlotRelease());
+    else activeHistoryRequests = Math.max(0, activeHistoryRequests - 1);
+  };
+}
+function acquireHistorySlot() {
+  if (activeHistoryRequests < 2) {
+    activeHistoryRequests += 1;
+    return Promise.resolve(historySlotRelease());
+  }
+  if (historyWaiters.length >= 20) return Promise.resolve(null);
+  return new Promise((resolve) => historyWaiters.push(resolve));
+}
 
 // Alpaca's bars endpoint has a practical URL-length limit; splitting symbols into chunks keeps
 // every request well under it regardless of how large the universe gets.
@@ -93,11 +117,13 @@ function authHeaders() {
   };
 }
 
-async function throttle() {
+async function throttle(label) {
+  const critical = /clock|calendar|monitor/i.test(label);
   const now = Date.now();
   requestTimestamps = requestTimestamps.filter((timestamp) => now - timestamp < RATE_LIMIT_WINDOW_MS);
-
-  if (requestTimestamps.length >= RATE_LIMIT_MAX_REQUESTS) {
+  const limit = critical ? RATE_LIMIT_MAX_REQUESTS : RATE_LIMIT_MAX_REQUESTS - RESERVED_REQUESTS;
+  if (limit < 1) return false;
+  if (requestTimestamps.length >= limit) {
     const oldest = requestTimestamps[0];
     const waitMs = RATE_LIMIT_WINDOW_MS - (now - oldest);
     if (waitMs > 0) {
@@ -106,6 +132,7 @@ async function throttle() {
   }
 
   requestTimestamps.push(Date.now());
+  return true;
 }
 
 function retryAfterMs(response) {
@@ -115,10 +142,10 @@ function retryAfterMs(response) {
   }
   const seconds = Number(value);
   if (Number.isFinite(seconds)) {
-    return Math.min(seconds * 1000, 5000);
+    return Math.max(0, seconds * 1000);
   }
   const date = Date.parse(value);
-  return Number.isFinite(date) ? Math.min(Math.max(0, date - Date.now()), 5000) : null;
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }
 
 function wait(ms) {
@@ -134,16 +161,25 @@ function errorKind(status) {
 }
 
 async function fetchAlpacaDetailed(url, label, { retries = 0 } = {}) {
+  if (pendingRequests >= 20 && !/clock|calendar|monitor/i.test(label))
+    return { ok: false, status: 0, kind: 'queue_full', data: null };
+  pendingRequests += 1;
+  let releaseHistory = null;
   try {
-    const slot = throttleQueue.then(throttle);
+    if (label.startsWith('getBarsDetailed:') || label.startsWith('getIntradayBars')) {
+      releaseHistory = await acquireHistorySlot();
+      if (!releaseHistory) return { ok: false, status: 0, kind: 'history_queue_full', data: null };
+    }
+    const slot = throttleQueue.then(() => throttle(label));
     throttleQueue = slot.catch(() => {});
-    await slot;
-    const response = await fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(15000) });
+    const allowed = await slot;
+    if (!allowed) return { ok: false, status: 0, kind: 'reserved_budget', data: null };
+    const response = await fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(20000) });
 
     if (!response.ok) {
       console.warn(`[alpaca] ${label} failed: HTTP ${response.status}`);
       if (retries < MAX_RETRIES && RETRYABLE_STATUSES.has(response.status)) {
-        await wait(retryAfterMs(response) ?? 250 * (retries + 1));
+        await wait(retryAfterMs(response) ?? (250 * (retries + 1) + Math.random() * 200));
         return fetchAlpacaDetailed(url, label, { retries: retries + 1 });
       }
       return { ok: false, status: response.status, kind: errorKind(response.status), data: null };
@@ -153,10 +189,13 @@ async function fetchAlpacaDetailed(url, label, { retries = 0 } = {}) {
   } catch (error) {
     console.warn(`[alpaca] ${label} failed: ${error.message}`);
     if (retries < MAX_RETRIES) {
-      await wait(250 * (retries + 1));
+      await wait(250 * (retries + 1) + Math.random() * 200);
       return fetchAlpacaDetailed(url, label, { retries: retries + 1 });
     }
     return { ok: false, status: 0, kind: error.name === 'TimeoutError' ? 'timeout' : 'network', data: null };
+  } finally {
+    releaseHistory?.();
+    pendingRequests -= 1;
   }
 }
 
@@ -415,7 +454,7 @@ async function getLatestDailyBars({ symbols = [] } = {}) {
 // caller controls the exact window: live ORB needs a few minutes around today's open, while
 // ledger:backfill (§5.8) needs a specific historical day - there's no one sensible default.
 // `start`/`end` accept any string Date() can parse (a plain date or a full ISO timestamp).
-async function getIntradayBars({ symbols = [], timeframe = '5Min', start, end, feed = 'iex' } = {}) {
+async function getIntradayBars({ symbols = [], timeframe = '5Min', start, end, feed = 'iex', priority = 'normal' } = {}) {
   const result = new Map();
 
   if (!Array.isArray(symbols) || symbols.length === 0 || !start || !end) {
@@ -444,7 +483,7 @@ async function getIntradayBars({ symbols = [], timeframe = '5Min', start, end, f
       }
 
       const url = `${DATA_BASE_URL}/v2/stocks/bars?${params.toString()}`;
-      const data = await fetchAlpaca(url, 'getIntradayBars');
+      const data = await fetchAlpaca(url, priority === 'monitor' ? 'getIntradayBars:monitor' : 'getIntradayBars');
 
       if (!data) {
         pageToken = null;
@@ -476,7 +515,7 @@ async function getIntradayBars({ symbols = [], timeframe = '5Min', start, end, f
 // (docs/SPEC_SHORT_TERM_UPGRADE.md step 7), not any automatic scan. Returns Map<symbol, snapshot>;
 // a symbol Alpaca has no snapshot for (e.g. no pre-market trades yet on the IEX feed) is simply
 // absent from the map, not an error.
-async function getSnapshots({ symbols = [] } = {}) {
+async function getSnapshots({ symbols = [], priority = 'normal' } = {}) {
   const result = new Map();
 
   if (!Array.isArray(symbols) || symbols.length === 0) {
@@ -485,7 +524,7 @@ async function getSnapshots({ symbols = [] } = {}) {
 
   const params = new URLSearchParams({ symbols: symbols.join(','), feed: 'iex' });
   const url = `${DATA_BASE_URL}/v2/stocks/snapshots?${params.toString()}`;
-  const data = await fetchAlpaca(url, 'getSnapshots');
+  const data = await fetchAlpaca(url, priority === 'monitor' ? 'getSnapshots:monitor' : 'getSnapshots');
 
   if (!data || typeof data !== 'object') {
     return result;

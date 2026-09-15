@@ -3,11 +3,11 @@ const market = require("./market");
 const alpaca = require("../providers/alpacaService");
 const { logMemory } = require("../memoryDiagnostics");
 
-const MAX_UNIVERSE = Number(process.env.AUTOPILOT_UNIVERSE_MAX || 2000);
-const HISTORY_BATCH_SIZE = Math.min(
-  100,
-  Math.max(20, Number(process.env.AUTOPILOT_UNIVERSE_BATCH_SIZE || 75) || 75),
-);
+const parsedUniverseMax = Number(process.env.AUTOPILOT_UNIVERSE_MAX || 2000);
+const MAX_UNIVERSE = Number.isFinite(parsedUniverseMax) ? Math.min(5000, Math.max(1, Math.floor(parsedUniverseMax))) : 2000;
+const PROFILE = process.env.AUTOPILOT_SCAN_PROFILE === "legacy" ? "legacy" : "balanced";
+const BUCKETS = ["lower_liquidity", "medium_liquidity", "high_liquidity"];
+const HISTORY_BATCH_SIZE = Math.min(10, Math.max(1, Number(process.env.AUTOPILOT_UNIVERSE_BATCH_SIZE || 10) || 10));
 const MIN_PRICE = 5;
 const MIN_AVG_DOLLAR_VOLUME_20D = 2_000_000;
 let lastAttemptAt = 0;
@@ -31,6 +31,63 @@ function chunks(items, size) {
     result.push(items.slice(index, index + size));
   }
   return result;
+}
+
+function quotas(maximum = MAX_UNIVERSE) {
+  const weights = [30, 40, 30];
+  const raw = weights.map((weight) => maximum * weight / 100);
+  const result = raw.map(Math.floor);
+  let remainder = maximum - result.reduce((sum, value) => sum + value, 0);
+  raw.map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index)
+    .slice(0, remainder).forEach(({ index }) => { result[index] += 1; });
+  return Object.fromEntries(BUCKETS.map((key, index) => [key, result[index]]));
+}
+
+function liquidityBucket(adv) {
+  if (adv < 20_000_000) return BUCKETS[0];
+  if (adv < 100_000_000) return BUCKETS[1];
+  return BUCKETS[2];
+}
+
+function stratify(rows, maximum = MAX_UNIVERSE, cursors = {}) {
+  const limits = quotas(maximum);
+  const grouped = Object.fromEntries(BUCKETS.map((key) => [key, []]));
+  for (const row of rows) grouped[liquidityBucket(row.avgDollarVolume20d)].push(row);
+  for (const key of BUCKETS) grouped[key].sort((a, b) => b.avgDollarVolume20d - a.avgDollarVolume20d || a.symbol.localeCompare(b.symbol));
+  const selected = [], perBucket = {};
+  for (const key of BUCKETS) {
+    const quota = limits[key];
+    const topCount = Math.floor(quota * 0.8);
+    const group = grouped[key];
+    const rest = group.slice(Math.min(topCount, group.length)).sort((a, b) => a.symbol.localeCompare(b.symbol));
+    const cursor = Number.isInteger(cursors[key]) && cursors[key] >= 0 ? cursors[key] : 0;
+    const rotatedCount = Math.min(Math.max(0, quota - topCount), rest.length);
+    const rotated = Array.from({ length: rotatedCount }, (_, i) => rest[(cursor + i) % rest.length]);
+    const chosen = [...group.slice(0, Math.min(topCount, group.length)), ...rotated];
+    selected.push(...chosen);
+    perBucket[key] = { eligible: group.length, selected: chosen.length, rotated: rotated.length, excluded: Math.max(0, group.length - chosen.length) };
+  }
+  // Redistribute unfilled capacity round-robin in lower→medium→high order.
+  let extra = maximum - selected.length;
+  const used = new Set(selected.map((row) => row.symbol));
+  const extras = Object.fromEntries(BUCKETS.map((key) => [key, grouped[key].filter((row) => !used.has(row.symbol))]));
+  while (extra > 0) {
+    let moved = false;
+    for (const key of BUCKETS) {
+      const row = extras[key].shift();
+      if (!row) continue;
+      selected.push(row); used.add(row.symbol); perBucket[key].selected += 1; perBucket[key].excluded -= 1; moved = true;
+      if (--extra === 0) break;
+    }
+    if (!moved) break;
+  }
+  const nextCursors = { ...cursors };
+  for (const key of BUCKETS) {
+    const remainder = grouped[key].slice(Math.floor(limits[key] * 0.8)).sort((a, b) => a.symbol.localeCompare(b.symbol));
+    if (remainder.length) nextCursors[key] = ((Number(cursors[key]) || 0) + perBucket[key].rotated) % remainder.length;
+  }
+  return { rows: selected.slice(0, maximum), perBucket, nextCursors, quotas: limits };
 }
 
 async function activeAssets() {
@@ -74,8 +131,8 @@ async function build(now = Date.now()) {
     belowPrice: 0,
     belowLiquidity: 0,
     capped: 0,
-    partialData: false,
-    errors: [],
+    partialData: assets.length === 0,
+    errors: assets.length === 0 ? [{ kind: "asset_provider_empty" }] : [],
   };
 
   const rows = [];
@@ -143,11 +200,31 @@ async function build(now = Date.now()) {
       right.avgDollarVolume20d - left.avgDollarVolume20d || left.symbol.localeCompare(right.symbol),
   );
   diagnostics.eligibleBeforeCap = rows.length;
+  if (PROFILE === "balanced") {
+    const state = store.get("runtime", "universe-cursors") || { values: {}, date: null };
+    const partition = stratify(rows, MAX_UNIVERSE, state.values);
+    diagnostics.perBucket = partition.perBucket;
+    diagnostics.quotas = partition.quotas;
+    diagnostics.generation = (cached()?.generation || 0) + 1;
+    diagnostics.sessionDate = date;
+    diagnostics.capped = Math.max(0, rows.length - partition.rows.length);
+    diagnostics.complete = !diagnostics.partialData;
+    diagnostics.completedAt = new Date().toISOString();
+    if (!diagnostics.complete) {
+      store.put("cache", "v3-universe-build-diagnostics", diagnostics);
+      return getRows(now);
+    }
+    store.put("cache", "v3-universe", { date, generation: diagnostics.generation, rows: partition.rows, diagnostics });
+    // A daily cursor advances exactly once, only after successful publication.
+    if (state.date !== date) store.put("runtime", "universe-cursors", { date, values: partition.nextCursors });
+    logMemory("universe:complete");
+    return partition.rows;
+  }
   const capped = rows.slice(0, MAX_UNIVERSE);
   diagnostics.capped = Math.max(0, rows.length - capped.length);
   diagnostics.completedAt = new Date().toISOString();
   diagnostics.complete = !diagnostics.partialData;
-  store.put("cache", "v3-universe", { date, rows: capped, diagnostics });
+  if (diagnostics.complete) store.put("cache", "v3-universe", { date, rows: capped, diagnostics });
   logMemory("universe:complete");
   return capped;
 }
@@ -183,4 +260,7 @@ module.exports = {
   status,
   avgDollarVolume20d,
   validSymbol,
+  quotas,
+  liquidityBucket,
+  stratify,
 };

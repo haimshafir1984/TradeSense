@@ -2,9 +2,10 @@ const store = require("./store");
 const market = require("./market");
 const { swingEligible } = require("./strategies");
 
-const MAX_SELECTED = Math.min(200, Math.max(1, Number(process.env.AUTOPILOT_DEEP_SCAN_MAX || 120) || 120));
-const MAX_STRATEGY_SELECTED = 100;
-const ROTATION_COUNT = 20;
+const parsedCap = Number(process.env.AUTOPILOT_DEEP_SCAN_MAX || 120);
+const MAX_SELECTED = Number.isFinite(parsedCap) ? Math.min(120, Math.max(1, Math.floor(parsedCap))) : 120;
+const ROTATION_COUNT = Math.floor(MAX_SELECTED / 6);
+const MAX_STRATEGY_SELECTED = MAX_SELECTED - ROTATION_COUNT;
 
 const WATCH_REASONS = {
   trigger_not_met: "עברה את הסינון הראשוני, אבל טריגר הכניסה עדיין לא הופיע בנר סגור.",
@@ -50,12 +51,19 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
   const unavailable = [];
 
   for (const row of rows) {
+    const unavailableAt = Date.parse(store.get("scanCooldown", row.symbol)?.until || 0);
+    if (unavailableAt > now) continue;
     const snapshot = snapshots.get(row.symbol);
     const price = market.freshPrice(snapshot, now);
     const daily = dailyFeatures.get(row.symbol)?.features || dailyFeatures.get(row.symbol);
+    if (!daily) continue;
+    const hasDailySwing = strategySet.has("reversal5") && daily.price > daily.ma200 && daily.return5d <= -5 && daily.rsi14 < 35 ||
+      strategySet.has("pullback2_v1") && swingEligible("pullback2_v1", daily) ||
+      strategySet.has("breakout20_v1") && swingEligible("breakout20_v1", daily);
     const volume = dailyVolume(snapshot, todayDate);
     const chg = changePct(price, row.close || daily?.price);
-    if (!price || price.price < 5 || snapshotDate(snapshot) !== todayDate) {
+    if ((!price || price.price < 5 || snapshotDate(snapshot) !== todayDate) &&
+        !(process.env.AUTOPILOT_SCAN_PROFILE !== "legacy" && hasDailySwing)) {
       unavailable.push({ symbol: row.symbol, reasonCode: "live_price_stale" });
       continue;
     }
@@ -133,21 +141,47 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
   return { lists, unavailable };
 }
 
-function roundRobin(lists, limit = MAX_STRATEGY_SELECTED) {
-  const keys = ["orb15", "gap_pullback", "vwap_reclaim", "reversal5", "pullback2_v1", "breakout20_v1"].filter((key) => lists[key]?.length);
+function roundRobin(lists, limit = MAX_STRATEGY_SELECTED, lane = null, fairBuckets = true) {
+  const allKeys = ["orb15", "gap_pullback", "vwap_reclaim", "reversal5", "pullback2_v1", "breakout20_v1"];
+  const keys = allKeys.filter((key) => lists[key]?.length && (!lane || (["orb15", "gap_pullback", "vwap_reclaim"].includes(key) ? lane === "day" : lane === "swing")));
+  if (!fairBuckets) {
+    const indexes = Object.fromEntries(keys.map((key) => [key, 0]));
+    const picked = [], seenSymbols = new Set();
+    while (picked.length < limit) {
+      let moved = false;
+      for (const key of keys) {
+        while (indexes[key] < lists[key].length && seenSymbols.has(lists[key][indexes[key]].symbol)) indexes[key] += 1;
+        const item = lists[key][indexes[key]];
+        if (!item) continue;
+        indexes[key] += 1; picked.push({ ...item, selectedFor: key }); seenSymbols.add(item.symbol); moved = true;
+        if (picked.length >= limit) break;
+      }
+      if (!moved) break;
+    }
+    return picked;
+  }
   const selected = [];
   const seen = new Set();
-  const indexes = Object.fromEntries(keys.map((key) => [key, 0]));
+  const bucketOrder = ["medium_liquidity", "high_liquidity", "lower_liquidity"];
+  const grouped = Object.fromEntries(keys.map((key) => [key, Object.fromEntries(bucketOrder.map((bucket) => [bucket, lists[key].filter((item) => universeBucket(item) === bucket)]))]));
+  const indexes = Object.fromEntries(keys.map((key) => [key, Object.fromEntries(bucketOrder.map((bucket) => [bucket, 0]))]));
+  const turns = Object.fromEntries(keys.map((key) => [key, 0]));
 
   while (selected.length < limit) {
     let moved = false;
     for (const key of keys) {
-      while (indexes[key] < lists[key].length && seen.has(lists[key][indexes[key]].symbol)) {
-        indexes[key] += 1;
+      let item = null;
+      for (let attempt = 0; attempt < bucketOrder.length; attempt += 1) {
+        const bucket = bucketOrder[(turns[key] + attempt) % bucketOrder.length];
+        const bucketRows = grouped[key][bucket];
+        while (indexes[key][bucket] < bucketRows.length && seen.has(bucketRows[indexes[key][bucket]].symbol)) indexes[key][bucket] += 1;
+        if (bucketRows[indexes[key][bucket]]) {
+          item = bucketRows[indexes[key][bucket]++];
+          turns[key] = (bucketOrder.indexOf(bucket) + 1) % bucketOrder.length;
+          break;
+        }
       }
-      const item = lists[key][indexes[key]];
       if (!item) continue;
-      indexes[key] += 1;
       selected.push({ ...item, selectedFor: key });
       seen.add(item.symbol);
       moved = true;
@@ -158,22 +192,50 @@ function roundRobin(lists, limit = MAX_STRATEGY_SELECTED) {
   return selected;
 }
 
+function universeBucket(row) {
+  const adv = Number(row.avgDollarVolume20d) || 0;
+  return adv < 20_000_000 ? "lower_liquidity" : adv < 100_000_000 ? "medium_liquidity" : "high_liquidity";
+}
+
 function rotation(rows, alreadySelected, count = ROTATION_COUNT) {
-  const available = rows.filter((row) => !alreadySelected.has(row.symbol));
-  if (!available.length || count <= 0) return [];
-  const cursor = store.get("runtime", "selection-cursor")?.value || 0;
-  const picks = [];
-  for (let offset = 0; offset < Math.min(count, available.length); offset += 1) {
-    picks.push(available[(cursor + offset) % available.length]);
+  const stable = [...rows].sort((a, b) => a.symbol.localeCompare(b.symbol));
+  if (!stable.length || count <= 0) return [];
+  const cursorState = store.get("runtime", "selection-cursors")?.values || {};
+  const buckets = Object.fromEntries(["medium_liquidity", "high_liquidity", "lower_liquidity"].map((key) => [key, stable.filter((row) => universeBucket(row) === key)]));
+  const offsets = Object.fromEntries(Object.entries(buckets).map(([key, rowsInBucket]) => [key, rowsInBucket.length ? (Number(cursorState[key]) || 0) % rowsInBucket.length : 0]));
+  const picks = [], seen = new Set(alreadySelected);
+  while (picks.length < count) {
+    let moved = false;
+    for (const key of ["medium_liquidity", "high_liquidity", "lower_liquidity"]) {
+      const list = buckets[key];
+      for (let scanned = 0; scanned < list.length; scanned += 1) {
+        const row = list[(offsets[key] + scanned) % list.length];
+        if (seen.has(row.symbol)) continue;
+        picks.push(row); seen.add(row.symbol); offsets[key] = (offsets[key] + scanned + 1) % list.length; moved = true; break;
+      }
+      if (picks.length >= count) break;
+    }
+    if (!moved) break;
   }
-  store.put("runtime", "selection-cursor", { value: (cursor + picks.length) % available.length });
   return picks.map((row) => ({ ...row, selectedFor: "rotation" }));
 }
 
 function selectCandidates(input) {
   const { rows = [] } = input;
   const { lists, unavailable } = buildLists(input);
-  const fromStrategies = roundRobin(lists, Math.min(MAX_STRATEGY_SELECTED, MAX_SELECTED));
+  const strategyLimit = MAX_SELECTED - ROTATION_COUNT;
+  const dayTarget = Math.ceil(strategyLimit * 0.6);
+  const swingTarget = strategyLimit - dayTarget;
+  const dayPicked = roundRobin(lists, dayTarget, "day");
+  const daySymbols = new Set(dayPicked.map((row) => row.symbol));
+  const swingPicked = roundRobin(lists, swingTarget, "swing").filter((row) => !daySymbols.has(row.symbol));
+  const strategySymbols = new Set([...dayPicked, ...swingPicked].map((row) => row.symbol));
+  let strategyRemainder = strategyLimit - strategySymbols.size;
+  const dayFallback = roundRobin(lists, strategyLimit, "day").filter((row) => !strategySymbols.has(row.symbol)).slice(0, strategyRemainder);
+  dayFallback.forEach((row) => strategySymbols.add(row.symbol));
+  strategyRemainder -= dayFallback.length;
+  const swingFallback = roundRobin(lists, strategyLimit, "swing").filter((row) => !strategySymbols.has(row.symbol)).slice(0, strategyRemainder);
+  const fromStrategies = [...dayPicked, ...swingPicked, ...dayFallback, ...swingFallback];
   const selectedSymbols = new Set(fromStrategies.map((item) => item.symbol));
   const rotated = rotation(rows, selectedSymbols, Math.max(0, MAX_SELECTED - fromStrategies.length));
   const selected = [...fromStrategies, ...rotated].slice(0, MAX_SELECTED);
@@ -185,24 +247,50 @@ function selectCandidates(input) {
     }
   }
   for (const item of selected) {
-    const daily = input.dailyFeatures.get(item.symbol)?.features || input.dailyFeatures.get(item.symbol);
-    const return2 = daily?.previousClose2 > 0 ? ((daily.price / daily.previousClose2) - 1) * 100 : null;
     const eligible = new Set(memberships.get(item.symbol) || []);
-    if (daily?.ma20 > daily?.ma50 && return2 >= -5 && return2 <= -1 && daily.price >= daily.ma20 - daily.atr14) eligible.add("pullback2_v1");
-    if (daily?.ma20 > daily?.ma50 && daily?.ma50 > daily?.ma200 && Number.isFinite(daily?.high20) && daily.high20 - daily.price <= daily.atr14) eligible.add("breakout20_v1");
     item.eligibleStrategies = [...eligible].filter((key) => input.activeStrategies.includes(key));
   }
+  let finalSelected = selected;
+  if (process.env.AUTOPILOT_SCAN_PROFILE === "legacy") {
+    const legacyStrategyRows = roundRobin(lists, Math.min(100, MAX_SELECTED), null, false);
+    finalSelected = [...legacyStrategyRows, ...rotation(rows, new Set(legacyStrategyRows.map((row) => row.symbol)), Math.max(0, MAX_SELECTED - legacyStrategyRows.length))].slice(0, MAX_SELECTED);
+    for (const item of finalSelected) item.eligibleStrategies = [...(memberships.get(item.symbol) || [])].filter((key) => input.activeStrategies.includes(key));
+  }
   return {
-    selected,
+    selected: finalSelected,
     lists,
     unavailable,
     diagnostics: {
       selectedCount: selected.length,
       strategySelectedCount: fromStrategies.length,
+      daySelectedCount: dayPicked.length,
+      swingSelectedCount: swingPicked.length,
       rotationCount: rotated.length,
       listSizes: Object.fromEntries(Object.entries(lists).map(([key, list]) => [key, list.length])),
     },
   };
+}
+
+function commitRotationProgress(rows, selected) {
+  const cursor = store.get("runtime", "selection-cursors")?.values || {};
+  const updates = { ...cursor };
+  for (const key of ["medium_liquidity", "high_liquidity", "lower_liquidity"]) {
+    const members = [...rows].filter((row) => universeBucket(row) === key).sort((a, b) => a.symbol.localeCompare(b.symbol));
+    if (!members.length) continue;
+    const selectedSymbols = new Set(selected.filter((row) => row.selectedFor === "rotation" && universeBucket(row) === key).map((row) => row.symbol));
+    if (!selectedSymbols.size) continue;
+    let position = Number(cursor[key]) || 0;
+    let picked = 0;
+    for (let scanned = 0; scanned < members.length && picked < selectedSymbols.size; scanned += 1) {
+      if (selectedSymbols.has(members[(position + scanned) % members.length].symbol)) {
+        position = (position + scanned + 1) % members.length;
+        scanned = -1;
+        picked += 1;
+      }
+    }
+    updates[key] = position;
+  }
+  store.put("runtime", "selection-cursors", { values: updates, updatedAt: new Date().toISOString() });
 }
 
 function reasonText(reasonCode) {
@@ -217,4 +305,5 @@ module.exports = {
   dailyVolume,
   openingGapPct,
   changePct,
+  commitRotationProgress,
 };

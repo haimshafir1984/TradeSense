@@ -436,7 +436,11 @@ export default function App() {
                       <p>
                         {!runtime.marketOpen
                           ? "המערכת תחזור לחפש אחרי פתיחת השוק. אין צורך להפעיל סריקה ידנית."
-                          : "כשיופיע איתות שעומד בכללים, הוא יופיע כאן אוטומטית. אין יעד לכמות עסקאות."}
+                          : diagnostics.evaluatedCount === 0 && diagnostics.selectedCount > 0
+                            ? "המועמדות נבחרו, אך חסר מידע יומי או תוך־יומי מלא לאישור. אין שימוש בנתון ישן כדי לייצר איתות."
+                            : diagnostics.selectedCount === 0
+                              ? "אין כרגע מועמדות שעברו את הסינון והאסטרטגיות הפעילות."
+                              : "המועמדות נבדקו; תנאי הכניסה או מגבלות הסיכון לא התקיימו. כשיתקיימו, האיתות יופיע אוטומטית."}
                       </p>
                       <span className="subtle">
                         מתחילים לבדוק איתותים לאחר בניית טווח הפתיחה.
@@ -478,10 +482,16 @@ export default function App() {
                         ? `${number(diagnostics.universeSize)} מניות במאגר · ${number(diagnostics.selectedCount)} נבחרו לבדיקה עמוקה · ${number(diagnostics.evaluatedCount)} נבדקו · ${number(runtime.personalDiagnostics?.newSignals)} איתותים חדשים בפרופיל שלך`
                         : "עדיין לא הושלמה סריקה."}
                     </p>
+                    {runtime.diagnostics?.sipContext && (
+                      <p>
+                        SIP מושהה: {runtime.diagnostics.sipContext.mode === "shadow" ? "מצב בדיקה בלבד — אינו איתות" : runtime.diagnostics.sipContext.mode === "enabled" ? "פעיל עם סימון מקור מושהה" : "כבוי"}
+                        {` · ${number(runtime.diagnostics.sipContext.selected)} מועמדות · ${number(runtime.diagnostics.sipContext.shadowDecisions)} החלטות shadow`}
+                      </p>
+                    )}
                     <p>
                       היסטוריה יומית מכלל הבורסות דרך SIP; נתונים חיים, נרות
-                      תוך־יומיים, RVOL ו־VWAP מבורסת IEX. המחיר עשוי להיות שונה
-                      ממחיר הביצוע בפועל.
+                      וטריגרים תוך־יומיים מבורסת IEX. SIP מושהה, אם זמין, משמש
+                      רק להקשר נפח ואינו מחיר חי. המחיר עשוי להיות שונה ממחיר הביצוע.
                     </p>
                     <p>
                       {selectionStatus.listSizes
@@ -826,6 +836,7 @@ function Signal({ s, label, onEntry, onCopy }) {
       <div className="section-heading">
         <span className="badge">{s.mode === "day" ? "יומי" : "עד 5 ימים"}</span>
         <span className="badge amber">איתות ניסיוני</span>
+        {s.provenance?.volumeContext === "sip_delayed" && <span className="badge amber">הקשר נפח SIP מושהה</span>}
       </div>
       <div className="signal-title">
         <h2 dir="ltr">{s.ticker}</h2>

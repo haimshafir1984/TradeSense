@@ -69,11 +69,38 @@ function oldTop25(rows, snapshots, now, today) {
 }
 
 function run() {
+  const profileBefore = process.env.AUTOPILOT_SCAN_PROFILE;
+  const runs = [];
+  for (let scanIndex = 0; scanIndex < 12; scanIndex += 1) {
+    const input = syntheticInput();
+    input.now += scanIndex * 5 * 60000;
+    input.today = { ...input.today, date: market.nyDate(input.now) };
+    for (const [symbol, snapshot] of input.snapshots) {
+      const index = Number(symbol.replace("CMP", ""));
+      if ([0, 19, 38].includes(index)) snapshot.latestTrade.t = iso(input.now - 120000);
+      else snapshot.latestTrade.t = iso(input.now);
+    }
+    const choices = {};
+    for (const profile of ["legacy", "balanced"]) {
+      process.env.AUTOPILOT_SCAN_PROFILE = profile;
+      choices[profile] = selection.selectCandidates({
+        ...input,
+        activeStrategies: ["orb15", "gap_pullback", "vwap_reclaim", "reversal5"],
+      });
+    }
+    const legacySymbols = new Set(choices.legacy.selected.filter((row) => row.eligibleStrategies?.includes("reversal5")).map((row) => row.symbol));
+    const balancedSymbols = new Set(choices.balanced.selected.filter((row) => row.eligibleStrategies?.includes("reversal5")).map((row) => row.symbol));
+    runs.push({
+      scanIndex,
+      legacySelected: choices.legacy.selected.length,
+      balancedSelected: choices.balanced.selected.length,
+      balancedNewSwingChecks: [...balancedSymbols].filter((symbol) => !legacySymbols.has(symbol)),
+      balancedByBucket: Object.fromEntries(["lower_liquidity", "medium_liquidity", "high_liquidity"].map((bucket) => [bucket, choices.balanced.selected.filter((row) => row.eligibleStrategies?.includes("reversal5") && (row.avgDollarVolume20d < 20_000_000 ? "lower_liquidity" : row.avgDollarVolume20d < 100_000_000 ? "medium_liquidity" : "high_liquidity") === bucket).length])),
+    });
+  }
+  if (profileBefore === undefined) delete process.env.AUTOPILOT_SCAN_PROFILE; else process.env.AUTOPILOT_SCAN_PROFILE = profileBefore;
   const input = syntheticInput();
-  const picked = selection.selectCandidates({
-    ...input,
-    activeStrategies: ["orb15", "gap_pullback", "vwap_reclaim", "reversal5"],
-  });
+  const picked = selection.selectCandidates({ ...input, rows: input.rows, dailyFeatures: new Map(), activeStrategies: ["reversal5"] });
   const old = oldTop25(input.rows, input.snapshots, input.now, input.today);
   const oldSymbols = new Set(old.map((item) => item.symbol));
   const selectedSymbols = new Set(picked.selected.map((item) => item.symbol));
@@ -89,6 +116,9 @@ function run() {
         outsideOldTop25Sample: outsideOld.slice(0, 10),
         listSizes: picked.diagnostics.listSizes,
         rotationCount: picked.diagnostics.rotationCount,
+        fixtureScans: runs.length,
+        runs,
+        negativeFixtureValidCandidates: picked.selected.filter((row) => row.eligibleStrategies?.length).length,
       },
       null,
       2,

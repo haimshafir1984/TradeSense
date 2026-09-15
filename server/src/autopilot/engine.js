@@ -10,10 +10,10 @@ const finnhub = require("../providers/finnhubService");
 const universe = require("./universe");
 const history = require("./history");
 const selection = require("./selection");
-const { logMemory } = require("../memoryDiagnostics");
+const { logMemory, pressure } = require("../memoryDiagnostics");
 const SELECTION_INTRADAY_CACHE_LIMIT = 200;
 const INTRADAY_BATCH_SIZE = Math.min(
-  20,
+  10,
   Math.max(5, Number(process.env.AUTOPILOT_INTRADAY_BATCH_SIZE || 10) || 10),
 );
 let running = false,
@@ -67,11 +67,11 @@ async function prepare(now) {
   lastUniverseAttempt = Date.now();
   return universe.ensure(now);
 }
-async function snapshots(symbols) {
+async function snapshots(symbols, priority = false) {
   const out = new Map();
   for (let i = 0; i < symbols.length; i += 200)
     for (const [s, q] of await alpaca.getSnapshots({
-      symbols: symbols.slice(i, i + 200),
+      symbols: symbols.slice(i, i + 200), priority: priority ? "monitor" : "normal",
     }))
       out.set(s, q);
   return out;
@@ -96,6 +96,19 @@ async function scan(now, calendar, today) {
   state({ scanning: true });
   const scanId = `${today.date}:${now}`;
   const startedAt = Date.now();
+  let attemptsLogged = 0;
+  const logAttempt = (row, strategy, reasonCode, at, flags = {}) => {
+    if (attemptsLogged >= 120 * 6 || !strategy) return;
+    const id = `${scanId}:${row.symbol}:${strategy}`;
+    if (store.get("scanAttempt", id)) return;
+    store.put("scanAttempt", id, {
+      scanId, symbol: row.symbol, strategy, reasonCode,
+      lane: ["orb15", "gap_pullback", "vwap_reclaim"].includes(strategy) ? "day" : "swing",
+      liquidityBucket: row.avgDollarVolume20d < 20_000_000 ? "lower_liquidity" : row.avgDollarVolume20d < 100_000_000 ? "medium_liquidity" : "high_liquidity",
+      dailyFeed: "sip", triggerFeed: "iex", observedAt: new Date(at).toISOString(), ...flags,
+    });
+    attemptsLogged += 1;
+  };
   logMemory("scan:start");
   try {
     const profiles = users
@@ -171,6 +184,32 @@ async function scan(now, calendar, today) {
       now: selectionNow,
     });
     const ranked = picked.selected;
+    selection.commitRotationProgress(rows, ranked);
+    const sipMode = ["off", "enabled"].includes(process.env.AUTOPILOT_SIP_CONTEXT_MODE) ? process.env.AUTOPILOT_SIP_CONTEXT_MODE : "shadow";
+    const sipLimitValue = Number(process.env.AUTOPILOT_SIP_CONTEXT_MAX || 40);
+    const sipLimit = Number.isFinite(sipLimitValue) ? Math.min(40, Math.max(0, Math.floor(sipLimitValue))) : 40;
+    const cachedSelectedRvol = history.cachedRvolScores(ranked.map((row) => row.symbol), calendar, today, selectionNow);
+    const prioritizedSip = [
+      ...ranked.filter((row) => row.selectedFor !== "rotation" && row.price && row.eligibleStrategies?.some((key) => ["orb15", "gap_pullback", "vwap_reclaim"].includes(key)) && cachedSelectedRvol.get(row.symbol) == null),
+      ...ranked.filter((row) => row.selectedFor !== "rotation" && row.eligibleStrategies?.some((key) => ["reversal5", "pullback2_v1", "breakout20_v1"].includes(key))),
+      ...ranked.filter((row) => row.selectedFor === "rotation"),
+    ];
+    const pressureState = pressure();
+    const sipRows = sipMode === "off" || pressureState.sipPaused || pressureState.optionalPaused ? [] : [...new Map(prioritizedSip.map((row) => [row.symbol, row])).values()].slice(0, sipLimit);
+    const sipCutoff = market.delayedSipCutoff(Date.now());
+    const sipBars = new Map();
+    const sipSummary = { complete: true, selected: sipRows.length, shadowDecisions: 0, failedSymbols: [], errors: [], skippedReason: sipMode === "off" ? "disabled" : pressureState.sipPaused ? "memory_300mb" : pressureState.optionalPaused ? "memory_350mb" : null };
+    for (let offset = 0; offset < sipRows.length; offset += INTRADAY_BATCH_SIZE) {
+      if (pressure().optionalPaused || Date.now() - startedAt >= 120000) break;
+      const result = await history.ensureIntradayBars(sipRows.slice(offset, offset + INTRADAY_BATCH_SIZE).map((row) => row.symbol), {
+        now: Date.now(), start: new Date(sipCutoff - 26 * 86400000).toISOString(), end: new Date(sipCutoff).toISOString(),
+        feed: "sip", keepSymbols: [...active, ...activeSignals], evict: false,
+      });
+      sipSummary.complete &&= result.complete;
+      sipSummary.failedSymbols.push(...result.failedSymbols);
+      sipSummary.errors.push(...result.errors);
+      for (const [symbol, bars] of result.bars) sipBars.set(symbol, bars.filter((bar) => market.acceptDelayedSipBar(bar, sipCutoff)));
+    }
     const streamSymbols = [
       ...new Set([...active, ...activeSignals, ...ranked.map((r) => r.symbol)]),
     ].slice(0, 28);
@@ -209,6 +248,11 @@ async function scan(now, calendar, today) {
       ]),
     );
     for (let batchStart = 0; batchStart < ranked.length; batchStart += INTRADAY_BATCH_SIZE) {
+      if (Date.now() - startedAt >= 120000 || pressure().optionalPaused) {
+        intradaySummary.complete = false;
+        intradaySummary.errors.push({ kind: Date.now() - startedAt >= 120000 ? "scan_budget_exhausted" : "memory_pressure" });
+        break;
+      }
       const batch = ranked.slice(batchStart, batchStart + INTRADAY_BATCH_SIZE);
       const intraday = await history.ensureIntradayBars(batch.map((row) => row.symbol), {
         now: Date.now(),
@@ -236,9 +280,13 @@ async function scan(now, calendar, today) {
       if (!daily) {
         missingData++;
         reasonCounts.daily_missing = (reasonCounts.daily_missing || 0) + 1;
+        for (const strategy of row.eligibleStrategies || []) logAttempt(row, strategy, "daily_missing", asOf);
         continue;
       }
-      if (!bars.length) historyUnavailable++;
+      if (!bars.length) {
+        historyUnavailable++;
+        store.put("scanCooldown", row.symbol, { until: new Date(asOf + 15 * 60000).toISOString(), reason: "data_unavailable", updatedAt: new Date(asOf).toISOString() });
+      } else if (store.get("scanCooldown", row.symbol)) store.remove("scanCooldown", row.symbol);
       const sessionBars = bars.filter((b) => Date.parse(b.t) >= today.open);
       const prevClose = daily.price;
       const open = sessionBars[0]?.o;
@@ -247,13 +295,17 @@ async function scan(now, calendar, today) {
           ? ((open - prevClose) / prevClose) * 100
           : null;
       const rvol = market.openingRvol(bars, calendar, today, asOf);
+      const sipRvol = rvol == null && sipBars.has(row.symbol)
+        ? market.delayedSipOpeningRvol(sipBars.get(row.symbol), calendar, today, asOf, sipCutoff)
+        : null;
+      const effectiveRvol = rvol == null ? sipRvol : rvol;
       let detailed = evaluateDetailed({
         daily,
         bars,
         asOf,
         sessionOpen: today.open,
         sessionClose: today.close,
-        rvol,
+        rvol: effectiveRvol,
         gapPct,
         hasNews: null,
       });
@@ -271,15 +323,25 @@ async function scan(now, calendar, today) {
           asOf,
           sessionOpen: today.open,
           sessionClose: today.close,
-          rvol,
+          rvol: effectiveRvol,
           gapPct,
           hasNews: news.count == null ? "unavailable" : news.count > 0,
         });
       }
       evaluatedCount++;
+      const sipFallbackMatched = rvol == null && sipRvol != null && detailed.plans.length > 0;
+      if (sipFallbackMatched) {
+        sipSummary.shadowDecisions += detailed.plans.length;
+        for (const plan of detailed.plans) store.put("scanDiagnostic", `${scanId}:${row.symbol}:${plan.strategy}:sip-shadow`, {
+          scanId, symbol: row.symbol, strategy: plan.strategy, decision: "sip_rvol_fallback",
+          volumeContext: "sip_delayed", triggerFeed: "iex", requestedCutoff: new Date(sipCutoff).toISOString(),
+          wallNow: new Date(asOf).toISOString(), mode: sipMode, createdAt: new Date(asOf).toISOString(),
+        });
+      }
       for (const [strategyKey, result] of detailed.results) {
         if (!row.eligibleStrategies?.includes(strategyKey)) continue;
         if (!result.matched) {
+          logAttempt(row, strategyKey, !bars.length ? "history_unavailable" : result.reasonCode, asOf, sipRvol != null ? { volumeContext: "sip_delayed" } : {});
           reasonCounts[result.reasonCode] = (reasonCounts[result.reasonCode] || 0) + 1;
           if (["trigger_not_met", "rvol_below_threshold"].includes(result.reasonCode)) {
             marketCandidates.push({
@@ -293,27 +355,32 @@ async function scan(now, calendar, today) {
               priceAt: row.price?.at || market.freshPrice(row.snapshot, asOf)?.at || null,
               dailyFeed: "sip",
               intradayFeed: "iex",
+              volumeContext: sipRvol != null && rvol == null ? "sip_delayed" : "iex",
             });
           }
         }
       }
       for (const plan of detailed.plans) {
         if (!row.eligibleStrategies?.includes(plan.strategy)) continue;
+        if (sipFallbackMatched && sipMode !== "enabled") { logAttempt(row, plan.strategy, "shadow_only", asOf, { volumeContext: "sip_delayed" }); continue; }
         const strategy = STRATEGIES.find((s) => s.key === plan.strategy);
         const endSession =
           strategy.mode === "day"
             ? today
             : calendar.filter((s) => s.open >= today.open)[4];
-        if (!endSession || asOf >= today.close - 900000) continue;
+        if (!endSession || asOf >= today.close - 900000) { logAttempt(row, plan.strategy, "outside_window", asOf); continue; }
         const current = liveQuote(row.symbol, row.snapshot, Date.now());
         if (!current) {
           reasonCounts.live_price_stale = (reasonCounts.live_price_stale || 0) + 1;
+          logAttempt(row, plan.strategy, "live_price_stale", asOf);
           continue;
         }
         if (current.price > plan.maxEntry || current.price < plan.entry) {
           reasonCounts.price_outside_entry = (reasonCounts.price_outside_entry || 0) + 1;
+          logAttempt(row, plan.strategy, "price_outside_entry", asOf);
           continue;
         }
+        logAttempt(row, plan.strategy, "setup_valid", asOf, { volumeContext: sipRvol != null && rvol == null ? "sip_delayed" : "iex" });
         const livePlan = { ...plan, entry: current.price };
         for (const user of profiles) {
           const settings = user.settings;
@@ -348,7 +415,8 @@ async function scan(now, calendar, today) {
             ticker: row.symbol,
             company: row.companyName,
             exchange: row.exchange,
-            version: strategy.version,
+            version: sipRvol != null && rvol == null ? `${strategy.version}+sipctx1` : strategy.version,
+            strategyVersion: strategy.version,
             mode: strategy.mode,
             evidence: "experimental",
             feed: "iex",
@@ -356,11 +424,13 @@ async function scan(now, calendar, today) {
               dailyFeed: "sip",
               intradayFeed: "iex",
               priceFeed: "iex",
+              volumeContext: sipRvol != null && rvol == null ? "sip_delayed" : "iex",
+              triggerFeed: "iex",
               dailySessionDate: row.lastSessionDate || dailyPack?.lastSessionDate || null,
               priceAt: current.at,
             },
             priceAt: current.at,
-            rvol,
+            rvol: effectiveRvol,
             gapPct,
             createdAt: new Date(asOf).toISOString(),
             expiresAt: new Date(
@@ -414,6 +484,29 @@ async function scan(now, calendar, today) {
         counters: personalCounters.get(user.id),
       });
     }
+    const aggregateId = today.date;
+    const previousAggregate = store.get("scanAggregate", aggregateId) || { date: aggregateId, scans: 0, selected: 0, evaluated: 0, signals: 0, reasonCounts: {} };
+    const aggregateReasons = { ...previousAggregate.reasonCounts };
+    for (const [reason, count] of Object.entries(reasonCounts)) aggregateReasons[reason] = (aggregateReasons[reason] || 0) + count;
+    store.put("scanAggregate", aggregateId, {
+      date: aggregateId, scans: previousAggregate.scans + 1,
+      selected: previousAggregate.selected + ranked.length,
+      evaluated: previousAggregate.evaluated + evaluatedCount,
+      signals: previousAggregate.signals + matches,
+      reasonCounts: aggregateReasons, updatedAt: new Date().toISOString(),
+    });
+    const attemptCutoff = Date.parse(`${today.date}T00:00:00Z`) - 7 * 86400000;
+    for (const id of store.listIds("scanAttempt")) {
+      const attemptDate = Date.parse(`${id.split(":")[0]}T00:00:00Z`);
+      if (attemptDate < attemptCutoff) store.remove("scanAttempt", id);
+    }
+    for (const [kind, maximum] of [["scanAttempt", 60000], ["scanDiagnostic", 1000]]) {
+      const ids = store.listIds(kind);
+      for (const id of ids.slice(maximum)) store.remove(kind, id);
+    }
+    const aggregateCutoff = Date.parse(`${today.date}T00:00:00Z`) - 30 * 86400000;
+    for (const id of store.listIds("scanAggregate"))
+      if (Date.parse(`${id}T00:00:00Z`) < aggregateCutoff) store.remove("scanAggregate", id);
     state({
       lastScanAt: new Date().toISOString(),
       diagnostics: {
@@ -429,6 +522,7 @@ async function scan(now, calendar, today) {
         live: ranked.length,
         selectedCount: ranked.length,
         evaluatedCount,
+        attemptsLogged,
         historyUnavailable,
         cacheHits: dailyResult.cacheHits + intradaySummary.cacheHits,
         requestsByProvider: { alpaca: "batched", finnhub: "gap-only" },
@@ -438,6 +532,7 @@ async function scan(now, calendar, today) {
           universeStatus.diagnostics?.partialData,
         missingData,
         reasonCounts,
+      sipContext: { ...sipSummary, cutoff: new Date(sipCutoff).toISOString(), mode: sipMode },
       },
       personalDiagnostics: Object.fromEntries(personalCounters),
       marketDiagnostics: {
@@ -472,7 +567,7 @@ async function monitor(now) {
     ]),
   ];
   if (!symbols.length) return;
-  const snap = await snapshots(symbols);
+  const snap = await snapshots(symbols, true);
   for (const user of rows) {
     for (const signal of user.signals) {
       const q = liveQuote(signal.ticker, snap.get(signal.ticker), Date.now());
@@ -499,6 +594,7 @@ async function monitor(now) {
         timeframe: "5Min",
         start,
         end: new Date(now).toISOString(),
+        priority: "monitor",
       });
       tracking.track(
         user.id,

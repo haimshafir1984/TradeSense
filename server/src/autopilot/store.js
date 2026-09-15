@@ -14,7 +14,7 @@ function database() {
     );
     const columns = db.prepare("PRAGMA table_info(records)").all().map((row) => row.name);
     if (!columns.includes("metadata")) db.exec("ALTER TABLE records ADD COLUMN metadata TEXT");
-    db.exec("UPDATE records SET metadata=json_object('symbol',json_extract(body,'$.symbol'),'feed',json_extract(body,'$.feed'),'timeframe',json_extract(body,'$.timeframe'),'lastUsedAt',json_extract(body,'$.lastUsedAt'),'fetchedAt',json_extract(body,'$.fetchedAt'),'sessionDate',json_extract(body,'$.sessionDate')) WHERE kind='history' AND metadata IS NULL");
+    db.exec("UPDATE records SET metadata=json_object('symbol',json_extract(body,'$.symbol'),'feed',json_extract(body,'$.feed'),'timeframe',json_extract(body,'$.timeframe'),'lastUsedAt',json_extract(body,'$.lastUsedAt'),'fetchedAt',json_extract(body,'$.fetchedAt'),'sessionDate',json_extract(body,'$.sessionDate'),'barCount',json_array_length(json_extract(body,'$.bars')),'protected',json_extract(body,'$.protected')) WHERE kind='history' AND metadata IS NULL");
   }
   return db;
 }
@@ -47,7 +47,7 @@ function put(kind, id, body) {
     .prepare(
       "INSERT INTO records(kind,id,body,metadata) VALUES(?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body, metadata=excluded.metadata",
     )
-    .run(kind, id, JSON.stringify(body), kind === "history" ? JSON.stringify({ symbol: body.symbol || null, feed: body.feed || null, timeframe: body.timeframe || null, lastUsedAt: body.lastUsedAt || null, fetchedAt: body.fetchedAt || null, sessionDate: body.sessionDate || null }) : null);
+    .run(kind, id, JSON.stringify(body), kind === "history" ? JSON.stringify({ symbol: body.symbol || null, feed: body.feed || null, timeframe: body.timeframe || null, lastUsedAt: body.lastUsedAt || null, fetchedAt: body.fetchedAt || null, sessionDate: body.sessionDate || null, barCount: Array.isArray(body.bars) ? body.bars.length : 0, protected: body.protected === true }) : null);
   return body;
 }
 function remove(kind, id) {
