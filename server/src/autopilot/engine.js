@@ -10,6 +10,7 @@ const finnhub = require("../providers/finnhubService");
 const universe = require("./universe");
 const history = require("./history");
 const selection = require("./selection");
+const recommendations = require("./recommendations");
 const { logMemory, pressure } = require("../memoryDiagnostics");
 const SELECTION_INTRADAY_CACHE_LIMIT = 200;
 const INTRADAY_BATCH_SIZE = Math.min(
@@ -432,6 +433,11 @@ async function scan(now, calendar, today) {
             priceAt: current.at,
             rvol: effectiveRvol,
             gapPct,
+            daily: {
+              atr14: daily?.atr14 ?? null,
+              price: daily?.price ?? prevClose ?? null,
+              avgDollarVolume20d: daily?.avgDollarVolume20d ?? row.avgDollarVolume20d ?? null,
+            },
             createdAt: new Date(asOf).toISOString(),
             expiresAt: new Date(
               Math.min(asOf + 600000, today.close - (strategy.origin === "custom_hypothesis" ? 3600000 : 900000)),
@@ -440,7 +446,10 @@ async function scan(now, calendar, today) {
             status: "active",
             sizing: config.size(livePlan, settings),
           };
-          store.putUser(user.id, "signal", id, signal);
+          store.transaction(() => {
+            recommendations.archiveSignal({ userId: user.id, signal, now: asOf });
+            store.putUser(user.id, "signal", id, signal);
+          });
           matches++;
           counters.newSignals++;
           if (!signal.sizing.feasible) counters.infeasibleSizing++;
@@ -572,15 +581,21 @@ async function monitor(now) {
     for (const signal of user.signals) {
       const q = liveQuote(signal.ticker, snap.get(signal.ticker), Date.now());
       if (now >= Date.parse(signal.expiresAt))
+      {
+        recommendations.updateLifecycle({ recommendationId: signal.recommendationId || signal.id, userId: user.id, type: "expired", reason: "time", now });
         store.putUser(user.id, "signal", signal.id, {
           ...signal,
           status: "expired",
         });
+      }
       else if (q && (q.price <= signal.stop || q.price > signal.maxEntry))
+      {
+        recommendations.updateLifecycle({ recommendationId: signal.recommendationId || signal.id, userId: user.id, type: "invalidated", reason: q.price <= signal.stop ? "stop_before_entry" : "price_above_max_entry", payload: q, now });
         store.putUser(user.id, "signal", signal.id, {
           ...signal,
           status: "invalidated",
         });
+      }
       else if (q) {
         store.putUser(user.id, "signal", signal.id, { ...signal, priceAt: q.at });
         if (config.read(user.id).enabled)
@@ -664,6 +679,8 @@ async function tick() {
       streamKey = "";
     }
     if (today && now > today.close + 900000) {
+      if (store.lease(`recommendation-review:${today.date}`, 900000, now))
+        recommendations.runDue({ now, limit: 25 }).catch((e) => state({ recommendationReviewError: e.message }));
       for (const user of profiles) {
         if (!store.lease(`report:${user.id}:${today.date}`, 86400000, now))
           continue;

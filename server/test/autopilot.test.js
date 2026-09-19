@@ -17,6 +17,8 @@ const autopilotUniverse = require("../src/autopilot/universe");
 const alpaca = require("../src/providers/alpacaService");
 const notices = require("../src/autopilot/notifications");
 const users = require("../src/autopilot/users");
+const recommendations = require("../src/autopilot/recommendations");
+const recommendationEvaluator = require("../src/autopilot/recommendationEvaluator");
 const USER = "unit-user";
 test.after(() => {
   store.close();
@@ -401,6 +403,40 @@ test("persisted lease and transaction survive reopen without duplicate run", () 
   );
   assert.equal(store.get("rollback", "x"), null);
 });
+test("recommendation archive stores a published signal even when no trade is reported", () => {
+  const s = {
+    ...signal("archive"),
+    rvol: 2.4,
+    gapPct: 3.2,
+    daily: { atr14: 3.5, price: 100, avgDollarVolume20d: 30_000_000 },
+    provenance: { intradayFeed: "iex", dailyFeed: "sip" },
+  };
+  store.transaction(() => recommendations.archiveSignal({ userId: USER, signal: s, now: start + 1000 }));
+  const page = recommendations.listForUser(USER, { limit: 10 });
+  const row = page.rows.find((item) => item.id === "archive");
+  assert.ok(row);
+  assert.equal(row.tags.fast_momentum_candidate, true);
+  assert.equal(recommendations.summaryForUser(USER).published >= 1, true);
+  assert.equal(store.getUser(USER, "trade", "sim:archive"), null);
+});
+test("recommendation evaluator requires an observable post-publication entry bar", () => {
+  const rec = {
+    publishedAt: iso(start + 120000),
+    plan: signal("eval"),
+    provenance: { intradayFeed: "iex" },
+  };
+  const noFill = recommendationEvaluator.evaluateRecommendation({
+    recommendation: rec,
+    bars: [bar(0, { o: 100, h: 105, l: 95 }), bar(1, { o: 102, h: 103, l: 101 })],
+  });
+  assert.equal(noFill.outcomeStatus, "no_observed_fill");
+  const target = recommendationEvaluator.evaluateRecommendation({
+    recommendation: { ...rec, publishedAt: iso(start) },
+    bars: [bar(1, { o: 100.5, h: 104.5, l: 100 })],
+  });
+  assert.equal(target.outcomeStatus, "target");
+  assert.equal(target.metrics.entry, 100.5);
+});
 test("simulation cannot enter before signal and cannot reuse entry candle", () => {
   config.save({ fees: "free", slippagePct: 0 }, USER);
   const s = signal("simulation");
@@ -667,6 +703,15 @@ test("production API creates a browser profile and rejects unauthorized writes",
       ).status,
       200,
     );
+    const recResponse = await fetch(`${url}/recommendations`, {
+      headers: {
+        Authorization: "Bearer 1234",
+        "X-TradeSense-User": session.userId,
+      },
+    });
+    assert.equal(recResponse.status, 200);
+    const recPayload = await recResponse.json();
+    assert.ok(Array.isArray(recPayload.rows));
     assert.equal(
       (
         await fetch(`${url}/settings`, {

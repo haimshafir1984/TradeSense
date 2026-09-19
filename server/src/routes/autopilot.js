@@ -8,6 +8,7 @@ const notices = require("../autopilot/notifications");
 const users = require("../autopilot/users");
 const { STRATEGIES } = require("../autopilot/strategies");
 const market = require("../autopilot/market");
+const recommendations = require("../autopilot/recommendations");
 
 router.post("/session", (req, res, next) => {
   try {
@@ -70,11 +71,31 @@ router.get("/dashboard", (req, res) => {
     strategies: STRATEGIES,
     signals,
     candidates: candidates.slice(0, 20),
+    recommendationSummary: recommendations.summaryForUser(req.userId),
+    recommendations: recommendations.listForUser(req.userId, { limit: 25 }).rows,
     trades: trades.slice(0, 500),
     stats: tracking.statistics(trades),
     events: store.listUser(req.userId, "event").slice(0, 60),
     pushDevices: store.listUser(req.userId, "subscription").length,
   });
+});
+router.get("/recommendations/review-summary", (req, res) => {
+  res.json(recommendations.summaryForUser(req.userId));
+});
+router.get("/recommendations", (req, res) => {
+  res.json(recommendations.listForUser(req.userId, {
+    limit: req.query.limit,
+    cursor: req.query.cursor,
+  }));
+});
+router.get("/recommendations/:id", (req, res, next) => {
+  const item = recommendations.getForUser(req.userId, req.params.id);
+  if (!item) {
+    const error = new Error("ההמלצה לא נמצאה");
+    error.status = 404;
+    return next(error);
+  }
+  res.json(item);
 });
 router.patch("/settings", (req, res, next) => {
   try {
@@ -138,6 +159,8 @@ router.get("/export", (req, res) => {
     .json({
       exportedAt: new Date().toISOString(),
       signals: store.listUser(req.userId, "signal"),
+      recommendations: recommendations.listForUser(req.userId, { limit: 100 }).rows,
+      recommendationSummary: recommendations.summaryForUser(req.userId),
       trades: store.listUser(req.userId, "trade"),
       settings: settings.read(req.userId),
     });

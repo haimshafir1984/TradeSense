@@ -725,6 +725,25 @@ export default function App() {
                       </section>
                     ))}
                   </div>
+                  <h2 className="spaced">מעקב המלצות שלא תלוי בקנייה</h2>
+                  <div className="metrics">
+                    <Metric
+                      label="המלצות שנשמרו"
+                      value={number(data.recommendationSummary?.published)}
+                      sub="כולל כאלה שלא נקנו"
+                    />
+                    <Metric
+                      label="בדיקות שהושלמו"
+                      value={number(data.recommendationSummary?.complete)}
+                      sub="לפי מודל 5 דקות שמרני"
+                    />
+                    <Metric
+                      label="ללא כניסה נצפית"
+                      value={number(data.recommendationSummary?.noObservedFill)}
+                      sub="לא נחשב כהפסד או רווח"
+                    />
+                  </div>
+                  <RecommendationHistory rows={data.recommendations || []} />
                   <h2 className="spaced">ארבע שיטות, חוקים שקופים</h2>
                   <div className="strategy-grid">
                     {data.strategies.map((s) => (
@@ -959,6 +978,56 @@ function History({ rows }) {
   ) : (
     <div className="panel muted">
       עדיין אין עסקאות להצגה. אין נתוני הדגמה או תשואות מומצאות.
+    </div>
+  );
+}
+function RecommendationHistory({ rows }) {
+  const outcomeText = (row) => {
+    const status = row.status;
+    if (status === "expired") return "פגה";
+    if (status === "invalidated") return "נפסלה לפני כניסה";
+    return status === "active" ? "פעילה" : status || "נשמרה";
+  };
+  return rows.length ? (
+    <div className="table-wrap panel">
+      <table>
+        <thead>
+          <tr>
+            <th>מניה</th>
+            <th>אסטרטגיה</th>
+            <th>פורסמה</th>
+            <th>תוכנית מקורית</th>
+            <th>סטטוס</th>
+            <th>תיוג</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>
+                <b dir="ltr">{row.ticker}</b>
+              </td>
+              <td>{row.strategy}</td>
+              <td>{time(row.publishedAt)}</td>
+              <td dir="ltr">
+                {money(row.plan?.entry)}–{money(row.plan?.maxEntry)} / {money(row.plan?.stop)} / {money(row.plan?.target)}
+              </td>
+              <td>{outcomeText(row)}</td>
+              <td>
+                {row.tags?.fast_momentum_candidate ? (
+                  <span className="badge amber">מומנטום מהיר ניסיוני</span>
+                ) : (
+                  <span className="subtle">רגיל</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <div className="panel muted">
+      עדיין אין ארכיון המלצות חדש. המלצות חדשות יישמרו גם אם לא תקנה אותן.
     </div>
   );
 }

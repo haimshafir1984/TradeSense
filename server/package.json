@@ -15,6 +15,8 @@
     "autopilot:compare-selection": "node scripts/compareV3Selection.js",
     "autopilot:backtest": "node scripts/backtestV3Strategies.js",
     "autopilot:stress-memory": "node scripts/stressV3Memory.js",
+    "recommendations:probe-data": "node scripts/probeRecommendationData.js",
+    "recommendations:stress": "node scripts/stressRecommendationArchive.js",
     "ledger:backfill": "node scripts/runLedgerBackfill.js",
     "ledger:resolve": "node scripts/runLedgerResolve.js"
   },
