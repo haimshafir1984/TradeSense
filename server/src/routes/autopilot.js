@@ -44,6 +44,7 @@ router.get("/dashboard", (req, res) => {
   const runtime = store.get("runtime", "engine") || {};
   const candidateRecord = store.getUser(req.userId, "candidate", "latest");
   const currentSettings = settings.read(req.userId);
+  const recommendationPage = recommendations.listForUser(req.userId, { limit: 25 });
   const candidates = (candidateRecord?.rows || []).filter((candidate) => {
     const observed = Date.parse(candidate.observedAt || 0);
     const strategy = STRATEGIES.find((item) => item.key === candidate.strategy);
@@ -72,7 +73,8 @@ router.get("/dashboard", (req, res) => {
     signals,
     candidates: candidates.slice(0, 20),
     recommendationSummary: recommendations.summaryForUser(req.userId),
-    recommendations: recommendations.listForUser(req.userId, { limit: 25 }).rows,
+    recommendations: recommendationPage.rows,
+    recommendationNextCursor: recommendationPage.nextCursor,
     trades: trades.slice(0, 500),
     stats: tracking.statistics(trades),
     events: store.listUser(req.userId, "event").slice(0, 60),
@@ -159,7 +161,7 @@ router.get("/export", (req, res) => {
     .json({
       exportedAt: new Date().toISOString(),
       signals: store.listUser(req.userId, "signal"),
-      recommendations: recommendations.listForUser(req.userId, { limit: 100 }).rows,
+      recommendations: recommendations.listAllForUser(req.userId, { limit: 10000 }),
       recommendationSummary: recommendations.summaryForUser(req.userId),
       trades: store.listUser(req.userId, "trade"),
       settings: settings.read(req.userId),

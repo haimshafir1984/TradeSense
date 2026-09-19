@@ -447,8 +447,8 @@ async function scan(now, calendar, today) {
             sizing: config.size(livePlan, settings),
           };
           store.transaction(() => {
-            recommendations.archiveSignal({ userId: user.id, signal, now: asOf });
-            store.putUser(user.id, "signal", id, signal);
+            const archived = recommendations.archiveSignal({ userId: user.id, signal, now: Date.now() });
+            store.putUser(user.id, "signal", id, { ...signal, recommendationId: archived.id });
           });
           matches++;
           counters.newSignals++;
@@ -707,6 +707,7 @@ async function tick() {
       );
   } finally {
     try {
+      recommendations.flushOutbox(notices);
       await notices.flush();
     } catch (error) {
       state({ notificationError: error.message });

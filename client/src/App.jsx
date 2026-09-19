@@ -109,6 +109,26 @@ export default function App() {
       );
     }
   }
+  async function loadMoreRecommendations() {
+    if (!data?.recommendationNextCursor) return;
+    setBusy(true);
+    setError("");
+    try {
+      const page = await api(
+        `/recommendations?limit=25&cursor=${encodeURIComponent(data.recommendationNextCursor)}`,
+      );
+      setData((current) => ({
+        ...current,
+        recommendations: [...(current?.recommendations || []), ...(page.rows || [])],
+        recommendationNextCursor: page.nextCursor || null,
+      }));
+      setNotice("היסטוריית ההמלצות עודכנה");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   useEffect(() => {
     load();
     const timer = setInterval(load, 15000);
@@ -744,6 +764,13 @@ export default function App() {
                     />
                   </div>
                   <RecommendationHistory rows={data.recommendations || []} />
+                  {data.recommendationNextCursor && (
+                    <div className="card-actions">
+                      <button className="secondary" disabled={busy} onClick={loadMoreRecommendations}>
+                        טען המלצות נוספות
+                      </button>
+                    </div>
+                  )}
                   <h2 className="spaced">ארבע שיטות, חוקים שקופים</h2>
                   <div className="strategy-grid">
                     {data.strategies.map((s) => (
@@ -983,6 +1010,16 @@ function History({ rows }) {
 }
 function RecommendationHistory({ rows }) {
   const outcomeText = (row) => {
+    const outcome = row.evaluation?.outcomeStatus;
+    const workflow = row.evaluation?.workflowStatus;
+    if (workflow === "retryable_error") return "חסר כיסוי נתונים";
+    if (workflow === "unresolved") return "לא פתיר";
+    if (outcome === "target") return "יעד נצפה";
+    if (outcome === "stop") return "סטופ נצפה";
+    if (outcome === "time_exit") return "יציאה בזמן";
+    if (outcome === "no_observed_fill") return "ללא כניסה נצפית";
+    if (outcome === "ambiguous") return "לא חד־משמעי";
+    if (outcome === "invalidated_before_entry") return "נפסלה לפני כניסה";
     const status = row.status;
     if (status === "expired") return "פגה";
     if (status === "invalidated") return "נפסלה לפני כניסה";
@@ -998,6 +1035,7 @@ function RecommendationHistory({ rows }) {
             <th>פורסמה</th>
             <th>תוכנית מקורית</th>
             <th>סטטוס</th>
+            <th>תוצאת בדיקה</th>
             <th>תיוג</th>
           </tr>
         </thead>
@@ -1013,6 +1051,16 @@ function RecommendationHistory({ rows }) {
                 {money(row.plan?.entry)}–{money(row.plan?.maxEntry)} / {money(row.plan?.stop)} / {money(row.plan?.target)}
               </td>
               <td>{outcomeText(row)}</td>
+              <td>
+                {row.evaluation ? (
+                  <>
+                    <span>{row.evaluation.metrics?.netReturnPct == null ? "—" : `${row.evaluation.metrics.netReturnPct.toFixed(2)}%`}</span>
+                    <small className="table-note">נבדק: {time(row.evaluation.checkedAt)}</small>
+                  </>
+                ) : (
+                  <span className="subtle">ממתינה לבדיקה</span>
+                )}
+              </td>
               <td>
                 {row.tags?.fast_momentum_candidate ? (
                   <span className="badge amber">מומנטום מהיר ניסיוני</span>

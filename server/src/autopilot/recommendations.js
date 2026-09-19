@@ -44,6 +44,7 @@ function get(stmt, ...args) {
 
 function planFromSignal(signal) {
   return {
+    sourceSignalId: signal.id,
     entry: signal.entry,
     maxEntry: signal.maxEntry,
     stop: signal.stop,
@@ -115,9 +116,32 @@ function receiptId(recommendationId, userId, availableAt) {
   return hash({ recommendationId, userId, availableAt }).slice(0, 32);
 }
 
+function recommendationIdForSignal(userId, signal, publishedAt) {
+  const sourceSignalId = signal.id || signal.recommendationId || `${signal.ticker}:${signal.strategy}`;
+  return signal.recommendationId || `${sourceSignalId}:${hash({ userId, publishedAt }).slice(0, 10)}`;
+}
+
+function latestEvaluationSelect() {
+  return `(
+    SELECT json_object(
+      'horizon', e.horizon,
+      'workflowStatus', e.workflow_status,
+      'outcomeStatus', e.outcome_status,
+      'metrics', json(e.metrics_json),
+      'coverage', json(e.coverage_json),
+      'ambiguity', json(e.ambiguity_json),
+      'checkedAt', e.checked_at
+    )
+    FROM recommendation_evaluations e
+    WHERE e.recommendation_id=r.id AND e.user_id=r.user_id AND e.horizon='plan'
+    ORDER BY e.checked_at DESC
+    LIMIT 1
+  ) AS evaluation_json`;
+}
+
 function archiveSignal({ userId, signal, now = Date.now() }) {
-  const publishedAt = signal.publishedAt || signal.createdAt || new Date(now).toISOString();
-  const recommendationId = signal.recommendationId || signal.id;
+  const publishedAt = signal.publishedAt || new Date(now).toISOString();
+  const recommendationId = recommendationIdForSignal(userId, signal, publishedAt);
   const plan = planFromSignal(signal);
   const features = compactFeatures(signal);
   const tags = fastMomentumTags(signal);
@@ -185,35 +209,41 @@ function archiveSignal({ userId, signal, now = Date.now() }) {
 }
 
 function updateLifecycle({ recommendationId, userId, type, reason, payload = {}, now = Date.now() }) {
-  if (!get("SELECT id FROM recommendations WHERE id=?", recommendationId)) return false;
+  const rec = get("SELECT id FROM recommendations WHERE id=? AND user_id=?", recommendationId, userId)
+    || get("SELECT id FROM recommendations WHERE user_id=? AND json_extract(plan_json,'$.sourceSignalId')=? ORDER BY published_at DESC LIMIT 1", userId, recommendationId);
+  if (!rec) return false;
+  const resolvedId = rec.id;
   const createdAt = new Date(now).toISOString();
   run(
     `INSERT INTO recommendation_events(id,recommendation_id,user_id,type,reason,payload_json,idempotency_key,created_at)
      VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING`,
-    hash({ recommendationId, userId, type, reason }).slice(0, 32),
-    recommendationId, userId, type, reason || null, JSON.stringify(payload), `${type}:${recommendationId}:${userId}:${reason || ""}`, createdAt,
+    hash({ resolvedId, userId, type, reason }).slice(0, 32),
+    resolvedId, userId, type, reason || null, JSON.stringify(payload), `${type}:${resolvedId}:${userId}:${reason || ""}`, createdAt,
   );
-  run("UPDATE recommendations SET status=?, updated_at=? WHERE id=?", type, createdAt, recommendationId);
+  run("UPDATE recommendations SET status=?, updated_at=? WHERE id=? AND user_id=?", type, createdAt, resolvedId, userId);
   return true;
 }
 
 function listForUser(userId, { limit = 50, cursor } = {}) {
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50));
   const args = [userId];
-  let where = "WHERE user_id=?";
+  let where = "WHERE r.user_id=?";
   if (cursor) {
     const [publishedAt, id] = Buffer.from(String(cursor), "base64url").toString("utf8").split("|");
     if (publishedAt && id) {
-      where += " AND (published_at < ? OR (published_at = ? AND id < ?))";
+      where += " AND (r.published_at < ? OR (r.published_at = ? AND r.id < ?))";
       args.push(publishedAt, publishedAt, id);
     }
   }
   const rows = all(
-    `SELECT * FROM recommendations ${where} ORDER BY published_at DESC,id DESC LIMIT ?`,
+    `SELECT r.*, ${latestEvaluationSelect()} FROM recommendations r ${where} ORDER BY published_at DESC,id DESC LIMIT ?`,
     ...args,
     safeLimit + 1,
   );
-  const page = rows.slice(0, safeLimit).map(rowToRecommendation);
+  const page = rows.slice(0, safeLimit).map((row) => ({
+    ...rowToRecommendation(row),
+    evaluation: json(row.evaluation_json, null),
+  }));
   const last = rows.length > safeLimit ? page.at(-1) : null;
   return {
     rows: page,
@@ -225,8 +255,8 @@ function getForUser(userId, id) {
   const rec = rowToRecommendation(get("SELECT * FROM recommendations WHERE id=? AND user_id=?", id, userId));
   if (!rec) return null;
   rec.evaluations = all(
-    "SELECT * FROM recommendation_evaluations WHERE recommendation_id=? ORDER BY checked_at DESC",
-    id,
+    "SELECT * FROM recommendation_evaluations WHERE recommendation_id=? AND user_id=? ORDER BY checked_at DESC",
+    id, userId,
   ).map((row) => ({
     horizon: row.horizon,
     workflowStatus: row.workflow_status,
@@ -240,46 +270,76 @@ function getForUser(userId, id) {
 }
 
 function summaryForUser(userId) {
-  const rows = all(
-    `SELECT r.strategy, r.strategy_version, r.tags_json, e.outcome_status, e.workflow_status, e.metrics_json, e.coverage_json
+  const totals = get(
+    `SELECT
+       COUNT(*) AS published,
+       SUM(CASE WHEN json_extract(tags_json,'$.fast_momentum_candidate') THEN 1 ELSE 0 END) AS fastMomentumPublished
+     FROM recommendations
+     WHERE user_id=?`,
+    userId,
+  ) || {};
+  const outcome = get(
+    `SELECT
+       SUM(CASE WHEN latest.workflow_status='complete' THEN 1 ELSE 0 END) AS complete,
+       SUM(CASE WHEN latest.workflow_status IS NULL THEN 1 ELSE 0 END) AS pending,
+       SUM(CASE WHEN latest.outcome_status='no_observed_fill' THEN 1 ELSE 0 END) AS noObservedFill,
+       SUM(CASE WHEN latest.outcome_status='unresolved' THEN 1 ELSE 0 END) AS unresolved,
+       SUM(CASE WHEN latest.outcome_status='ambiguous' THEN 1 ELSE 0 END) AS ambiguous,
+       SUM(CASE WHEN latest.outcome_status='target' THEN 1 ELSE 0 END) AS target,
+       SUM(CASE WHEN latest.outcome_status='stop' THEN 1 ELSE 0 END) AS stop,
+       SUM(CASE WHEN latest.outcome_status='time_exit' THEN 1 ELSE 0 END) AS timeExit
      FROM recommendations r
-     LEFT JOIN recommendation_evaluations e ON e.recommendation_id=r.id AND e.horizon='plan'
+     LEFT JOIN (
+       SELECT recommendation_id,user_id,workflow_status,outcome_status,MAX(checked_at) AS checked_at
+       FROM recommendation_evaluations
+       WHERE horizon='plan'
+       GROUP BY recommendation_id,user_id
+     ) latest ON latest.recommendation_id=r.id AND latest.user_id=r.user_id
      WHERE r.user_id=?`,
     userId,
-  );
+  ) || {};
   const summary = {
-    published: rows.length,
-    complete: 0,
-    pending: 0,
-    noObservedFill: 0,
-    unresolved: 0,
-    ambiguous: 0,
-    target: 0,
-    stop: 0,
-    timeExit: 0,
-    fastMomentumPublished: 0,
+    published: Number(totals.published || 0),
+    complete: Number(outcome.complete || 0),
+    pending: Number(outcome.pending || 0),
+    noObservedFill: Number(outcome.noObservedFill || 0),
+    unresolved: Number(outcome.unresolved || 0),
+    ambiguous: Number(outcome.ambiguous || 0),
+    target: Number(outcome.target || 0),
+    stop: Number(outcome.stop || 0),
+    timeExit: Number(outcome.timeExit || 0),
+    fastMomentumPublished: Number(totals.fastMomentumPublished || 0),
     byStrategy: {},
     asOf: new Date().toISOString(),
     evaluatorVersion: evaluator.VERSION,
   };
+  const rows = all(
+    `SELECT r.strategy, r.strategy_version,
+       COUNT(*) AS published,
+       SUM(CASE WHEN latest.workflow_status='complete' THEN 1 ELSE 0 END) AS complete,
+       SUM(CASE WHEN latest.outcome_status='target' THEN 1 ELSE 0 END) AS target,
+       SUM(CASE WHEN latest.outcome_status='stop' THEN 1 ELSE 0 END) AS stop,
+       SUM(CASE WHEN latest.outcome_status='no_observed_fill' THEN 1 ELSE 0 END) AS noObservedFill
+     FROM recommendations r
+     LEFT JOIN (
+       SELECT recommendation_id,user_id,workflow_status,outcome_status,MAX(checked_at) AS checked_at
+       FROM recommendation_evaluations
+       WHERE horizon='plan'
+       GROUP BY recommendation_id,user_id
+     ) latest ON latest.recommendation_id=r.id AND latest.user_id=r.user_id
+     WHERE r.user_id=?
+     GROUP BY r.strategy,r.strategy_version`,
+    userId,
+  );
   for (const row of rows) {
     const key = `${row.strategy}@${row.strategy_version}`;
-    if (!summary.byStrategy[key]) summary.byStrategy[key] = { published: 0, complete: 0, target: 0, stop: 0, noObservedFill: 0 };
-    summary.byStrategy[key].published += 1;
-    if (json(row.tags_json, {})?.fast_momentum_candidate) summary.fastMomentumPublished += 1;
-    if (!row.workflow_status) {
-      summary.pending += 1;
-      continue;
-    }
-    if (row.workflow_status === "complete") summary.complete += 1;
-    if (row.outcome_status === "no_observed_fill") summary.noObservedFill += 1;
-    if (row.outcome_status === "unresolved") summary.unresolved += 1;
-    if (row.outcome_status === "ambiguous") summary.ambiguous += 1;
-    if (row.outcome_status === "target") summary.target += 1;
-    if (row.outcome_status === "stop") summary.stop += 1;
-    if (row.outcome_status === "time_exit") summary.timeExit += 1;
-    if (summary.byStrategy[key][row.outcome_status] != null) summary.byStrategy[key][row.outcome_status] += 1;
-    if (row.workflow_status === "complete") summary.byStrategy[key].complete += 1;
+    summary.byStrategy[key] = {
+      published: Number(row.published || 0),
+      complete: Number(row.complete || 0),
+      target: Number(row.target || 0),
+      stop: Number(row.stop || 0),
+      noObservedFill: Number(row.noObservedFill || 0),
+    };
   }
   return summary;
 }
@@ -288,7 +348,7 @@ function dueJobs(now = Date.now(), limit = 25, owner = `worker:${process.pid}`) 
   const nowIso = new Date(now).toISOString();
   const jobs = all(
     `SELECT * FROM recommendation_review_jobs
-     WHERE state IN ('pending','retryable_error') AND due_at<=? AND (next_retry_at IS NULL OR next_retry_at<=?) AND (lease_until IS NULL OR lease_until<=?)
+     WHERE state IN ('pending','retryable_error','evaluating') AND due_at<=? AND (next_retry_at IS NULL OR next_retry_at<=?) AND (lease_until IS NULL OR lease_until<=?)
      ORDER BY due_at ASC LIMIT ?`,
     nowIso, nowIso, nowIso, limit,
   );
@@ -306,9 +366,11 @@ function dueJobs(now = Date.now(), limit = 25, owner = `worker:${process.pid}`) 
 }
 
 async function evaluateJob(job, now = Date.now()) {
-  const rec = rowToRecommendation(get("SELECT * FROM recommendations WHERE id=?", job.recommendation_id));
+  const rec = rowToRecommendation(get("SELECT * FROM recommendations WHERE id=? AND user_id=?", job.recommendation_id, job.user_id));
   if (!rec) throw new Error("recommendation_not_found");
-  const start = rec.publishedAt;
+  const receipt = get("SELECT * FROM recommendation_receipts WHERE id=? AND user_id=?", job.receipt_id, job.user_id);
+  if (!receipt) throw new Error("receipt_not_found");
+  const start = receipt.available_at || rec.publishedAt;
   const end = rec.deadline || rec.expiresAt;
   if (!start || !end) throw new Error("missing_window");
   const bars = await alpaca.getIntradayBars({
@@ -319,7 +381,7 @@ async function evaluateJob(job, now = Date.now()) {
     feed: rec.provenance?.intradayFeed === "sip" ? "sip" : "iex",
     priority: "review",
   });
-  const result = evaluator.evaluateRecommendation({ recommendation: rec, bars: bars.get(rec.ticker) || [], horizon: job.horizon });
+  const result = evaluator.evaluateRecommendation({ recommendation: { ...rec, publishedAt: start }, bars: bars.get(rec.ticker) || [], horizon: job.horizon });
   const checkedAt = new Date(now).toISOString();
   run(
     `INSERT INTO recommendation_evaluations(id,recommendation_id,receipt_id,user_id,evaluator_version,data_revision,horizon,workflow_status,outcome_status,metrics_json,coverage_json,ambiguity_json,checked_at)
@@ -331,13 +393,15 @@ async function evaluateJob(job, now = Date.now()) {
     JSON.stringify(result.coverage), JSON.stringify(result.ambiguity), checkedAt,
   );
   const nextState = result.workflowStatus === "retryable_error" ? "retryable_error" : "complete";
-  run(
-    "UPDATE recommendation_review_jobs SET state=?, attempts=attempts+1, next_retry_at=?, lease_owner=NULL, lease_until=NULL, last_error=NULL, updated_at=? WHERE job_key=?",
+  const writeResult = run(
+    "UPDATE recommendation_review_jobs SET state=?, attempts=attempts+1, next_retry_at=?, lease_owner=NULL, lease_until=NULL, last_error=NULL, updated_at=? WHERE job_key=? AND lease_owner=?",
     nextState,
     nextState === "retryable_error" ? new Date(now + 30 * 60000).toISOString() : null,
     checkedAt,
     job.job_key,
+    job.lease_owner,
   );
+  if (!writeResult.changes) throw new Error("job_lease_lost");
   return result;
 }
 
@@ -363,8 +427,8 @@ async function runDue({ now = Date.now(), limit = 25, owner } = {}) {
       const attempts = Number(job.attempts || 0) + 1;
       const delay = Math.min(24 * 3600000, 10 * 60000 * 2 ** Math.min(6, attempts));
       run(
-        "UPDATE recommendation_review_jobs SET state='retryable_error', attempts=?, next_retry_at=?, lease_owner=NULL, lease_until=NULL, last_error=?, updated_at=? WHERE job_key=?",
-        attempts, new Date(now + delay).toISOString(), error.message, new Date(now).toISOString(), job.job_key,
+        "UPDATE recommendation_review_jobs SET state='retryable_error', attempts=?, next_retry_at=?, lease_owner=NULL, lease_until=NULL, last_error=?, updated_at=? WHERE job_key=? AND lease_owner=?",
+        attempts, new Date(now + delay).toISOString(), error.message, new Date(now).toISOString(), job.job_key, job.lease_owner,
       );
     }
   }
@@ -373,6 +437,46 @@ async function runDue({ now = Date.now(), limit = 25, owner } = {}) {
     new Date().toISOString(), JSON.stringify(counts), JSON.stringify(failures), runId,
   );
   return { runId, counts, failures };
+}
+
+function listAllForUser(userId, { limit = 10000 } = {}) {
+  const safeLimit = Math.min(10000, Math.max(1, Number(limit) || 10000));
+  return all(
+    `SELECT r.*, ${latestEvaluationSelect()} FROM recommendations r WHERE r.user_id=? ORDER BY r.published_at DESC,r.id DESC LIMIT ?`,
+    userId, safeLimit,
+  ).map((row) => ({
+    ...rowToRecommendation(row),
+    evaluation: json(row.evaluation_json, null),
+  }));
+}
+
+function flushOutbox(notices, now = Date.now()) {
+  const rows = all(
+    `SELECT o.*, r.ticker, r.strategy
+     FROM recommendation_outbox o
+     JOIN recommendations r ON r.id=o.recommendation_id
+     WHERE o.delivered_at IS NULL AND o.attempts < 5
+     ORDER BY o.created_at ASC
+     LIMIT 30`,
+  );
+  const deliveredAt = new Date(now).toISOString();
+  for (const row of rows) {
+    const payload = json(row.payload_json, {});
+    const eventId = payload.signalId ? `signal:${payload.signalId}` : `recommendation:${row.id}`;
+    try {
+      notices.event(
+        row.user_id,
+        eventId,
+        `${row.ticker} · ${row.strategy}`,
+        "המלצה חדשה נשמרה בארכיון המעקב. בדוק זמינות ומחיר אצל הברוקר לפני פעולה.",
+        "signal",
+      );
+      run("UPDATE recommendation_outbox SET delivered_at=?, attempts=attempts+1 WHERE id=? AND delivered_at IS NULL", deliveredAt, row.id);
+    } catch (error) {
+      run("UPDATE recommendation_outbox SET attempts=attempts+1 WHERE id=?", row.id);
+    }
+  }
+  return rows.length;
 }
 
 module.exports = {
@@ -385,5 +489,7 @@ module.exports = {
   dueJobs,
   evaluateJob,
   runDue,
+  listAllForUser,
+  flushOutbox,
   fastMomentumTags,
 };

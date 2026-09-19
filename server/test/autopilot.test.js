@@ -413,11 +413,22 @@ test("recommendation archive stores a published signal even when no trade is rep
   };
   store.transaction(() => recommendations.archiveSignal({ userId: USER, signal: s, now: start + 1000 }));
   const page = recommendations.listForUser(USER, { limit: 10 });
-  const row = page.rows.find((item) => item.id === "archive");
+  const row = page.rows.find((item) => item.plan.sourceSignalId === "archive");
   assert.ok(row);
   assert.equal(row.tags.fast_momentum_candidate, true);
   assert.equal(recommendations.summaryForUser(USER).published >= 1, true);
   assert.equal(store.getUser(USER, "trade", "sim:archive"), null);
+});
+test("recommendation archive keeps separate user receipts for the same setup", () => {
+  const s = signal("shared-setup");
+  store.transaction(() => recommendations.archiveSignal({ userId: "archive-a", signal: s, now: start + 2000 }));
+  store.transaction(() => recommendations.archiveSignal({ userId: "archive-b", signal: s, now: start + 2000 }));
+  assert.equal(recommendations.listForUser("archive-a", { limit: 10 }).rows.length, 1);
+  assert.equal(recommendations.listForUser("archive-b", { limit: 10 }).rows.length, 1);
+  assert.notEqual(
+    recommendations.listForUser("archive-a", { limit: 10 }).rows[0].id,
+    recommendations.listForUser("archive-b", { limit: 10 }).rows[0].id,
+  );
 });
 test("recommendation evaluator requires an observable post-publication entry bar", () => {
   const rec = {
@@ -427,15 +438,68 @@ test("recommendation evaluator requires an observable post-publication entry bar
   };
   const noFill = recommendationEvaluator.evaluateRecommendation({
     recommendation: rec,
-    bars: [bar(0, { o: 100, h: 105, l: 95 }), bar(1, { o: 102, h: 103, l: 101 })],
+    bars: Array.from({ length: 12 }, (_, index) =>
+      index === 0 ? bar(index, { o: 100, h: 105, l: 95 }) : bar(index, { o: 99, h: 103, l: 98.5 }),
+    ),
   });
   assert.equal(noFill.outcomeStatus, "no_observed_fill");
   const target = recommendationEvaluator.evaluateRecommendation({
     recommendation: { ...rec, publishedAt: iso(start) },
-    bars: [bar(1, { o: 100.5, h: 104.5, l: 100 })],
+    bars: Array.from({ length: 12 }, (_, index) =>
+      index === 1 ? bar(index, { o: 100.5, h: 104.5, l: 100 }) : bar(index, { o: 99, h: 103, l: 98.5 }),
+    ),
   });
   assert.equal(target.outcomeStatus, "target");
   assert.equal(target.metrics.entry, 100.5);
+});
+test("recommendation evaluator refuses incomplete coverage and deadline lookahead", () => {
+  const rec = {
+    publishedAt: iso(start),
+    plan: signal("coverage"),
+    provenance: { intradayFeed: "iex" },
+  };
+  const missingDeadline = recommendationEvaluator.evaluateRecommendation({
+    recommendation: rec,
+    bars: [bar(0, { o: 100, h: 102, l: 99, c: 101 })],
+  });
+  assert.equal(missingDeadline.workflowStatus, "retryable_error");
+  assert.equal(missingDeadline.outcomeStatus, "unresolved");
+  const afterDeadline = recommendationEvaluator.evaluateRecommendation({
+    recommendation: rec,
+    bars: [
+      ...Array.from({ length: 12 }, (_, index) => bar(index, { o: 100, h: 102, l: 99, c: 101 })),
+      bar(12, { o: 101, h: 112, l: 100, c: 111 }),
+    ],
+  });
+  assert.equal(afterDeadline.outcomeStatus, "time_exit");
+  assert.notEqual(afterDeadline.outcomeStatus, "target");
+});
+test("recommendation evaluator marks pre-entry invalidation conservatively", () => {
+  const rec = {
+    publishedAt: iso(start),
+    plan: signal("invalidated"),
+    provenance: { intradayFeed: "iex" },
+  };
+  const result = recommendationEvaluator.evaluateRecommendation({
+    recommendation: rec,
+    bars: Array.from({ length: 12 }, (_, index) =>
+      index === 0
+        ? bar(index, { o: 102, h: 103, l: 97, c: 99 })
+        : bar(index, { o: 100, h: 105, l: 99, c: 104 }),
+    ),
+  });
+  assert.equal(result.outcomeStatus, "invalidated_before_entry");
+});
+test("stale recommendation review jobs are reclaimed after lease expiry", () => {
+  const archived = store.transaction(() =>
+    recommendations.archiveSignal({ userId: "lease-user", signal: signal("lease-setup"), now: start + 3000 }),
+  );
+  const db = store.database();
+  db.prepare("UPDATE recommendation_review_jobs SET state='evaluating', lease_owner='old', lease_until=?, due_at=? WHERE recommendation_id=?")
+    .run(iso(start - 300000), iso(start - 600000), archived.id);
+  const claimed = recommendations.dueJobs(start, 10, "new-owner").filter((job) => job.recommendation_id === archived.id);
+  assert.equal(claimed.length, 1);
+  assert.equal(claimed[0].lease_owner, "new-owner");
 });
 test("simulation cannot enter before signal and cannot reuse entry candle", () => {
   config.save({ fees: "free", slippagePct: 0 }, USER);

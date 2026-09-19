@@ -1,4 +1,4 @@
-const VERSION = "v3-review-5m-latency0-basecost1";
+const VERSION = "v3-review-5m-latency0-basecost2";
 const FIVE_MINUTES = 300000;
 
 function number(value) {
@@ -14,14 +14,42 @@ function sortedBars(bars) {
     .sort((left, right) => Date.parse(left.t) - Date.parse(right.t));
 }
 
-function firstEntryBar({ bars, plan, publishedAt, latencyMs = 0 }) {
+function finitePlan(plan, publishedAt, latencyMs) {
   const eligibleAt = Date.parse(publishedAt) + latencyMs;
   const expiresAt = Date.parse(plan.expiresAt);
-  if (!Number.isFinite(eligibleAt) || !Number.isFinite(expiresAt)) return null;
-  return sortedBars(bars).find((bar) => {
+  const deadline = Date.parse(plan.deadline);
+  const entry = number(plan.entry);
+  const maxEntry = number(plan.maxEntry);
+  const stop = number(plan.stop);
+  const target = number(plan.target);
+  if (![eligibleAt, expiresAt, deadline, entry, maxEntry, stop, target].every(Number.isFinite)) return null;
+  if (!(stop < entry && entry <= maxEntry && maxEntry < target && eligibleAt < expiresAt && expiresAt <= deadline)) return null;
+  return { eligibleAt, expiresAt, deadline, entry, maxEntry, stop, target };
+}
+
+function coverageStatus({ bars, windowStart, windowEnd, requireDeadline = false }) {
+  const sample = sortedBars(bars).filter((bar) => {
     const start = Date.parse(bar.t);
-    return start >= eligibleAt && start < expiresAt && bar.o >= plan.entry && bar.o <= plan.maxEntry && bar.o < plan.target;
-  }) || null;
+    return start >= windowStart && start < windowEnd;
+  });
+  if (!sample.length) return { ok: false, reason: "missing_window_bars", sample };
+  const lastEnd = Date.parse(sample.at(-1).t) + FIVE_MINUTES;
+  if (requireDeadline && lastEnd < windowEnd) return { ok: false, reason: "incomplete_deadline_coverage", sample };
+  return { ok: true, sample };
+}
+
+function firstEntryBar({ bars, plan, publishedAt, latencyMs = 0 }) {
+  const parsed = finitePlan(plan, publishedAt, latencyMs);
+  if (!parsed) return null;
+  for (const bar of sortedBars(bars)) {
+    const start = Date.parse(bar.t);
+    if (start < parsed.eligibleAt || start >= parsed.expiresAt) continue;
+    if (bar.o > parsed.maxEntry || bar.l <= parsed.stop) {
+      return { invalidatedBeforeEntry: true, bar };
+    }
+    if (bar.o >= parsed.entry && bar.o <= parsed.maxEntry && bar.o < parsed.target) return bar;
+  }
+  return null;
 }
 
 function exitAfterEntry({ bars, plan, entryBar, costPerSidePct = 0.0005 }) {
@@ -34,9 +62,9 @@ function exitAfterEntry({ bars, plan, entryBar, costPerSidePct = 0.0005 }) {
     return { outcomeStatus: "unresolved", reason: "invalid_plan" };
   }
 
-  let lastClose = entry;
-  let lastCloseAt = entryBar.t;
-  for (const bar of sortedBars(bars).filter((item) => Date.parse(item.t) >= entryTime && Date.parse(item.t) <= deadline)) {
+  let lastClose = null;
+  let lastCloseAt = null;
+  for (const bar of sortedBars(bars).filter((item) => Date.parse(item.t) >= entryTime && Date.parse(item.t) < deadline)) {
     const hitStop = bar.l <= stop;
     const hitTarget = bar.h >= target;
     lastClose = bar.c;
@@ -60,13 +88,14 @@ function exitAfterEntry({ bars, plan, entryBar, costPerSidePct = 0.0005 }) {
       return { outcomeStatus: "target", exit: target, exitAt: lastCloseAt, exitReason: "target" };
     }
   }
+  if (lastClose == null) return { outcomeStatus: "unresolved", reason: "missing_exit_bars" };
   return { outcomeStatus: "time_exit", exit: lastClose, exitAt: lastCloseAt, exitReason: "deadline" };
 }
 
 function maxFavorableAdverse({ bars, entry, entryAt, until }) {
   const start = Date.parse(entryAt);
   const end = Date.parse(until);
-  const sample = sortedBars(bars).filter((bar) => Date.parse(bar.t) >= start && Date.parse(bar.t) <= end);
+  const sample = sortedBars(bars).filter((bar) => Date.parse(bar.t) >= start && Date.parse(bar.t) < end);
   if (!sample.length || !Number.isFinite(entry)) return { mfePct: null, maePct: null };
   const maxHigh = Math.max(...sample.map((bar) => bar.h));
   const minLow = Math.min(...sample.map((bar) => bar.l));
@@ -79,13 +108,25 @@ function maxFavorableAdverse({ bars, entry, entryAt, until }) {
 function evaluateRecommendation({ recommendation, bars, horizon = "plan", latencyMs = 0, costPerSidePct = 0.0005, dataRevision = "alpaca:split" }) {
   const plan = recommendation.plan || {};
   const publishedAt = recommendation.publishedAt || recommendation.published_at || plan.createdAt;
-  const entryBar = firstEntryBar({ bars, plan, publishedAt, latencyMs });
+  const parsed = finitePlan(plan, publishedAt, latencyMs);
+  const sorted = sortedBars(bars);
   const coverage = {
-    barCount: sortedBars(bars).length,
+    barCount: sorted.length,
     feed: recommendation.provenance?.intradayFeed || "unknown",
     timeframe: "5Min",
     dataRevision,
   };
+  if (!parsed) {
+    return {
+      evaluatorVersion: VERSION,
+      horizon,
+      workflowStatus: "unresolved",
+      outcomeStatus: "unresolved",
+      metrics: {},
+      coverage: { ...coverage, reason: "invalid_plan" },
+      ambiguity: { ambiguous: false },
+    };
+  }
   if (!coverage.barCount) {
     return {
       evaluatorVersion: VERSION,
@@ -94,6 +135,42 @@ function evaluateRecommendation({ recommendation, bars, horizon = "plan", latenc
       outcomeStatus: "unresolved",
       metrics: {},
       coverage: { ...coverage, reason: "missing_bars" },
+      ambiguity: { ambiguous: false },
+    };
+  }
+  const entryCoverage = coverageStatus({ bars: sorted, windowStart: parsed.eligibleAt, windowEnd: parsed.expiresAt });
+  if (!entryCoverage.ok) {
+    return {
+      evaluatorVersion: VERSION,
+      horizon,
+      workflowStatus: "retryable_error",
+      outcomeStatus: "unresolved",
+      metrics: {},
+      coverage: { ...coverage, reason: entryCoverage.reason },
+      ambiguity: { ambiguous: false },
+    };
+  }
+  const exitCoverage = coverageStatus({ bars: sorted, windowStart: parsed.eligibleAt, windowEnd: parsed.deadline, requireDeadline: true });
+  if (!exitCoverage.ok) {
+    return {
+      evaluatorVersion: VERSION,
+      horizon,
+      workflowStatus: "retryable_error",
+      outcomeStatus: "unresolved",
+      metrics: {},
+      coverage: { ...coverage, reason: exitCoverage.reason },
+      ambiguity: { ambiguous: false },
+    };
+  }
+  const entryBar = firstEntryBar({ bars: sorted, plan, publishedAt, latencyMs });
+  if (entryBar?.invalidatedBeforeEntry) {
+    return {
+      evaluatorVersion: VERSION,
+      horizon,
+      workflowStatus: "complete",
+      outcomeStatus: "invalidated_before_entry",
+      metrics: { invalidatedAt: entryBar.bar.t },
+      coverage,
       ambiguity: { ambiguous: false },
     };
   }
