@@ -108,3 +108,73 @@ Latest local validation, 2026-09-23:
   The completed stress run covered 100,000 archived recommendations and 500,000
   review jobs. Do not call this production-ready until the longer environment
   load test, backup/restore drill and deployment scheduler checks are complete.
+
+## Follow-up implementation validation, 2026-09-23
+
+Implemented after `SPEC_FEEDBACK_MEASUREMENT_AND_LEARNING_IMPLEMENTATION_GPT55.md`:
+
+- Added market-session horizon calculation for `d0/d1/d3/d5`; new jobs use
+  cached Alpaca calendar sessions when available, and review evaluation resolves
+  horizons from a historical calendar range instead of calendar-day offsets.
+- Tightened stock-movement coverage: a single bar, internal gap or invalid
+  reference is `needs_data`/retryable, not `complete`.
+- Tightened historical quote sampling: only quotes inside the predefined
+  30-second sampling window can become `quote_observed_entry_opportunity`; later
+  quotes are marked `stale_quote`.
+- Fixed catalyst classification so historical news/SEC items become
+  `decision_evidence` only when both `eventAt` and measured `firstSeenAt` are at
+  or before `decisionAt`; otherwise they remain `availability_unknown` or
+  `post_hoc_explanation`.
+- Added feedback tables and logic for versioned datasets, selection decisions,
+  policy candidates/evaluations/activations, worker checkpoints and rollback
+  audit.
+- Added deterministic `feedback-simple-shadow-v1` policy in `shadow` by
+  default. It can score candidates only inside an already eligible strategy
+  list, and live reordering is applied only when a policy is explicitly in
+  `active_limited`.
+- Added a background recommendation review loop independent of market-open
+  `tick`; it runs due jobs, builds a dataset and checks gates while leaving live
+  selection on baseline/shadow unless gates and state allow limited activation.
+- Added `/api/autopilot/recommendations/feedback-status` and a Results-tab panel
+  showing policy state, dataset, coverage and gate status.
+- Reworked `quality-report` to use one latest evaluation per
+  recommendation/horizon, include jobs without evaluations, and keep pending or
+  missing data in the denominator.
+
+Validation commands:
+
+```powershell
+npm test --workspace server
+npm run build
+npm run recommendations:stress --workspace server -- --count=10000
+npm run recommendations:probe-data --workspace server -- --symbols=AAPL,MSFT
+```
+
+Results:
+
+- `npm test --workspace server` passed: 334/334.
+- `npm run build` passed.
+- Synthetic stress with 10,000 archived recommendation writes passed in
+  10,503ms; reported RSS was 72MB.
+- Local API check against a running server passed: session login, dashboard,
+  `feedback-status`, `quality-report`, and unauthenticated recommendations
+  returning 401. The feedback state was `shadow` with policy
+  `feedback-simple-shadow-v1`.
+- Provider probe ran through the existing adapters. In this local run Alpaca and
+  Finnhub were `not_configured`; SEC was configured but ticker mapping failed
+  with `fetch failed` and returned `unknown_identity`. This is a local
+  availability limitation, not evidence that production lacks entitlement.
+
+Not completed in this local validation:
+
+- Real browser UI validation was attempted with Playwright CLI, but downloading
+  `@playwright/cli` failed with local `EACCES`/npm-cache permissions. API and
+  production build validation passed, but this run does not count as a real
+  browser check.
+- No live Alpaca/Finnhub entitlement probe was possible from this shell because
+  credentials were unavailable to the probe command.
+- No 30-minute / one-million-receipt stress test, backup/restore drill or
+  deployment scheduler verification was run.
+- The feedback policy remains `shadow_insufficient_evidence`/shadow by design
+  until prospective gates are met. This is not a claim of improved
+  recommendation accuracy or profitability.

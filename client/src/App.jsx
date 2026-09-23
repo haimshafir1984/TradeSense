@@ -771,8 +771,8 @@ export default function App() {
                     </p>
                     <div className="quality-chips">
                       {(data.recommendationQuality?.rows || []).slice(0, 12).map((row) => (
-                        <span className="badge" key={`${row.horizon}:${row.workflowStatus}:${row.outcomeStatus}`}>
-                          {row.horizon} · {row.outcomeStatus}: {number(row.count)}
+                        <span className="badge" key={`${row.horizon}:${row.strategy}:${row.strategyVersion}`}>
+                          {row.horizon} · {row.strategy}: {number(row.complete)}/{number(row.publishedUniqueSetups)} complete
                         </span>
                       ))}
                       {!(data.recommendationQuality?.rows || []).length && (
@@ -780,6 +780,7 @@ export default function App() {
                       )}
                     </div>
                   </div>
+                  <FeedbackStatusPanel status={data.recommendationFeedback} />
                   <RecommendationHistory rows={data.recommendations || []} />
                   {data.recommendationNextCursor && (
                     <div className="card-actions">
@@ -881,6 +882,32 @@ export default function App() {
           }}
         />
       )}
+    </div>
+  );
+}
+function FeedbackStatusPanel({ status }) {
+  const policy = status?.activePolicy || {};
+  const gate = status?.latestGateCheck;
+  const dataset = status?.dataset;
+  return (
+    <div className="panel compact-report">
+      <div className="section-heading">
+        <h2>מנגנון שיפור ההמלצות</h2>
+        <span className={policy.state === "active_limited" ? "badge" : "badge amber"}>
+          {policy.state === "active_limited" ? "פעיל מוגבל" : "shadow בלבד"}
+        </span>
+      </div>
+      <p>
+        המערכת מודדת את כל ההמלצות וה־shadow candidates בלי קשר לקנייה. שינוי דירוג חי מתבצע רק אחרי gates קבועים מראש ועם rollback.
+      </p>
+      <div className="quality-chips">
+        <span className="badge">policy: {policy.policyVersion || "baseline-v3"}</span>
+        <span className="badge">dataset: {dataset?.datasetVersion || "עדיין לא נבנה"}</span>
+        <span className="badge">setups: {number(dataset?.counts?.publishedUniqueSetups || 0)}</span>
+        <span className="badge">coverage complete: {number(dataset?.coverage?.complete || 0)}</span>
+        <span className="badge">gate: {gate?.decision || "ממתין לנתונים"}</span>
+      </div>
+      <small>{status?.note}</small>
     </div>
   );
 }

@@ -9,6 +9,7 @@ const users = require("../autopilot/users");
 const { STRATEGIES } = require("../autopilot/strategies");
 const market = require("../autopilot/market");
 const recommendations = require("../autopilot/recommendations");
+const feedback = require("../autopilot/feedback");
 
 router.post("/session", (req, res, next) => {
   try {
@@ -74,6 +75,7 @@ router.get("/dashboard", (req, res) => {
     candidates: candidates.slice(0, 20),
     recommendationSummary: recommendations.summaryForUser(req.userId),
     recommendationQuality: recommendations.qualityReportForUser(req.userId),
+    recommendationFeedback: feedback.status(),
     recommendations: recommendationPage.rows,
     recommendationNextCursor: recommendationPage.nextCursor,
     trades: trades.slice(0, 500),
@@ -87,6 +89,9 @@ router.get("/recommendations/review-summary", (req, res) => {
 });
 router.get("/recommendations/quality-report", (req, res) => {
   res.json(recommendations.qualityReportForUser(req.userId));
+});
+router.get("/recommendations/feedback-status", (_req, res) => {
+  res.json(feedback.status());
 });
 router.get("/recommendations", (req, res) => {
   res.json(recommendations.listForUser(req.userId, {

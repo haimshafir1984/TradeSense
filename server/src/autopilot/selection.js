@@ -1,6 +1,7 @@
 const store = require("./store");
 const market = require("./market");
 const { swingEligible } = require("./strategies");
+const feedback = require("./feedback");
 
 const parsedCap = Number(process.env.AUTOPILOT_DEEP_SCAN_MAX || 120);
 const MAX_SELECTED = Number.isFinite(parsedCap) ? Math.min(120, Math.max(1, Math.floor(parsedCap))) : 120;
@@ -138,7 +139,19 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
     });
   }
 
-  return { lists, unavailable };
+  const policy = feedback.activePolicy();
+  const policyDecisions = {};
+  for (const key of Object.keys(lists)) {
+    const ranked = feedback.maybeApplyPolicyToList(lists[key], policy);
+    lists[key] = ranked.rows;
+    policyDecisions[key] = {
+      applied: ranked.applied,
+      policyVersion: ranked.policyVersion,
+      reason: ranked.reason,
+    };
+  }
+
+  return { lists, unavailable, policy, policyDecisions };
 }
 
 function roundRobin(lists, limit = MAX_STRATEGY_SELECTED, lane = null, fairBuckets = true) {
@@ -222,7 +235,7 @@ function rotation(rows, alreadySelected, count = ROTATION_COUNT) {
 
 function selectCandidates(input) {
   const { rows = [] } = input;
-  const { lists, unavailable } = buildLists(input);
+  const { lists, unavailable, policy, policyDecisions } = buildLists(input);
   const strategyLimit = MAX_SELECTED - ROTATION_COUNT;
   const dayTarget = Math.ceil(strategyLimit * 0.6);
   const swingTarget = strategyLimit - dayTarget;
@@ -267,6 +280,12 @@ function selectCandidates(input) {
       swingSelectedCount: swingPicked.length,
       rotationCount: rotated.length,
       listSizes: Object.fromEntries(Object.entries(lists).map(([key, list]) => [key, list.length])),
+      feedbackPolicy: {
+        policyVersion: policy.policyVersion,
+        state: policy.state,
+        applied: policy.state === "active_limited",
+        decisions: policyDecisions,
+      },
     },
   };
 }

@@ -42,6 +42,59 @@ async function sessions(now = Date.now()) {
     close: nyTimestamp(s.date, s.close.slice(0, 5)),
   }));
 }
+function normalizeSessions(rows) {
+  return (rows || []).map((s) => ({
+    date: s.date,
+    open: nyTimestamp(s.date, s.open.slice(0, 5)),
+    close: nyTimestamp(s.date, s.close.slice(0, 5)),
+  })).sort((left, right) => left.open - right.open);
+}
+async function sessionsRange(startTime, endTime = startTime) {
+  const startMs = Number.isFinite(startTime) ? startTime : Date.parse(startTime);
+  const endMs = Number.isFinite(endTime) ? endTime : Date.parse(endTime);
+  const start = nyDate(startMs - 10 * 86400000);
+  const end = nyDate(endMs + 14 * 86400000);
+  const cacheKey = `calendar:${start}:${end}`;
+  let cached = store.get("cache", cacheKey);
+  if (!cached) {
+    const rows = await alpaca.getCalendar(start, end);
+    if (!Array.isArray(rows) || !rows.length) throw new Error("calendar_unavailable");
+    cached = { start, end, rows, fetchedAt: new Date().toISOString() };
+    store.put("cache", cacheKey, cached);
+  }
+  return normalizeSessions(cached.rows);
+}
+function cachedSessionsRange(startTime, endTime = startTime) {
+  const startMs = Number.isFinite(startTime) ? startTime : Date.parse(startTime);
+  const endMs = Number.isFinite(endTime) ? endTime : Date.parse(endTime);
+  const cached = store.get("cache", "calendar");
+  const rows = normalizeSessions(cached?.rows || []);
+  if (!rows.length) return [];
+  return rows.filter((session) => session.close >= startMs - 86400000 && session.open <= endMs + 14 * 86400000);
+}
+function anchorSessionForPublished(sessionsList, publishedAt) {
+  const published = Number.isFinite(publishedAt) ? publishedAt : Date.parse(publishedAt);
+  const sessionsSorted = [...(sessionsList || [])].sort((left, right) => left.open - right.open);
+  for (const session of sessionsSorted) {
+    if (published <= session.close) {
+      return {
+        session,
+        anchorRule: published < session.open ? "next_session_before_open" : "same_session_until_close",
+      };
+    }
+  }
+  return { session: null, anchorRule: "calendar_unavailable" };
+}
+function horizonSession(sessionsList, publishedAt, horizon) {
+  const offsets = { d0: 0, d1: 1, d3: 3, d5: 5 };
+  if (!(horizon in offsets)) return null;
+  const { session, anchorRule } = anchorSessionForPublished(sessionsList, publishedAt);
+  if (!session) return null;
+  const sessionsSorted = [...sessionsList].sort((left, right) => left.open - right.open);
+  const index = sessionsSorted.findIndex((item) => item.date === session.date);
+  const target = sessionsSorted[index + offsets[horizon]];
+  return target ? { session: target, anchorSession: session, anchorRule } : null;
+}
 function freshPrice(snapshot, now, ageMs = 90000) {
   const trade = snapshot?.latestTrade;
   const time = Date.parse(trade?.t),
@@ -109,4 +162,4 @@ function openingRvol(bars, calendar, today, now) {
     ? current / (history.reduce((a, b) => a + b, 0) / history.length)
     : null;
 }
-module.exports = { nyDate, nyTimestamp, sessions, freshPrice, openingRvol, delayedSipCutoff, acceptDelayedSipBar, delayedSipOpeningRvol };
+module.exports = { nyDate, nyTimestamp, sessions, sessionsRange, cachedSessionsRange, horizonSession, freshPrice, openingRvol, delayedSipCutoff, acceptDelayedSipBar, delayedSipOpeningRvol };

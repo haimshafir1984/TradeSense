@@ -11,6 +11,7 @@ const universe = require("./universe");
 const history = require("./history");
 const selection = require("./selection");
 const recommendations = require("./recommendations");
+const feedback = require("./feedback");
 const { logMemory, pressure } = require("../memoryDiagnostics");
 const SELECTION_INTRADAY_CACHE_LIMIT = 200;
 const INTRADAY_BATCH_SIZE = Math.min(
@@ -19,6 +20,8 @@ const INTRADAY_BATCH_SIZE = Math.min(
 );
 let running = false,
   timer,
+  reviewTimer,
+  reviewRunning = false,
   scanRunning = false,
   socket,
   streamKey = "",
@@ -200,6 +203,20 @@ async function scan(now, calendar, today) {
       now: selectionNow,
     });
     const ranked = picked.selected;
+    const feedbackPolicy = picked.diagnostics?.feedbackPolicy || { policyVersion: feedback.BASELINE_POLICY_VERSION };
+    ranked.forEach((row, index) => {
+      feedback.recordSelectionDecision({
+        scanId,
+        row,
+        strategy: row.selectedFor || row.candidateFor || "rotation",
+        selected: true,
+        baselineRank: row.baselineRank || index + 1,
+        policyRank: row.policyRank || index + 1,
+        reasonCode: "selected_for_deep_scan",
+        policyVersion: feedbackPolicy.policyVersion,
+        decisionAt: new Date(selectionNow).toISOString(),
+      });
+    });
     selection.commitRotationProgress(rows, ranked);
     const sipMode = ["off", "enabled"].includes(process.env.AUTOPILOT_SIP_CONTEXT_MODE) ? process.env.AUTOPILOT_SIP_CONTEXT_MODE : "shadow";
     const sipLimitValue = Number(process.env.AUTOPILOT_SIP_CONTEXT_MAX || 40);
@@ -440,6 +457,8 @@ async function scan(now, calendar, today) {
               dailyFeed: "sip",
               intradayFeed: "iex",
               priceFeed: "iex",
+              selectionPolicyVersion: feedbackPolicy.policyVersion,
+              baselinePolicyVersion: feedback.BASELINE_POLICY_VERSION,
               volumeContext: sipRvol != null && rvol == null ? "sip_delayed" : "iex",
               triggerFeed: "iex",
               dailySessionDate: row.lastSessionDate || dailyPack?.lastSessionDate || null,
@@ -730,20 +749,46 @@ async function tick() {
     running = false;
   }
 }
+async function reviewTick() {
+  if (reviewRunning) return;
+  reviewRunning = true;
+  const now = Date.now();
+  try {
+    if (store.lease("recommendation-review:background", 120000, now)) {
+      const result = await recommendations.runDue({ now, limit: 50, owner: `review:${process.pid}` });
+      feedback.ensureShadowPolicy();
+      if (result.counts.complete || result.counts.retryable || result.counts.failed) {
+        const dataset = feedback.buildDataset({ asOf: new Date(now).toISOString(), horizon: "d5" });
+        feedback.evaluateGates({ datasetVersion: dataset.datasetVersion });
+      }
+      state({ recommendationReview: { ...result, checkedAt: new Date().toISOString() }, feedback: feedback.status() });
+    }
+  } catch (error) {
+    state({ recommendationReviewError: error.message });
+  } finally {
+    reviewRunning = false;
+  }
+}
 function start() {
   if (timer || process.env.AUTOPILOT_DISABLED === "true") return;
   state({ startedAt: new Date().toISOString(), scanning: false });
+  feedback.ensureShadowPolicy();
   tick();
   timer = setInterval(tick, 30000);
   timer.unref();
+  reviewTick();
+  reviewTimer = setInterval(reviewTick, 60000);
+  reviewTimer.unref();
 }
 function stop() {
   clearInterval(timer);
+  clearInterval(reviewTimer);
   timer = null;
+  reviewTimer = null;
   if (socket) socket.close();
 }
 function requestScan() {
   store.remove("lease", "scan");
   tick();
 }
-module.exports = { start, stop, tick, requestScan, scan, monitor };
+module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick };

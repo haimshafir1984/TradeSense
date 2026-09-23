@@ -181,6 +181,92 @@ function database() {
         created_at TEXT NOT NULL,
         UNIQUE(scan_id,symbol,strategy)
       );
+      CREATE TABLE IF NOT EXISTS selection_decisions (
+        id TEXT PRIMARY KEY,
+        scan_id TEXT NOT NULL,
+        setup_id TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        lane TEXT,
+        selected INTEGER NOT NULL DEFAULT 0,
+        baseline_rank INTEGER,
+        policy_rank INTEGER,
+        policy_version TEXT NOT NULL,
+        reason_code TEXT,
+        features_json TEXT NOT NULL,
+        decision_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(scan_id,setup_id,policy_version)
+      );
+      CREATE TABLE IF NOT EXISTS feedback_datasets (
+        id TEXT PRIMARY KEY,
+        dataset_version TEXT NOT NULL UNIQUE,
+        as_of TEXT NOT NULL,
+        label_horizon TEXT NOT NULL,
+        policy_version TEXT NOT NULL,
+        counts_json TEXT NOT NULL,
+        coverage_json TEXT NOT NULL,
+        checksum TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS feedback_dataset_rows (
+        id TEXT PRIMARY KEY,
+        dataset_id TEXT NOT NULL REFERENCES feedback_datasets(id),
+        setup_id TEXT NOT NULL,
+        recommendation_id TEXT,
+        shadow_candidate_id TEXT,
+        symbol TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        decision_at TEXT NOT NULL,
+        feature_snapshot_json TEXT NOT NULL,
+        label_json TEXT NOT NULL,
+        coverage_status TEXT NOT NULL,
+        sample_weight REAL NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        UNIQUE(dataset_id,setup_id)
+      );
+      CREATE TABLE IF NOT EXISTS policy_candidates (
+        policy_version TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        feature_schema_version TEXT NOT NULL,
+        hyperparams_json TEXT NOT NULL,
+        training_dataset_version TEXT,
+        train_cutoff_at TEXT,
+        gate_version TEXT NOT NULL,
+        evidence_json TEXT NOT NULL,
+        previous_policy_version TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS policy_evaluations (
+        id TEXT PRIMARY KEY,
+        policy_version TEXT NOT NULL,
+        dataset_version TEXT,
+        stage TEXT NOT NULL,
+        metrics_json TEXT NOT NULL,
+        gates_json TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS policy_activations (
+        id TEXT PRIMARY KEY,
+        policy_version TEXT NOT NULL,
+        state TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        previous_policy_version TEXT,
+        activated_at TEXT,
+        rollback_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS worker_checkpoints (
+        name TEXT PRIMARY KEY,
+        cursor_json TEXT NOT NULL,
+        heartbeat_at TEXT NOT NULL,
+        lease_owner TEXT,
+        lease_until TEXT,
+        updated_at TEXT NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS idx_recommendations_user_published ON recommendations(user_id,published_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS idx_recommendations_strategy_session ON recommendations(strategy,strategy_version,session_date);
       CREATE INDEX IF NOT EXISTS idx_recommendation_receipts_user_available ON recommendation_receipts(user_id,available_at DESC,id DESC);
@@ -189,6 +275,9 @@ function database() {
       CREATE INDEX IF NOT EXISTS idx_market_evidence_symbol_window ON market_evidence_metadata(symbol,window_start,window_end,feed);
       CREATE INDEX IF NOT EXISTS idx_catalyst_events_symbol_time ON catalyst_events(symbol,event_at,provider);
       CREATE INDEX IF NOT EXISTS idx_shadow_candidates_scan ON shadow_candidates(scan_id,strategy,selected);
+      CREATE INDEX IF NOT EXISTS idx_selection_decisions_scan ON selection_decisions(scan_id,strategy,selected);
+      CREATE INDEX IF NOT EXISTS idx_feedback_dataset_rows_dataset ON feedback_dataset_rows(dataset_id,strategy,coverage_status);
+      CREATE INDEX IF NOT EXISTS idx_policy_candidates_state ON policy_candidates(state,updated_at);
     `);
     db.prepare("INSERT OR IGNORE INTO recommendation_migrations(version,applied_at) VALUES(?,?)").run(1, new Date().toISOString());
     const columns = db.prepare("PRAGMA table_info(records)").all().map((row) => row.name);

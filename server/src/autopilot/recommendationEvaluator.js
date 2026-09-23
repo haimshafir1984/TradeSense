@@ -149,11 +149,13 @@ function quoteOpportunity({ quotes, plan, publishedAt, latencyMs = 0, maxAgeMs =
     return at >= parsed.eligibleAt && at < parsed.expiresAt;
   });
   if (!sample.length) return { observed: false, reason: "missing_quotes", quoteCount: 0 };
-  const quote = sample.find((item) => {
+  const eligible = sample.filter((item) => {
     const at = Date.parse(item.t);
     return at - parsed.eligibleAt <= maxAgeMs && item.askPrice >= parsed.entry && item.askPrice <= parsed.maxEntry;
-  }) || sample.find((item) => item.askPrice >= parsed.entry && item.askPrice <= parsed.maxEntry);
-  if (!quote) return { observed: false, reason: "ask_outside_entry", quoteCount: sample.length };
+  });
+  const quote = eligible[0];
+  const staleCandidate = sample.find((item) => item.askPrice >= parsed.entry && item.askPrice <= parsed.maxEntry);
+  if (!quote) return { observed: false, reason: staleCandidate ? "stale_quote" : "ask_outside_entry", quoteCount: sample.length, staleQuoteCandidateAt: staleCandidate?.t || null };
   const mid = (quote.bidPrice + quote.askPrice) / 2;
   return {
     observed: true,
@@ -164,6 +166,8 @@ function quoteOpportunity({ quotes, plan, publishedAt, latencyMs = 0, maxAgeMs =
     spreadBps: mid > 0 ? ((quote.askPrice - quote.bidPrice) / mid) * 10000 : null,
     quoteCount: sample.length,
     crossed: quote.crossed === true,
+    samplingRule: `first_ask_inside_entry_within_${maxAgeMs}ms_after_eligible_at`,
+    staleQuoteCandidateAt: staleCandidate && staleCandidate !== quote ? staleCandidate.t : null,
   };
 }
 
@@ -172,6 +176,7 @@ function horizonMovement({ recommendation, bars, horizon = "d0", referenceAt, ti
   const publishedAt = recommendation.publishedAt || recommendation.published_at || plan.createdAt;
   const publishedMs = Date.parse(referenceAt || publishedAt);
   const sorted = sortedBars(bars).filter((bar) => Date.parse(bar.t) >= publishedMs);
+  const observedReference = number(sorted[0]?.o);
   const entryReference = number(plan.entry);
   const last = sorted.at(-1);
   const high = sorted.length ? Math.max(...sorted.map((bar) => Number(bar.h))) : null;
@@ -183,14 +188,19 @@ function horizonMovement({ recommendation, bars, horizon = "d0", referenceAt, ti
     timeframe,
     dataRevision: "alpaca:sip:split:1min",
   };
-  if (!Number.isFinite(publishedMs) || !Number.isFinite(entryReference) || !sorted.length || close == null) {
+  const step = timeframeMs(timeframe);
+  let gap = false;
+  for (let index = 1; index < sorted.length; index += 1) {
+    if (Date.parse(sorted[index].t) - Date.parse(sorted[index - 1].t) > step * 1.5) gap = true;
+  }
+  if (!Number.isFinite(publishedMs) || sorted.length < 2 || close == null || observedReference == null || gap) {
     return {
       evaluatorVersion: SIP_QUOTES_VERSION,
       horizon,
-      workflowStatus: sorted.length ? "complete" : "retryable_error",
+      workflowStatus: "retryable_error",
       outcomeStatus: "unresolved",
       metrics: {},
-      coverage: { ...coverage, reason: sorted.length ? "invalid_reference" : "missing_bars" },
+      coverage: { ...coverage, reason: gap ? "internal_bar_gap" : sorted.length < 2 ? "insufficient_horizon_bars" : "invalid_reference", coverageStatus: "needs_data" },
       ambiguity: { ambiguous: false },
     };
   }
@@ -200,14 +210,17 @@ function horizonMovement({ recommendation, bars, horizon = "d0", referenceAt, ti
     workflowStatus: "complete",
     outcomeStatus: "movement_observed",
     metrics: {
-      reference: entryReference,
+      referencePrice: observedReference,
+      referenceAt: sorted[0].t,
+      planEntryReference: entryReference,
       close,
       closeAt: last.t,
-      returnFromPlanEntryPct: ((close - entryReference) / entryReference) * 100,
+      returnFromObservedReferencePct: ((close - observedReference) / observedReference) * 100,
+      returnFromPlanEntryPct: entryReference ? ((close - entryReference) / entryReference) * 100 : null,
       mfeFromPlanEntryPct: Number.isFinite(high) ? ((high - entryReference) / entryReference) * 100 : null,
       maeFromPlanEntryPct: Number.isFinite(low) ? ((low - entryReference) / entryReference) * 100 : null,
     },
-    coverage,
+    coverage: { ...coverage, coverageStatus: "complete", firstBarAt: sorted[0].t, lastBarEndAt: new Date(Date.parse(last.t) + step).toISOString(), internalGaps: 0 },
     ambiguity: { ambiguous: false },
   };
 }

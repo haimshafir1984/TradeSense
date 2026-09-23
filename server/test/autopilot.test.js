@@ -19,6 +19,7 @@ const notices = require("../src/autopilot/notifications");
 const users = require("../src/autopilot/users");
 const recommendations = require("../src/autopilot/recommendations");
 const recommendationEvaluator = require("../src/autopilot/recommendationEvaluator");
+const feedback = require("../src/autopilot/feedback");
 const USER = "unit-user";
 test.after(() => {
   store.close();
@@ -521,6 +522,34 @@ test("recommendation evaluator records SIP horizon movement and quote opportunit
   assert.equal(quote.observed, true);
   assert.equal(Number.isFinite(quote.spreadBps), true);
 });
+test("quote opportunity does not treat late quotes as timely entry evidence", () => {
+  const rec = {
+    publishedAt: iso(start),
+    plan: signal("late-quote"),
+  };
+  const quote = recommendationEvaluator.quoteOpportunity({
+    quotes: [{ t: iso(start + 120000), bidPrice: 99.98, askPrice: 100.02 }],
+    plan: rec.plan,
+    publishedAt: rec.publishedAt,
+  });
+  assert.equal(quote.observed, false);
+  assert.equal(quote.reason, "stale_quote");
+});
+test("horizon movement refuses a single bar as complete coverage", () => {
+  const rec = {
+    publishedAt: iso(start),
+    plan: signal("single-horizon-bar"),
+    provenance: { intradayFeed: "sip" },
+  };
+  const movement = recommendationEvaluator.horizonMovement({
+    recommendation: rec,
+    bars: [{ t: iso(start), o: 100, h: 101, l: 99, c: 100.5, v: 1000 }],
+    horizon: "d0",
+    timeframe: "1Min",
+  });
+  assert.equal(movement.workflowStatus, "retryable_error");
+  assert.equal(movement.coverage.coverageStatus, "needs_data");
+});
 test("stale recommendation review jobs are reclaimed after lease expiry", () => {
   const archived = store.transaction(() =>
     recommendations.archiveSignal({ userId: "lease-user", signal: signal("lease-setup"), now: start + 3000 }),
@@ -533,11 +562,24 @@ test("stale recommendation review jobs are reclaimed after lease expiry", () => 
   assert.ok(claimed.every((job) => job.lease_owner === "new-owner"));
 });
 test("archive creates review jobs for plan and fixed movement horizons", () => {
+  store.put("cache", "calendar", {
+    date: "2026-09-08",
+    rows: [
+      { date: "2026-09-08", open: "09:30", close: "16:00" },
+      { date: "2026-09-09", open: "09:30", close: "16:00" },
+      { date: "2026-09-10", open: "09:30", close: "16:00" },
+      { date: "2026-09-11", open: "09:30", close: "13:00" },
+      { date: "2026-09-14", open: "09:30", close: "16:00" },
+      { date: "2026-09-15", open: "09:30", close: "16:00" },
+    ],
+  });
   const archived = store.transaction(() =>
     recommendations.archiveSignal({ userId: "horizon-user", signal: signal("horizon-setup"), now: start + 4000 }),
   );
   const jobs = store.database().prepare("SELECT horizon FROM recommendation_review_jobs WHERE recommendation_id=? ORDER BY horizon").all(archived.id).map((row) => row.horizon);
   assert.deepEqual(jobs, ["d0", "d1", "d3", "d5", "plan"]);
+  const d5 = store.database().prepare("SELECT due_at FROM recommendation_review_jobs WHERE recommendation_id=? AND horizon='d5'").get(archived.id);
+  assert.equal(d5.due_at, "2026-09-15T20:20:00.000Z");
 });
 test("shadow candidate archive stores scan reason without creating a user recommendation", () => {
   const ok = recommendations.recordShadowCandidate({
@@ -552,6 +594,52 @@ test("shadow candidate archive stores scan reason without creating a user recomm
   const row = store.database().prepare("SELECT * FROM shadow_candidates WHERE scan_id=? AND symbol=?").get("scan-shadow", "SHDW");
   assert.equal(row.reason_code, "rvol_below_threshold");
   assert.equal(recommendations.listForUser("scan-shadow", { limit: 10 }).rows.length, 0);
+});
+test("feedback dataset deduplicates recommendations and keeps shadow unlabeled", () => {
+  const now = iso(start + 6000);
+  store.transaction(() => recommendations.archiveSignal({ userId: "feedback-user", signal: signal("feedback-setup"), now: start + 6000 }));
+  recommendations.recordShadowCandidate({
+    scanId: "feedback-scan",
+    symbol: "MISS",
+    strategy: "orb15",
+    decisionAt: now,
+    reasonCode: "trigger_not_met",
+    features: { rvol: 1.8 },
+  });
+  feedback.ensureShadowPolicy({ now });
+  const dataset = feedback.buildDataset({ asOf: iso(start + 7000), horizon: "d5" });
+  assert.ok(dataset.counts.publishedUniqueSetups >= 1);
+  assert.ok(dataset.counts.shadowCandidates >= 1);
+  const status = feedback.status();
+  assert.equal(status.activePolicy.state, "shadow");
+  assert.equal(status.note.includes("shadow"), true);
+});
+test("active feedback policy can reorder only inside an existing strategy list", () => {
+  const now = iso(start + 8000);
+  store.database().prepare(
+    `INSERT OR REPLACE INTO policy_candidates(policy_version,state,feature_schema_version,hyperparams_json,training_dataset_version,train_cutoff_at,gate_version,evidence_json,previous_policy_version,created_at,updated_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    "unit-active-policy",
+    "active_limited",
+    feedback.FEATURE_SCHEMA_VERSION,
+    JSON.stringify({ weights: { rvol: 1, liquidity: 0, atr: 0 } }),
+    null,
+    null,
+    feedback.GATE_VERSION,
+    JSON.stringify({ resolvedSetups: 200, uncertainty: "unit" }),
+    feedback.BASELINE_POLICY_VERSION,
+    now,
+    now,
+  );
+  const list = [
+    { symbol: "LOW", score: 1.2, avgDollarVolume20d: 50_000_000, daily: { atr14: 1, price: 100 } },
+    { symbol: "HIGH", score: 4.2, avgDollarVolume20d: 50_000_000, daily: { atr14: 1, price: 100 } },
+  ];
+  const ranked = feedback.maybeApplyPolicyToList(list);
+  assert.equal(ranked.applied, true);
+  assert.equal(ranked.rows[0].symbol, "HIGH");
+  feedback.rollbackPolicy({ reason: "unit_cleanup", now: iso(start + 9000) });
 });
 test("simulation cannot enter before signal and cannot reuse entry candle", () => {
   config.save({ fees: "free", slippagePct: 0 }, USER);

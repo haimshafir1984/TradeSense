@@ -146,8 +146,11 @@ function latestEvaluationSelect() {
 function dueAtForHorizon(signal, publishedAt, horizon) {
   const base = Date.parse(signal.deadline || signal.expiresAt || publishedAt);
   const published = Date.parse(publishedAt);
-  const byHorizon = { plan: 15 * 60000, d0: 60 * 60000, d1: 1 * 86400000 + 60 * 60000, d3: 3 * 86400000 + 60 * 60000, d5: 5 * 86400000 + 60 * 60000 };
-  return new Date(Math.max(base + 20 * 60000, published + (byHorizon[horizon] || 60 * 60000))).toISOString();
+  if (horizon === "plan") return new Date(Math.max(base + 20 * 60000, published + 15 * 60000)).toISOString();
+  const sessions = market.cachedSessionsRange(published, published + 8 * 86400000);
+  const target = market.horizonSession(sessions, published, horizon);
+  if (target?.session?.close) return new Date(target.session.close + 20 * 60000).toISOString();
+  return new Date(Math.max(base + 20 * 60000, published + 20 * 60000)).toISOString();
 }
 
 function archiveSignal({ userId, signal, now = Date.now() }) {
@@ -414,22 +417,71 @@ function recordShadowCandidate({ scanId, symbol, strategy, decisionAt, reasonCod
 
 function qualityReportForUser(userId) {
   const rows = all(
-    `SELECT horizon,workflow_status,outcome_status,COUNT(*) AS count
-     FROM recommendation_evaluations
+    `WITH latest AS (
+       SELECT e.*
+       FROM recommendation_evaluations e
+       WHERE e.user_id=? AND NOT EXISTS (
+         SELECT 1 FROM recommendation_evaluations newer
+         WHERE newer.recommendation_id=e.recommendation_id
+           AND COALESCE(newer.receipt_id,'')=COALESCE(e.receipt_id,'')
+           AND newer.horizon=e.horizon
+           AND (newer.checked_at>e.checked_at OR (newer.checked_at=e.checked_at AND newer.id>e.id))
+       )
+     ),
+     horizons(horizon) AS (VALUES('plan'),('d0'),('d1'),('d3'),('d5')),
+     expanded AS (
+       SELECT r.id AS recommendation_id,r.strategy,r.strategy_version,h.horizon,j.state AS job_state,latest.workflow_status,latest.outcome_status,latest.coverage_json
+       FROM recommendations r
+       CROSS JOIN horizons h
+       LEFT JOIN recommendation_review_jobs j ON j.recommendation_id=r.id AND j.user_id=r.user_id AND j.horizon=h.horizon
+       LEFT JOIN latest ON latest.recommendation_id=r.id AND latest.user_id=r.user_id AND latest.horizon=h.horizon
+       WHERE r.user_id=?
+     )
+     SELECT horizon,strategy,strategy_version,
+       COUNT(DISTINCT recommendation_id) AS publishedUniqueSetups,
+       SUM(CASE WHEN job_state IS NOT NULL AND (workflow_status IS NOT NULL OR job_state IN ('complete','retryable_error')) THEN 1 ELSE 0 END) AS matured,
+       SUM(CASE WHEN workflow_status IS NULL AND COALESCE(job_state,'pending') IN ('pending','evaluating') THEN 1 ELSE 0 END) AS pending,
+       SUM(CASE WHEN workflow_status IN ('retryable_error','needs_data') THEN 1 ELSE 0 END) AS needsData,
+       SUM(CASE WHEN workflow_status='complete' THEN 1 ELSE 0 END) AS complete,
+       SUM(CASE WHEN outcome_status='ambiguous' THEN 1 ELSE 0 END) AS ambiguous,
+       SUM(CASE WHEN outcome_status='no_observed_fill' THEN 1 ELSE 0 END) AS noObservedFill,
+       SUM(CASE WHEN json_extract(coverage_json,'$.corporateActions.status')='events_found' THEN 1 ELSE 0 END) AS corporateActionPending
+     FROM expanded
+     GROUP BY horizon,strategy,strategy_version
+     ORDER BY horizon,strategy,strategy_version`,
+    userId,
+    userId,
+  );
+  const backlog = all(
+    `SELECT state, horizon, COUNT(*) AS count, MIN(due_at) AS oldestDueAt
+     FROM recommendation_review_jobs
      WHERE user_id=?
-     GROUP BY horizon,workflow_status,outcome_status
-     ORDER BY horizon,workflow_status,outcome_status`,
+     GROUP BY state,horizon
+     ORDER BY state,horizon`,
     userId,
   );
   return {
     asOf: new Date().toISOString(),
     rows: rows.map((row) => ({
       horizon: row.horizon,
-      workflowStatus: row.workflow_status,
-      outcomeStatus: row.outcome_status,
-      count: Number(row.count || 0),
+      strategy: row.strategy,
+      strategyVersion: row.strategy_version,
+      publishedUniqueSetups: Number(row.publishedUniqueSetups || 0),
+      matured: Number(row.matured || 0),
+      pending: Number(row.pending || 0),
+      needsData: Number(row.needsData || 0),
+      complete: Number(row.complete || 0),
+      ambiguous: Number(row.ambiguous || 0),
+      noObservedFill: Number(row.noObservedFill || 0),
+      corporateActionPending: Number(row.corporateActionPending || 0),
     })),
-    note: "Quality report separates horizons and does not infer profitability or production readiness.",
+    backlog: backlog.map((row) => ({
+      state: row.state,
+      horizon: row.horizon,
+      count: Number(row.count || 0),
+      oldestDueAt: row.oldestDueAt,
+    })),
+    note: "Quality report uses one latest evaluation per setup/horizon and keeps pending or missing data in the denominator.",
   };
 }
 
@@ -449,28 +501,32 @@ function persistEvidence({ provider, feed, symbol, timeframe, windowStart, windo
 function persistCatalysts({ recommendation, news, filings, fetchedAt }) {
   for (const item of news || []) {
     const eventAt = item.datetime || null;
-    const relation = eventAt && Date.parse(eventAt) <= Date.parse(recommendation.decisionAt || recommendation.publishedAt)
+    const firstSeenAt = item.firstSeenAt || item.fetchedAt || fetchedAt;
+    const decisionAt = Date.parse(recommendation.decisionAt || recommendation.publishedAt);
+    const relation = eventAt && Date.parse(eventAt) <= decisionAt && Date.parse(firstSeenAt) <= decisionAt
       ? "decision_evidence"
-      : "post_hoc_explanation";
+      : eventAt && Date.parse(eventAt) <= decisionAt ? "availability_unknown" : "post_hoc_explanation";
     run(
       `INSERT INTO catalyst_events(id,provider,symbol,event_at,first_seen_at,event_type,source,title,url,relation,payload_json,fetched_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(provider,symbol,event_type,event_at,title) DO UPDATE SET payload_json=excluded.payload_json,fetched_at=excluded.fetched_at,relation=excluded.relation`,
       hash({ provider: "finnhub", symbol: recommendation.ticker, id: item.id, eventAt, title: item.headline }).slice(0, 32),
-      "finnhub", recommendation.ticker, eventAt, item.fetchedAt || fetchedAt, "news", item.source || null, item.headline || null, item.url || null, relation, JSON.stringify(item), fetchedAt,
+      "finnhub", recommendation.ticker, eventAt, firstSeenAt, "news", item.source || null, item.headline || null, item.url || null, relation, JSON.stringify(item), fetchedAt,
     );
   }
   for (const filing of filings || []) {
     const eventAt = filing.acceptanceDateTime || filing.filingDate || null;
-    const relation = eventAt && Date.parse(eventAt) <= Date.parse(recommendation.decisionAt || recommendation.publishedAt)
+    const firstSeenAt = filing.firstSeenAt || fetchedAt;
+    const decisionAt = Date.parse(recommendation.decisionAt || recommendation.publishedAt);
+    const relation = eventAt && Date.parse(eventAt) <= decisionAt && Date.parse(firstSeenAt) <= decisionAt
       ? "decision_evidence"
-      : "post_hoc_explanation";
+      : eventAt && Date.parse(eventAt) <= decisionAt ? "availability_unknown" : "post_hoc_explanation";
     run(
       `INSERT INTO catalyst_events(id,provider,symbol,event_at,first_seen_at,event_type,source,title,url,relation,payload_json,fetched_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(provider,symbol,event_type,event_at,title) DO UPDATE SET payload_json=excluded.payload_json,fetched_at=excluded.fetched_at,relation=excluded.relation`,
       hash({ provider: "sec", symbol: recommendation.ticker, accessionNumber: filing.accessionNumber }).slice(0, 32),
-      "sec", recommendation.ticker, eventAt, filing.firstSeenAt || fetchedAt, filing.form || "filing", "SEC EDGAR", `${filing.form || "SEC filing"} ${filing.accessionNumber || ""}`.trim(), filing.url || null, relation, JSON.stringify(filing), fetchedAt,
+      "sec", recommendation.ticker, eventAt, firstSeenAt, filing.form || "filing", "SEC EDGAR", `${filing.form || "SEC filing"} ${filing.accessionNumber || ""}`.trim(), filing.url || null, relation, JSON.stringify(filing), fetchedAt,
     );
   }
 }
@@ -509,8 +565,41 @@ async function evaluateJob(job, now = Date.now()) {
     });
     result = evaluator.evaluateRecommendation({ recommendation: { ...rec, publishedAt: start }, bars: bars.get(rec.ticker) || [], horizon: job.horizon });
   } else {
-    const horizonDays = { d0: 0, d1: 1, d3: 3, d5: 5 }[job.horizon] ?? 0;
-    const windowEnd = new Date(Date.parse(start) + Math.max(1, horizonDays + 1) * 86400000).toISOString();
+    const sessions = await market.sessionsRange(Date.parse(start), Date.parse(start) + 10 * 86400000);
+    const horizonInfo = market.horizonSession(sessions, start, job.horizon);
+    if (!horizonInfo?.session) {
+      result = {
+        evaluatorVersion: evaluator.SIP_QUOTES_VERSION,
+        horizon: job.horizon,
+        workflowStatus: "retryable_error",
+        outcomeStatus: "unresolved",
+        metrics: {},
+        coverage: { reason: "calendar_unavailable", coverageStatus: "needs_data", dataRevision: "calendar:alpaca" },
+        ambiguity: { ambiguous: false },
+      };
+    } else if (now < horizonInfo.session.close + 20 * 60000) {
+      const matureAt = new Date(horizonInfo.session.close + 20 * 60000).toISOString();
+      run(
+        "UPDATE recommendation_review_jobs SET state='pending', due_at=?, lease_owner=NULL, lease_until=NULL, updated_at=? WHERE job_key=? AND lease_owner=?",
+        matureAt,
+        fetchedAt,
+        job.job_key,
+        job.lease_owner,
+      );
+      return {
+        evaluatorVersion: evaluator.SIP_QUOTES_VERSION,
+        horizon: job.horizon,
+        workflowStatus: "pending",
+        outcomeStatus: "pending",
+        metrics: { matureAt },
+        coverage: { reason: "horizon_not_mature", coverageStatus: "pending", horizonCloseAt: new Date(horizonInfo.session.close).toISOString(), anchorSession: horizonInfo.anchorSession.date, anchorRule: horizonInfo.anchorRule },
+        ambiguity: { ambiguous: false },
+      };
+    }
+    const windowEnd = horizonInfo?.session ? new Date(horizonInfo.session.close).toISOString() : new Date(Date.parse(start) + 86400000).toISOString();
+    if (result) {
+      // Calendar failures are persisted below without making provider calls.
+    } else {
     const [barsDetail, quotesDetail, corporateActions, newsDetail, secDetail] = await Promise.all([
       alpaca.getBarsDetailed({ symbols: [rec.ticker], timeframe: "1Min", start, end: windowEnd, feed: "sip", adjustment: "split", now }),
       alpaca.getHistoricalQuotesDetailed({ symbols: [rec.ticker], start: new Date(Date.parse(start) - 30000).toISOString(), end: new Date(Date.parse(rec.expiresAt || start) + 30000).toISOString(), feed: "sip", pageBudget: 2, priority: "review" }),
@@ -533,9 +622,16 @@ async function evaluateJob(job, now = Date.now()) {
         quotes: { complete: quotesDetail.complete, partial: quotesDetail.partial, reason: quote.reason || null, count: quote.quoteCount || 0 },
         corporateActions: { status: corporateStatus, count: corporateActions.actions?.length || 0 },
         catalysts: { finnhub: newsDetail.items?.length || 0, sec: secDetail.filings?.length || 0, secError: secDetail.errorKind || null, finnhubError: newsDetail.errorKind || null },
+        expectedSessions: [horizonInfo.anchorSession.date, horizonInfo.session.date],
+        observedSessions: [...new Set((barsDetail.bars.get(rec.ticker) || []).map((bar) => market.nyDate(Date.parse(bar.t))))],
+        horizonCloseAt: new Date(horizonInfo.session.close).toISOString(),
+        matureAt: new Date(horizonInfo.session.close + 20 * 60000).toISOString(),
+        anchorSession: horizonInfo.anchorSession.date,
+        anchorRule: horizonInfo.anchorRule,
       },
       ambiguity: { ...result.ambiguity, quoteFillIsNotActualFill: true, explanationIsPostHoc: true },
     };
+    }
   }
   const checkedAt = new Date(now).toISOString();
   const previous = get(
