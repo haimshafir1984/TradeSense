@@ -146,6 +146,39 @@ async function getRecentNewsCount(ticker) {
   return data.filter((item) => Number.isFinite(item?.datetime) && item.datetime * 1000 >= cutoffMs).length;
 }
 
+async function getCompanyNewsMetadata({ symbol, from, to, limit = 50 } = {}) {
+  if (!isConfigured() || !symbol || !from || !to) {
+    return { configured: isConfigured(), items: null, errorKind: isConfigured() ? 'invalid_request' : 'not_configured' };
+  }
+
+  const apiKey = process.env.FINNHUB_API_KEY;
+  const url = `${BASE_URL}/company-news?symbol=${encodeURIComponent(symbol)}&from=${encodeURIComponent(formatDate(new Date(from)))}&to=${encodeURIComponent(formatDate(new Date(to)))}&token=${apiKey}`;
+  const data = await fetchFinnhub(url, `getCompanyNewsMetadata:${symbol}`);
+  if (!Array.isArray(data)) {
+    return { configured: true, items: null, errorKind: 'provider_error' };
+  }
+  const maxItems = Math.min(100, Math.max(1, Number(limit) || 50));
+  return {
+    configured: true,
+    items: data
+      .filter((item) => item && item.datetime != null && Number.isFinite(Number(item.datetime)))
+      .sort((left, right) => Number(left.datetime) - Number(right.datetime))
+      .slice(0, maxItems)
+      .map((item) => ({
+        provider: 'finnhub',
+        id: item.id == null ? null : String(item.id),
+        datetime: new Date(Number(item.datetime) * 1000).toISOString(),
+        source: item.source || null,
+        headline: typeof item.headline === 'string' ? item.headline.slice(0, 300) : null,
+        url: item.url || null,
+        related: item.related || symbol,
+        summaryHash: typeof item.summary === 'string' ? String(item.summary.length) : null,
+        fetchedAt: new Date().toISOString(),
+      })),
+    errorKind: null,
+  };
+}
+
 // GET /stock/earnings - historical EPS actual-vs-estimate surprises (docs/SPEC_V2_ARCHITECTURE.md
 // §7.2), most-recent quarter first as Finnhub returns them. Used by playbooks/peadDrift.js to
 // detect a numeric earnings surprise, and by ledger:backfill to reconstruct past surprise dates.
@@ -180,5 +213,6 @@ module.exports = {
   getEarningsSoon,
   getCompanyProfile,
   getRecentNewsCount,
+  getCompanyNewsMetadata,
   getEarningsSurprises
 };

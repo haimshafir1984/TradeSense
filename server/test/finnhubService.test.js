@@ -141,6 +141,31 @@ test('getRecentNewsCount returns null (not zero) when the key is missing or the 
   assert.equal(resultOnFailure, null);
 });
 
+test('getCompanyNewsMetadata returns source timestamps without copying article bodies', async () => {
+  const finnhubService = freshFinnhubService();
+  const originalFetch = global.fetch;
+  process.env.FINNHUB_API_KEY = 'test-key';
+
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      { id: 10, datetime: 1780000100, headline: 'Company files update', source: 'Wire', url: 'https://example.test/news', related: 'EX', summary: 'long article body' },
+      { id: 11, datetime: null, headline: 'Missing time' }
+    ]
+  });
+
+  const result = await finnhubService.getCompanyNewsMetadata({ symbol: 'EX', from: '2026-01-01', to: '2026-01-02' });
+
+  global.fetch = originalFetch;
+  delete process.env.FINNHUB_API_KEY;
+
+  assert.equal(result.configured, true);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].headline, 'Company files update');
+  assert.equal(result.items[0].summary, undefined);
+  assert.equal(result.items[0].datetime, '2026-05-28T20:28:20.000Z');
+});
+
 test('isConfigured reflects whether FINNHUB_API_KEY is set', () => {
   const finnhubService = freshFinnhubService();
 

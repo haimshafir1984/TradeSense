@@ -108,6 +108,21 @@ async function scan(now, calendar, today) {
       liquidityBucket: row.avgDollarVolume20d < 20_000_000 ? "lower_liquidity" : row.avgDollarVolume20d < 100_000_000 ? "medium_liquidity" : "high_liquidity",
       dailyFeed: "sip", triggerFeed: "iex", observedAt: new Date(at).toISOString(), ...flags,
     });
+    recommendations.recordShadowCandidate({
+      scanId,
+      symbol: row.symbol,
+      strategy,
+      decisionAt: new Date(at).toISOString(),
+      reasonCode,
+      selected: reasonCode === "setup_valid",
+      features: {
+        liquidityBucket: row.avgDollarVolume20d < 20_000_000 ? "lower_liquidity" : row.avgDollarVolume20d < 100_000_000 ? "medium_liquidity" : "high_liquidity",
+        avgDollarVolume20d: row.avgDollarVolume20d ?? null,
+        score: row.score ?? null,
+        selectedFor: row.selectedFor || null,
+        volumeContext: flags.volumeContext || "iex",
+      },
+    });
     attemptsLogged += 1;
   };
   logMemory("scan:start");

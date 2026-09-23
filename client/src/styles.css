@@ -688,6 +688,17 @@ td[dir="ltr"] {
   direction: ltr;
   text-align: right;
 }
+.compact-report {
+  margin-bottom: 18px;
+}
+.compact-report p {
+  margin: 8px 0 14px;
+}
+.quality-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .settings-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;

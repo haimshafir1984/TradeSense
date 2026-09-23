@@ -490,6 +490,37 @@ test("recommendation evaluator marks pre-entry invalidation conservatively", () 
   });
   assert.equal(result.outcomeStatus, "invalidated_before_entry");
 });
+test("recommendation evaluator records SIP horizon movement and quote opportunity separately from actual fills", () => {
+  const rec = {
+    publishedAt: iso(start),
+    plan: signal("sip-horizon"),
+    provenance: { intradayFeed: "sip" },
+  };
+  const oneMinuteBars = Array.from({ length: 4 }, (_, index) => ({
+    t: iso(start + index * 60000),
+    o: 100 + index,
+    h: 101 + index,
+    l: 99 + index,
+    c: 100.5 + index,
+    v: 1000,
+  }));
+  const movement = recommendationEvaluator.horizonMovement({
+    recommendation: rec,
+    bars: oneMinuteBars,
+    horizon: "d0",
+    timeframe: "1Min",
+  });
+  assert.equal(movement.outcomeStatus, "movement_observed");
+  assert.equal(movement.metrics.returnFromPlanEntryPct > 0, true);
+
+  const quote = recommendationEvaluator.quoteOpportunity({
+    quotes: [{ t: iso(start + 5000), bidPrice: 99.98, askPrice: 100.02 }],
+    plan: rec.plan,
+    publishedAt: rec.publishedAt,
+  });
+  assert.equal(quote.observed, true);
+  assert.equal(Number.isFinite(quote.spreadBps), true);
+});
 test("stale recommendation review jobs are reclaimed after lease expiry", () => {
   const archived = store.transaction(() =>
     recommendations.archiveSignal({ userId: "lease-user", signal: signal("lease-setup"), now: start + 3000 }),
@@ -498,8 +529,29 @@ test("stale recommendation review jobs are reclaimed after lease expiry", () => 
   db.prepare("UPDATE recommendation_review_jobs SET state='evaluating', lease_owner='old', lease_until=?, due_at=? WHERE recommendation_id=?")
     .run(iso(start - 300000), iso(start - 600000), archived.id);
   const claimed = recommendations.dueJobs(start, 10, "new-owner").filter((job) => job.recommendation_id === archived.id);
-  assert.equal(claimed.length, 1);
-  assert.equal(claimed[0].lease_owner, "new-owner");
+  assert.equal(claimed.length, 5);
+  assert.ok(claimed.every((job) => job.lease_owner === "new-owner"));
+});
+test("archive creates review jobs for plan and fixed movement horizons", () => {
+  const archived = store.transaction(() =>
+    recommendations.archiveSignal({ userId: "horizon-user", signal: signal("horizon-setup"), now: start + 4000 }),
+  );
+  const jobs = store.database().prepare("SELECT horizon FROM recommendation_review_jobs WHERE recommendation_id=? ORDER BY horizon").all(archived.id).map((row) => row.horizon);
+  assert.deepEqual(jobs, ["d0", "d1", "d3", "d5", "plan"]);
+});
+test("shadow candidate archive stores scan reason without creating a user recommendation", () => {
+  const ok = recommendations.recordShadowCandidate({
+    scanId: "scan-shadow",
+    symbol: "SHDW",
+    strategy: "orb15",
+    decisionAt: iso(start),
+    reasonCode: "rvol_below_threshold",
+    features: { rvol: 1.5 },
+  });
+  assert.equal(ok, true);
+  const row = store.database().prepare("SELECT * FROM shadow_candidates WHERE scan_id=? AND symbol=?").get("scan-shadow", "SHDW");
+  assert.equal(row.reason_code, "rvol_below_threshold");
+  assert.equal(recommendations.listForUser("scan-shadow", { limit: 10 }).rows.length, 0);
 });
 test("simulation cannot enter before signal and cannot reuse entry candle", () => {
   config.save({ fees: "free", slippagePct: 0 }, USER);

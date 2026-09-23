@@ -115,11 +115,80 @@ function database() {
         provider_json TEXT NOT NULL,
         failures_json TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS market_evidence_metadata (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        feed TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        timeframe TEXT,
+        window_start TEXT NOT NULL,
+        window_end TEXT NOT NULL,
+        revision TEXT NOT NULL,
+        evidence_type TEXT NOT NULL,
+        summary_json TEXT NOT NULL,
+        checksum TEXT NOT NULL,
+        reproducibility TEXT NOT NULL DEFAULT 'limited',
+        fetched_at TEXT NOT NULL,
+        UNIQUE(provider,feed,symbol,window_start,window_end,revision,evidence_type)
+      );
+      CREATE TABLE IF NOT EXISTS corporate_action_checks (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        window_start TEXT NOT NULL,
+        window_end TEXT NOT NULL,
+        status TEXT NOT NULL,
+        actions_json TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        UNIQUE(provider,symbol,window_start,window_end)
+      );
+      CREATE TABLE IF NOT EXISTS catalyst_events (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        event_at TEXT,
+        first_seen_at TEXT,
+        event_type TEXT NOT NULL,
+        source TEXT,
+        title TEXT,
+        url TEXT,
+        relation TEXT NOT NULL DEFAULT 'post_hoc_explanation',
+        payload_json TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        UNIQUE(provider,symbol,event_type,event_at,title)
+      );
+      CREATE TABLE IF NOT EXISTS evaluation_revisions (
+        id TEXT PRIMARY KEY,
+        recommendation_id TEXT NOT NULL REFERENCES recommendations(id),
+        receipt_id TEXT,
+        user_id TEXT,
+        evaluator_version TEXT NOT NULL,
+        data_revision TEXT NOT NULL,
+        previous_evaluation_id TEXT,
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS shadow_candidates (
+        id TEXT PRIMARY KEY,
+        scan_id TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        decision_at TEXT NOT NULL,
+        reason_code TEXT NOT NULL,
+        selected INTEGER NOT NULL DEFAULT 0,
+        features_json TEXT NOT NULL,
+        policy_version TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(scan_id,symbol,strategy)
+      );
       CREATE INDEX IF NOT EXISTS idx_recommendations_user_published ON recommendations(user_id,published_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS idx_recommendations_strategy_session ON recommendations(strategy,strategy_version,session_date);
       CREATE INDEX IF NOT EXISTS idx_recommendation_receipts_user_available ON recommendation_receipts(user_id,available_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS idx_recommendation_jobs_state_due ON recommendation_review_jobs(state,due_at,next_retry_at);
       CREATE INDEX IF NOT EXISTS idx_recommendation_evaluations_scope ON recommendation_evaluations(recommendation_id,receipt_id,evaluator_version,horizon);
+      CREATE INDEX IF NOT EXISTS idx_market_evidence_symbol_window ON market_evidence_metadata(symbol,window_start,window_end,feed);
+      CREATE INDEX IF NOT EXISTS idx_catalyst_events_symbol_time ON catalyst_events(symbol,event_at,provider);
+      CREATE INDEX IF NOT EXISTS idx_shadow_candidates_scan ON shadow_candidates(scan_id,strategy,selected);
     `);
     db.prepare("INSERT OR IGNORE INTO recommendation_migrations(version,applied_at) VALUES(?,?)").run(1, new Date().toISOString());
     const columns = db.prepare("PRAGMA table_info(records)").all().map((row) => row.name);

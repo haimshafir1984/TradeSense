@@ -1,5 +1,7 @@
 const VERSION = "v3-review-5m-latency0-basecost2";
+const SIP_QUOTES_VERSION = "v3-review-sip1m-quotes-cost2";
 const FIVE_MINUTES = 300000;
+const ONE_MINUTE = 60000;
 
 function number(value) {
   return Number.isFinite(Number(value)) ? Number(value) : null;
@@ -10,6 +12,19 @@ function sortedBars(bars) {
     .filter((bar) =>
       Number.isFinite(Date.parse(bar?.t)) &&
       [bar.o, bar.h, bar.l, bar.c].every((value) => Number.isFinite(Number(value)) && Number(value) > 0),
+    )
+    .sort((left, right) => Date.parse(left.t) - Date.parse(right.t));
+}
+
+function sortedQuotes(quotes) {
+  return (quotes || [])
+    .filter((quote) =>
+      Number.isFinite(Date.parse(quote?.t)) &&
+      Number.isFinite(Number(quote?.bidPrice)) &&
+      Number.isFinite(Number(quote?.askPrice)) &&
+      Number(quote.bidPrice) > 0 &&
+      Number(quote.askPrice) > 0 &&
+      Number(quote.bidPrice) <= Number(quote.askPrice),
     )
     .sort((left, right) => Date.parse(left.t) - Date.parse(right.t));
 }
@@ -34,6 +49,27 @@ function coverageStatus({ bars, windowStart, windowEnd, requireDeadline = false 
   });
   if (!sample.length) return { ok: false, reason: "missing_window_bars", sample };
   const lastEnd = Date.parse(sample.at(-1).t) + FIVE_MINUTES;
+  if (requireDeadline && lastEnd < windowEnd) return { ok: false, reason: "incomplete_deadline_coverage", sample };
+  return { ok: true, sample };
+}
+
+function timeframeMs(timeframe = "5Min") {
+  return timeframe === "1Min" ? ONE_MINUTE : FIVE_MINUTES;
+}
+
+function coverageStatusForTimeframe({ bars, windowStart, windowEnd, requireDeadline = false, timeframe = "5Min" }) {
+  const sample = sortedBars(bars).filter((bar) => {
+    const start = Date.parse(bar.t);
+    return start >= windowStart && start < windowEnd;
+  });
+  if (!sample.length) return { ok: false, reason: "missing_window_bars", sample };
+  const step = timeframeMs(timeframe);
+  for (let index = 1; index < sample.length; index += 1) {
+    const previous = Date.parse(sample[index - 1].t);
+    const current = Date.parse(sample[index].t);
+    if (current - previous > step * 1.5) return { ok: false, reason: "internal_bar_gap", sample };
+  }
+  const lastEnd = Date.parse(sample.at(-1).t) + step;
   if (requireDeadline && lastEnd < windowEnd) return { ok: false, reason: "incomplete_deadline_coverage", sample };
   return { ok: true, sample };
 }
@@ -102,6 +138,77 @@ function maxFavorableAdverse({ bars, entry, entryAt, until }) {
   return {
     mfePct: ((maxHigh - entry) / entry) * 100,
     maePct: ((minLow - entry) / entry) * 100,
+  };
+}
+
+function quoteOpportunity({ quotes, plan, publishedAt, latencyMs = 0, maxAgeMs = 30000 }) {
+  const parsed = finitePlan(plan, publishedAt, latencyMs);
+  if (!parsed) return { observed: false, reason: "invalid_plan" };
+  const sample = sortedQuotes(quotes).filter((quote) => {
+    const at = Date.parse(quote.t);
+    return at >= parsed.eligibleAt && at < parsed.expiresAt;
+  });
+  if (!sample.length) return { observed: false, reason: "missing_quotes", quoteCount: 0 };
+  const quote = sample.find((item) => {
+    const at = Date.parse(item.t);
+    return at - parsed.eligibleAt <= maxAgeMs && item.askPrice >= parsed.entry && item.askPrice <= parsed.maxEntry;
+  }) || sample.find((item) => item.askPrice >= parsed.entry && item.askPrice <= parsed.maxEntry);
+  if (!quote) return { observed: false, reason: "ask_outside_entry", quoteCount: sample.length };
+  const mid = (quote.bidPrice + quote.askPrice) / 2;
+  return {
+    observed: true,
+    quoteAt: quote.t,
+    ask: quote.askPrice,
+    bid: quote.bidPrice,
+    mid,
+    spreadBps: mid > 0 ? ((quote.askPrice - quote.bidPrice) / mid) * 10000 : null,
+    quoteCount: sample.length,
+    crossed: quote.crossed === true,
+  };
+}
+
+function horizonMovement({ recommendation, bars, horizon = "d0", referenceAt, timeframe = "1Min" }) {
+  const plan = recommendation.plan || {};
+  const publishedAt = recommendation.publishedAt || recommendation.published_at || plan.createdAt;
+  const publishedMs = Date.parse(referenceAt || publishedAt);
+  const sorted = sortedBars(bars).filter((bar) => Date.parse(bar.t) >= publishedMs);
+  const entryReference = number(plan.entry);
+  const last = sorted.at(-1);
+  const high = sorted.length ? Math.max(...sorted.map((bar) => Number(bar.h))) : null;
+  const low = sorted.length ? Math.min(...sorted.map((bar) => Number(bar.l))) : null;
+  const close = number(last?.c);
+  const coverage = {
+    barCount: sorted.length,
+    feed: recommendation.provenance?.intradayFeed || "sip",
+    timeframe,
+    dataRevision: "alpaca:sip:split:1min",
+  };
+  if (!Number.isFinite(publishedMs) || !Number.isFinite(entryReference) || !sorted.length || close == null) {
+    return {
+      evaluatorVersion: SIP_QUOTES_VERSION,
+      horizon,
+      workflowStatus: sorted.length ? "complete" : "retryable_error",
+      outcomeStatus: "unresolved",
+      metrics: {},
+      coverage: { ...coverage, reason: sorted.length ? "invalid_reference" : "missing_bars" },
+      ambiguity: { ambiguous: false },
+    };
+  }
+  return {
+    evaluatorVersion: SIP_QUOTES_VERSION,
+    horizon,
+    workflowStatus: "complete",
+    outcomeStatus: "movement_observed",
+    metrics: {
+      reference: entryReference,
+      close,
+      closeAt: last.t,
+      returnFromPlanEntryPct: ((close - entryReference) / entryReference) * 100,
+      mfeFromPlanEntryPct: Number.isFinite(high) ? ((high - entryReference) / entryReference) * 100 : null,
+      maeFromPlanEntryPct: Number.isFinite(low) ? ((low - entryReference) / entryReference) * 100 : null,
+    },
+    coverage,
+    ambiguity: { ambiguous: false },
   };
 }
 
@@ -223,6 +330,9 @@ function evaluateRecommendation({ recommendation, bars, horizon = "plan", latenc
 
 module.exports = {
   VERSION,
+  SIP_QUOTES_VERSION,
   evaluateRecommendation,
+  horizonMovement,
+  quoteOpportunity,
   firstEntryBar,
 };

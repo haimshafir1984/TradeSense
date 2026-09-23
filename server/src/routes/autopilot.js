@@ -73,6 +73,7 @@ router.get("/dashboard", (req, res) => {
     signals,
     candidates: candidates.slice(0, 20),
     recommendationSummary: recommendations.summaryForUser(req.userId),
+    recommendationQuality: recommendations.qualityReportForUser(req.userId),
     recommendations: recommendationPage.rows,
     recommendationNextCursor: recommendationPage.nextCursor,
     trades: trades.slice(0, 500),
@@ -83,6 +84,9 @@ router.get("/dashboard", (req, res) => {
 });
 router.get("/recommendations/review-summary", (req, res) => {
   res.json(recommendations.summaryForUser(req.userId));
+});
+router.get("/recommendations/quality-report", (req, res) => {
+  res.json(recommendations.qualityReportForUser(req.userId));
 });
 router.get("/recommendations", (req, res) => {
   res.json(recommendations.listForUser(req.userId, {

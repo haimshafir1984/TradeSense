@@ -763,6 +763,23 @@ export default function App() {
                       sub="לא נחשב כהפסד או רווח"
                     />
                   </div>
+                  <div className="panel compact-report">
+                    <h2>איכות מדידה לפי אופקים</h2>
+                    <p>
+                      המדידה מפרידה בין תוצאת התוכנית, תנועת המניה וראיות quote.
+                      נתוני SIP/quotes הם בדיעבד ואינם מוכיחים ביצוע בפועל.
+                    </p>
+                    <div className="quality-chips">
+                      {(data.recommendationQuality?.rows || []).slice(0, 12).map((row) => (
+                        <span className="badge" key={`${row.horizon}:${row.workflowStatus}:${row.outcomeStatus}`}>
+                          {row.horizon} · {row.outcomeStatus}: {number(row.count)}
+                        </span>
+                      ))}
+                      {!(data.recommendationQuality?.rows || []).length && (
+                        <span className="subtle">עדיין אין אופקים שהושלמו.</span>
+                      )}
+                    </div>
+                  </div>
                   <RecommendationHistory rows={data.recommendations || []} />
                   {data.recommendationNextCursor && (
                     <div className="card-actions">
@@ -1056,6 +1073,7 @@ function RecommendationHistory({ rows }) {
                   <>
                     <span>{row.evaluation.metrics?.netReturnPct == null ? "—" : `${row.evaluation.metrics.netReturnPct.toFixed(2)}%`}</span>
                     <small className="table-note">נבדק: {time(row.evaluation.checkedAt)}</small>
+                    <small className="table-note">{row.evaluation.evaluatorVersion || "גרסת evaluator לא ידועה"}</small>
                   </>
                 ) : (
                   <span className="subtle">ממתינה לבדיקה</span>

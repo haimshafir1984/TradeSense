@@ -204,6 +204,25 @@ async function fetchAlpaca(url, label) {
   return response.ok ? response.data : null;
 }
 
+function normalizeQuote(raw) {
+  const bid = Number(raw?.bp);
+  const ask = Number(raw?.ap);
+  const time = raw?.t;
+  if (!Number.isFinite(Date.parse(time)) || !Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0) {
+    return null;
+  }
+  return {
+    t: time,
+    bidPrice: bid,
+    askPrice: ask,
+    bidSize: Number.isFinite(Number(raw?.bs)) ? Number(raw.bs) : null,
+    askSize: Number.isFinite(Number(raw?.as)) ? Number(raw.as) : null,
+    condition: Array.isArray(raw?.c) ? raw.c : [],
+    tape: raw?.z || null,
+    crossed: bid > ask,
+  };
+}
+
 function nyDate(time = Date.now()) {
   return NY_DATE_FORMATTER.format(new Date(time));
 }
@@ -433,6 +452,122 @@ async function getBarsDetailed({
   };
 }
 
+async function getHistoricalQuotesDetailed({
+  symbols = [],
+  start,
+  end,
+  feed = 'sip',
+  limit = 1000,
+  pageBudget = 3,
+  priority = 'review'
+} = {}) {
+  const result = new Map();
+  const errors = [];
+  const requestedSymbols = new Set(symbols);
+  let pages = 0;
+  let partial = false;
+
+  if (!Array.isArray(symbols) || symbols.length === 0 || !start || !end) {
+    return { quotes: result, complete: true, partial: false, pages, errors, coverage: {} };
+  }
+
+  for (const symbolChunk of chunk(symbols, Math.min(SYMBOLS_PER_CHUNK, 50))) {
+    let pageToken = null;
+    do {
+      if (pages >= pageBudget) {
+        partial = true;
+        break;
+      }
+      const params = new URLSearchParams({
+        symbols: symbolChunk.join(','),
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        limit: String(Math.min(10000, Math.max(1, Number(limit) || 1000))),
+        feed,
+        sort: 'asc'
+      });
+      if (pageToken) params.set('page_token', pageToken);
+      const response = await fetchAlpacaDetailed(`${DATA_BASE_URL}/v2/stocks/quotes?${params.toString()}`, `getHistoricalQuotesDetailed:${feed}:${priority}`);
+      pages += 1;
+      if (!response.ok) {
+        errors.push({ status: response.status, kind: response.kind });
+        break;
+      }
+      for (const [symbol, quotes] of Object.entries(response.data?.quotes || {})) {
+        if (!requestedSymbols.has(symbol) || !Array.isArray(quotes)) continue;
+        const existing = result.get(symbol) || [];
+        for (const quote of quotes) {
+          const normalized = normalizeQuote(quote);
+          if (normalized) existing.push(normalized);
+        }
+        result.set(symbol, existing);
+      }
+      pageToken = response.data?.next_page_token || null;
+      if (pageToken && pages >= pageBudget) partial = true;
+    } while (pageToken);
+  }
+
+  const coverage = {};
+  for (const symbol of symbols) {
+    const quotes = (result.get(symbol) || [])
+      .filter((quote, index, list) => index === 0 || quote.t !== list[index - 1].t || quote.bidPrice !== list[index - 1].bidPrice || quote.askPrice !== list[index - 1].askPrice)
+      .sort((left, right) => Date.parse(left.t) - Date.parse(right.t));
+    result.set(symbol, quotes);
+    coverage[symbol] = {
+      count: quotes.length,
+      firstAt: quotes[0]?.t || null,
+      lastAt: quotes.at(-1)?.t || null,
+      crossed: quotes.filter((quote) => quote.crossed).length,
+    };
+  }
+  return { quotes: result, complete: errors.length === 0 && !partial, partial, pages, errors, coverage };
+}
+
+async function getCorporateActionsDetailed({ symbols = [], start, end, types, pageBudget = 3 } = {}) {
+  const actions = [];
+  const errors = [];
+  let pageToken = null;
+  let pages = 0;
+  let partial = false;
+  if (!Array.isArray(symbols) || symbols.length === 0 || !start || !end) {
+    return { actions, complete: true, partial: false, pages, errors };
+  }
+  do {
+    if (pages >= pageBudget) {
+      partial = true;
+      break;
+    }
+    const params = new URLSearchParams({
+      symbols: symbols.join(','),
+      start: String(start).slice(0, 10),
+      end: String(end).slice(0, 10),
+      limit: '1000',
+      sort: 'asc',
+      data_quality: 'all'
+    });
+    if (types) params.set('types', types);
+    if (pageToken) params.set('page_token', pageToken);
+    const response = await fetchAlpacaDetailed(`${DATA_BASE_URL}/v1/corporate-actions?${params.toString()}`, 'getCorporateActionsDetailed');
+    pages += 1;
+    if (!response.ok) {
+      errors.push({ status: response.status, kind: response.kind });
+      break;
+    }
+    const payload = response.data?.corporate_actions || response.data;
+    if (Array.isArray(payload)) {
+      actions.push(...payload);
+    } else if (payload && typeof payload === 'object') {
+      for (const [type, rows] of Object.entries(payload)) {
+        if (!Array.isArray(rows)) continue;
+        for (const row of rows) actions.push({ type, ...row });
+      }
+    }
+    pageToken = response.data?.next_page_token || null;
+    if (pageToken && pages >= pageBudget) partial = true;
+  } while (pageToken);
+  return { actions, complete: errors.length === 0 && !partial, partial, pages, errors };
+}
+
 // Cheap variant of getDailyBars for the coarse stage-1 filter: only the most recent bar per
 // symbol, over a short lookback window so the request/response stays small.
 async function getLatestDailyBars({ symbols = [] } = {}) {
@@ -544,6 +679,8 @@ module.exports = {
   getActiveAssets,
   getDailyBars,
   getBarsDetailed,
+  getHistoricalQuotesDetailed,
+  getCorporateActionsDetailed,
   getLatestDailyBars,
   getIntradayBars,
   getSnapshots,
