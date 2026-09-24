@@ -889,20 +889,22 @@ function FeedbackStatusPanel({ status }) {
   const policy = status?.activePolicy || {};
   const gate = status?.latestGateCheck;
   const dataset = status?.dataset;
+  const gates = gate?.gates || {};
   return (
     <div className="panel compact-report">
       <div className="section-heading">
         <h2>מנגנון שיפור ההמלצות</h2>
         <span className={policy.state === "active_limited" ? "badge" : "badge amber"}>
-          {policy.state === "active_limited" ? "פעיל מוגבל" : "shadow בלבד"}
+          {policy.state === "active_limited" ? "פעיל מוגבל" : policy.state === "eligible_for_limited_activation" ? "מוכן להפעלה" : "shadow בלבד"}
         </span>
       </div>
       <p>
-        המערכת מודדת את כל ההמלצות וה־shadow candidates בלי קשר לקנייה. שינוי דירוג חי מתבצע רק אחרי gates קבועים מראש ועם rollback.
+        המערכת מודדת את כל ההמלצות וה־shadow candidates בלי קשר לקנייה. אחרי 7 ימי מסחר, שינוי דירוג חי מופעל רק אם ה־gates של כיסוי ואיכות עברו, עם rollback.
       </p>
       <div className="quality-chips">
         <span className="badge">policy: {policy.policyVersion || "baseline-v3"}</span>
         <span className="badge">dataset: {dataset?.datasetVersion || "עדיין לא נבנה"}</span>
+        <span className="badge">ימי מסחר: {number(gates.forwardSessions || 0)} / {number(gates.minForwardSessions || 7)}</span>
         <span className="badge">setups: {number(dataset?.counts?.publishedUniqueSetups || 0)}</span>
         <span className="badge">coverage complete: {number(dataset?.coverage?.complete || 0)}</span>
         <span className="badge">gate: {gate?.decision || "ממתין לנתונים"}</span>

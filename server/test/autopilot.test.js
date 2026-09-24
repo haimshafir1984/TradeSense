@@ -614,6 +614,74 @@ test("feedback dataset deduplicates recommendations and keeps shadow unlabeled",
   assert.equal(status.activePolicy.state, "shadow");
   assert.equal(status.note.includes("shadow"), true);
 });
+test("feedback policy activates after seven trading sessions when gates pass", () => {
+  const db = store.database();
+  store.put("cache", "calendar", {
+    date: "2026-09-16",
+    rows: [
+      { date: "2026-09-08", open: "09:30", close: "16:00" },
+      { date: "2026-09-09", open: "09:30", close: "16:00" },
+      { date: "2026-09-10", open: "09:30", close: "16:00" },
+      { date: "2026-09-11", open: "09:30", close: "16:00" },
+      { date: "2026-09-14", open: "09:30", close: "16:00" },
+      { date: "2026-09-15", open: "09:30", close: "16:00" },
+      { date: "2026-09-16", open: "09:30", close: "16:00" },
+    ],
+  });
+  feedback.ensureShadowPolicy({ now: iso(start) });
+  db.prepare("UPDATE policy_candidates SET state='shadow',created_at=?,updated_at=?,evidence_json=? WHERE policy_version=?")
+    .run(iso(start), iso(start), JSON.stringify({ reason: "unit_reset" }), feedback.SHADOW_POLICY_VERSION);
+  db.prepare(
+    `INSERT OR REPLACE INTO feedback_datasets(id,dataset_version,as_of,label_horizon,policy_version,counts_json,coverage_json,checksum,created_at)
+     VALUES(?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    "activation-dataset",
+    "feedback:d5:activation",
+    "2026-09-16T20:10:00.000Z",
+    "d5",
+    feedback.SHADOW_POLICY_VERSION,
+    JSON.stringify({ total: 20, publishedUniqueSetups: 20, shadowCandidates: 0 }),
+    JSON.stringify({ complete: 20, pending: 0, needsData: 0, unlabeled: 0 }),
+    "activation-checksum",
+    "2026-09-16T20:11:00.000Z",
+  );
+  for (let index = 0; index < 20; index++) {
+    db.prepare(
+      `INSERT OR REPLACE INTO feedback_dataset_rows(id,dataset_id,setup_id,recommendation_id,shadow_candidate_id,symbol,strategy,decision_at,feature_snapshot_json,label_json,coverage_status,sample_weight,created_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      `activation-row-${index}`,
+      "activation-dataset",
+      `activation-setup-${index}`,
+      `activation-rec-${index}`,
+      null,
+      `A${index}`,
+      "orb15",
+      iso(start + index * 1000),
+      JSON.stringify({ rvol: index < 10 ? 1.2 : 4.2, adv20: 50_000_000, atrPct: 3 }),
+      JSON.stringify({ horizon: "d5", workflowStatus: "complete", outcomeStatus: index < 10 ? "no_observed_fill" : "target", metrics: { returnFromObservedReferencePct: index < 10 ? -2 : 8 } }),
+      "complete",
+      1,
+      "2026-09-16T20:11:00.000Z",
+    );
+  }
+
+  const result = feedback.evaluateGates({
+    datasetVersion: "feedback:d5:activation",
+    asOf: "2026-09-16T20:10:00.000Z",
+  });
+
+  assert.equal(result.gates.forwardSessions, 7);
+  assert.equal(result.training.trained, true);
+  assert.equal(result.activation.activated, true);
+  assert.equal(feedback.activePolicy().state, "active_limited");
+  assert.ok(feedback.activePolicy().policyVersion.startsWith("feedback-learned-"));
+  assert.equal(feedback.activePolicy().hyperparams.learner, feedback.LEARNER_VERSION);
+  const low = feedback.scoreCandidate({ symbol: "LOWLEARN", candidateFor: "orb15", score: 1.2, avgDollarVolume20d: 50_000_000, daily: { atr14: 3, price: 100 } });
+  const high = feedback.scoreCandidate({ symbol: "HIGHLEARN", candidateFor: "orb15", score: 4.2, avgDollarVolume20d: 50_000_000, daily: { atr14: 3, price: 100 } });
+  assert.equal(high.learnedScore > low.learnedScore, true);
+  feedback.rollbackPolicy({ reason: "unit_cleanup", now: "2026-09-16T20:12:00.000Z" });
+});
 test("active feedback policy can reorder only inside an existing strategy list", () => {
   const now = iso(start + 8000);
   store.database().prepare(

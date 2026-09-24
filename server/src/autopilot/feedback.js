@@ -1,13 +1,16 @@
 const crypto = require("node:crypto");
 const store = require("./store");
+const market = require("./market");
 
 const BASELINE_POLICY_VERSION = "baseline-v3";
+const SHADOW_POLICY_VERSION = "feedback-simple-shadow-v1";
 const FEATURE_SCHEMA_VERSION = "feedback-compact-v1";
 const GATE_VERSION = "feedback-gates-v1";
+const LEARNER_VERSION = "bucket-outcome-v1";
 const DEFAULT_GATES = {
-  minForwardSessions: 30,
-  minResolvedSetups: 100,
-  minPriceCoveragePct: 90,
+  minForwardSessions: 7,
+  minResolvedSetups: 20,
+  minPriceCoveragePct: 70,
   maxNoFillPct: 70,
   maxAmbiguousPct: 20,
 };
@@ -68,6 +71,15 @@ function activePolicy() {
   };
 }
 
+function tradingSessionsSince(startAt, asOf = new Date().toISOString()) {
+  const start = Date.parse(startAt);
+  const end = Date.parse(asOf);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return market.cachedSessionsRange(start, end)
+    .filter((session) => session.close > start && session.close <= end)
+    .length;
+}
+
 function baselinePolicy() {
   return {
     policyVersion: BASELINE_POLICY_VERSION,
@@ -86,17 +98,70 @@ function numericBucket(value, cuts) {
   return `>=${cuts.at(-1)}`;
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function candidateFeatureSnapshot(row = {}, strategy = row.selectedFor || row.candidateFor || row.strategy) {
+  const daily = row.daily || {};
+  const features = row.features || {};
+  const rvol = Number(row.rvol ?? row.score ?? features.rvol);
+  const adv20 = Number(row.avgDollarVolume20d ?? daily.avgDollarVolume20d ?? features.adv20 ?? features.avgDollarVolume20d);
+  const atrPct = daily.atr14 && daily.price ? (daily.atr14 / daily.price) * 100 : Number(features.atrPct);
+  const gapPct = Number(row.gapPct ?? features.gapPct);
+  return {
+    strategy,
+    rvol: Number.isFinite(rvol) ? rvol : null,
+    adv20: Number.isFinite(adv20) ? adv20 : null,
+    atrPct: Number.isFinite(atrPct) ? atrPct : null,
+    gapPct: Number.isFinite(gapPct) ? gapPct : null,
+  };
+}
+
+function featureBuckets(snapshot) {
+  const strategy = snapshot.strategy || "unknown";
+  return [
+    `strategy:${strategy}`,
+    `strategy:${strategy}|rvol:${numericBucket(snapshot.rvol, [1, 1.5, 2, 3, 5])}`,
+    `strategy:${strategy}|atrPct:${numericBucket(snapshot.atrPct, [1, 2, 3, 5, 8])}`,
+    `strategy:${strategy}|liquidity:${numericBucket(snapshot.adv20, [20_000_000, 100_000_000, 500_000_000])}`,
+    `strategy:${strategy}|gapPct:${numericBucket(snapshot.gapPct, [-3, 0, 2, 5, 10])}`,
+  ];
+}
+
+function labelValue(label = {}) {
+  if (label.workflowStatus !== "complete") return null;
+  const metrics = label.metrics || {};
+  if (Number.isFinite(Number(metrics.returnFromObservedReferencePct))) {
+    return clamp(Number(metrics.returnFromObservedReferencePct) / 5, -2, 2);
+  }
+  if (Number.isFinite(Number(metrics.rNet))) return clamp(Number(metrics.rNet), -2, 2);
+  if (Number.isFinite(Number(metrics.netReturnPct))) return clamp(Number(metrics.netReturnPct) / 5, -2, 2);
+  const map = {
+    target: 1,
+    time_exit: 0,
+    no_observed_fill: -0.25,
+    invalidated_before_entry: -1,
+    stop: -1,
+    ambiguous: -0.5,
+  };
+  return Object.prototype.hasOwnProperty.call(map, label.outcomeStatus) ? map[label.outcomeStatus] : null;
+}
+
 function scoreCandidate(row, policy = activePolicy()) {
   if (policy.state !== "active_limited") {
     return { applied: false, policyVersion: policy.policyVersion, reason: `policy_${policy.state}`, priorityScore: null };
   }
-  const daily = row.daily || {};
-  const rvol = Number(row.score ?? row.rvol ?? row.features?.rvol);
-  const adv = Number(row.avgDollarVolume20d ?? daily.avgDollarVolume20d);
-  const atrPct = daily.atr14 && daily.price ? (daily.atr14 / daily.price) * 100 : Number(row.features?.atrPct);
+  const snapshot = candidateFeatureSnapshot(row);
+  const rvol = snapshot.rvol;
+  const adv = snapshot.adv20;
+  const atrPct = snapshot.atrPct;
   const hourBucket = numericBucket(row.decisionHourNy, [10, 11, 12, 14, 16]);
   const rvolBucket = numericBucket(rvol, [1.5, 2, 3, 5]);
   const liquidityBucket = adv < 20_000_000 ? "lower" : adv < 100_000_000 ? "medium" : "high";
+  const bucketEffects = policy.hyperparams?.bucketEffects || {};
+  const learnedBase = Number(policy.hyperparams?.globalMean || 0);
+  const learnedScore = featureBuckets(snapshot).reduce((sum, bucket) => sum + Number(bucketEffects[bucket] || 0), learnedBase);
   const weights = {
     rvol: 1,
     liquidity: 0.25,
@@ -108,13 +173,15 @@ function scoreCandidate(row, policy = activePolicy()) {
   const priorityScore =
     (Number.isFinite(rvol) ? Math.min(6, rvol) * weights.rvol : -1) +
     (liquidityBucket === "medium" ? weights.liquidity : liquidityBucket === "high" ? weights.liquidity / 2 : -weights.liquidity) +
-    (Number.isFinite(atrPct) ? Math.min(10, atrPct) * weights.atr / 10 : -0.5) -
+    (Number.isFinite(atrPct) ? Math.min(10, atrPct) * weights.atr / 10 : -0.5) +
+    learnedScore * Number(policy.hyperparams?.learnedScoreScale ?? 3) -
     missingness * 0.35;
   return {
     applied: true,
     policyVersion: policy.policyVersion,
     featureSchemaVersion: policy.featureSchemaVersion,
     priorityScore,
+    learnedScore,
     evidenceCount: Number(policy.evidence?.resolvedSetups || 0),
     uncertainty: policy.evidence?.uncertainty || "unknown",
     missingness,
@@ -294,19 +361,19 @@ function buildDataset({ asOf = new Date().toISOString(), horizon = "d5", policyV
 }
 
 function ensureShadowPolicy({ now = new Date().toISOString() } = {}) {
-  const existing = get("SELECT * FROM policy_candidates WHERE policy_version='feedback-simple-shadow-v1'");
+  const existing = get("SELECT * FROM policy_candidates WHERE policy_version=?", SHADOW_POLICY_VERSION);
   if (existing) return activePolicy();
   run(
     `INSERT INTO policy_candidates(policy_version,state,feature_schema_version,hyperparams_json,training_dataset_version,train_cutoff_at,gate_version,evidence_json,previous_policy_version,created_at,updated_at)
      VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-    "feedback-simple-shadow-v1",
+    SHADOW_POLICY_VERSION,
     "shadow",
     FEATURE_SCHEMA_VERSION,
     JSON.stringify({ weights: { rvol: 1, liquidity: 0.25, atr: 0.5 } }),
     null,
     null,
     GATE_VERSION,
-    JSON.stringify({ reason: "created_for_prospective_shadow", gates: DEFAULT_GATES }),
+    JSON.stringify({ reason: "created_for_prospective_shadow", gates: DEFAULT_GATES, activationWindow: { tradingSessions: DEFAULT_GATES.minForwardSessions, startedAt: now } }),
     BASELINE_POLICY_VERSION,
     now,
     now,
@@ -314,23 +381,131 @@ function ensureShadowPolicy({ now = new Date().toISOString() } = {}) {
   return activePolicy();
 }
 
-function evaluateGates({ policyVersion = "feedback-simple-shadow-v1", datasetVersion } = {}) {
+function datasetOutcomeMetrics(dataset, counts, coverage) {
+  const rows = dataset
+    ? all("SELECT label_json FROM feedback_dataset_rows WHERE dataset_id=?", dataset.id)
+    : [];
+  const labels = rows.map((row) => json(row.label_json, {}));
+  const resolved = labels.filter((label) => label.workflowStatus === "complete");
+  const noFill = resolved.filter((label) => label.outcomeStatus === "no_observed_fill").length;
+  const ambiguous = resolved.filter((label) => label.outcomeStatus === "ambiguous").length;
+  const resolvedSetups = Number(coverage.complete || resolved.length || 0);
+  const priceCoverageBase = Math.max(1, Number(counts.publishedUniqueSetups || counts.total || 0));
+  return {
+    resolvedSetups,
+    priceCoveragePct: (resolvedSetups / priceCoverageBase) * 100,
+    noFillPct: resolvedSetups ? (noFill / resolvedSetups) * 100 : 0,
+    ambiguousPct: resolvedSetups ? (ambiguous / resolvedSetups) * 100 : 0,
+  };
+}
+
+function trainLearnedPolicy({ datasetVersion, now = new Date().toISOString(), previousPolicyVersion = SHADOW_POLICY_VERSION } = {}) {
   const dataset = datasetVersion
     ? get("SELECT * FROM feedback_datasets WHERE dataset_version=?", datasetVersion)
     : get("SELECT * FROM feedback_datasets ORDER BY created_at DESC LIMIT 1");
+  if (!dataset) return { trained: false, reason: "dataset_missing" };
+  const rows = all("SELECT strategy,feature_snapshot_json,label_json FROM feedback_dataset_rows WHERE dataset_id=? AND recommendation_id IS NOT NULL", dataset.id);
+  const examples = rows
+    .map((row) => ({
+      strategy: row.strategy,
+      features: json(row.feature_snapshot_json, {}),
+      label: json(row.label_json, {}),
+    }))
+    .map((row) => ({
+      snapshot: candidateFeatureSnapshot({ strategy: row.strategy, features: row.features }),
+      value: labelValue(row.label),
+    }))
+    .filter((row) => Number.isFinite(row.value));
+  if (examples.length < DEFAULT_GATES.minResolvedSetups) {
+    return { trained: false, reason: "not_enough_labeled_examples", labeledExamples: examples.length };
+  }
+  const globalMean = examples.reduce((sum, row) => sum + row.value, 0) / examples.length;
+  const prior = 5;
+  const bucketStats = {};
+  for (const example of examples) {
+    for (const bucket of featureBuckets(example.snapshot)) {
+      bucketStats[bucket] ||= { count: 0, sum: 0 };
+      bucketStats[bucket].count += 1;
+      bucketStats[bucket].sum += example.value;
+    }
+  }
+  const bucketEffects = {};
+  for (const [bucket, stat] of Object.entries(bucketStats)) {
+    const smoothedMean = (stat.sum + globalMean * prior) / (stat.count + prior);
+    bucketEffects[bucket] = Number(clamp(smoothedMean - globalMean, -1.5, 1.5).toFixed(6));
+  }
+  const hyperparams = {
+    learner: LEARNER_VERSION,
+    labelHorizon: dataset.label_horizon,
+    datasetVersion: dataset.dataset_version,
+    globalMean: Number(globalMean.toFixed(6)),
+    bucketEffects,
+    learnedScoreScale: 3,
+    prior,
+    labeledExamples: examples.length,
+  };
+  const policyVersion = `feedback-learned-${dataset.as_of.slice(0, 10)}-${hash(hyperparams).slice(0, 10)}`;
+  run(
+    `INSERT INTO policy_candidates(policy_version,state,feature_schema_version,hyperparams_json,training_dataset_version,train_cutoff_at,gate_version,evidence_json,previous_policy_version,created_at,updated_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(policy_version) DO UPDATE SET hyperparams_json=excluded.hyperparams_json,evidence_json=excluded.evidence_json,updated_at=excluded.updated_at`,
+    policyVersion,
+    "eligible_for_limited_activation",
+    FEATURE_SCHEMA_VERSION,
+    JSON.stringify(hyperparams),
+    dataset.dataset_version,
+    now,
+    GATE_VERSION,
+    JSON.stringify({ learner: LEARNER_VERSION, labeledExamples: examples.length, globalMean, learnedBuckets: Object.keys(bucketEffects).length }),
+    previousPolicyVersion,
+    now,
+    now,
+  );
+  return { trained: true, policyVersion, hyperparams };
+}
+
+function activatePolicy({ policyVersion = SHADOW_POLICY_VERSION, datasetVersion, reason = "automatic_after_feedback_gates", now = new Date().toISOString() } = {}) {
+  const row = get("SELECT * FROM policy_candidates WHERE policy_version=?", policyVersion);
+  if (!row) return { activated: false, reason: "policy_missing" };
+  if (row.state === "active_limited") return { activated: false, reason: "already_active_limited", policyVersion };
+  if (row.state !== "shadow" && row.state !== "eligible_for_limited_activation") return { activated: false, reason: `policy_state_${row.state}`, policyVersion };
+  run("UPDATE policy_candidates SET state='active_limited',training_dataset_version=COALESCE(?,training_dataset_version),train_cutoff_at=?,updated_at=? WHERE policy_version=?", datasetVersion || null, now, now, policyVersion);
+  run(
+    "INSERT INTO policy_activations(id,policy_version,state,reason,previous_policy_version,activated_at,rollback_at,created_at) VALUES(?,?,?,?,?,?,?,?)",
+    hash({ policyVersion, activatedAt: now }).slice(0, 32),
+    policyVersion,
+    "active_limited",
+    reason,
+    row.previous_policy_version || BASELINE_POLICY_VERSION,
+    now,
+    null,
+    now,
+  );
+  return { activated: true, policyVersion, reason };
+}
+
+function evaluateGates({ policyVersion = SHADOW_POLICY_VERSION, datasetVersion, asOf = new Date().toISOString(), activate = true } = {}) {
+  const dataset = datasetVersion
+    ? get("SELECT * FROM feedback_datasets WHERE dataset_version=?", datasetVersion)
+    : get("SELECT * FROM feedback_datasets ORDER BY created_at DESC LIMIT 1");
+  const policy = get("SELECT * FROM policy_candidates WHERE policy_version=?", policyVersion);
   const counts = json(dataset?.counts_json, {});
   const coverage = json(dataset?.coverage_json, {});
-  const resolvedSetups = Number(coverage.complete || 0);
-  const priceCoveragePct = counts.total ? (Number(coverage.complete || 0) / counts.total) * 100 : 0;
+  const metrics = datasetOutcomeMetrics(dataset, counts, coverage);
+  const forwardSessions = tradingSessionsSince(policy?.created_at, dataset?.as_of || asOf);
   const gates = {
     ...DEFAULT_GATES,
-    resolvedSetups,
-    priceCoveragePct,
-    forwardSessions: 0,
+    ...metrics,
+    forwardSessions,
   };
-  const passed = resolvedSetups >= gates.minResolvedSetups && priceCoveragePct >= gates.minPriceCoveragePct && gates.forwardSessions >= gates.minForwardSessions;
+  const passed =
+    gates.forwardSessions >= gates.minForwardSessions &&
+    metrics.resolvedSetups >= gates.minResolvedSetups &&
+    metrics.priceCoveragePct >= gates.minPriceCoveragePct &&
+    metrics.noFillPct <= gates.maxNoFillPct &&
+    metrics.ambiguousPct <= gates.maxAmbiguousPct;
   const decision = passed ? "eligible_for_limited_activation" : "shadow_insufficient_evidence";
-  const reason = passed ? "all_predefined_gates_passed" : "not_enough_forward_evidence_or_coverage";
+  const reason = passed ? "seven_session_window_and_quality_gates_passed" : "not_enough_forward_evidence_or_coverage";
   const createdAt = new Date().toISOString();
   run(
     "INSERT INTO policy_evaluations(id,policy_version,dataset_version,stage,metrics_json,gates_json,decision,reason,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -338,19 +513,26 @@ function evaluateGates({ policyVersion = "feedback-simple-shadow-v1", datasetVer
     policyVersion,
     dataset?.dataset_version || null,
     "gate_check",
-    JSON.stringify({ resolvedSetups, priceCoveragePct, counts, coverage }),
+    JSON.stringify({ ...metrics, counts, coverage }),
     JSON.stringify(gates),
     decision,
     reason,
     createdAt,
   );
   run(
-    "UPDATE policy_candidates SET evidence_json=?, updated_at=? WHERE policy_version=?",
-    JSON.stringify({ resolvedSetups, priceCoveragePct, gates, decision, reason }),
+    "UPDATE policy_candidates SET state=CASE WHEN state='shadow' AND ? THEN 'eligible_for_limited_activation' ELSE state END,evidence_json=?,updated_at=? WHERE policy_version=?",
+    passed ? 1 : 0,
+    JSON.stringify({ ...metrics, gates, decision, reason, evaluatedAt: createdAt, activationPending: passed && activate }),
     createdAt,
     policyVersion,
   );
-  return { policyVersion, datasetVersion: dataset?.dataset_version || null, decision, reason, gates, metrics: { resolvedSetups, priceCoveragePct } };
+  const training = passed
+    ? trainLearnedPolicy({ datasetVersion: dataset?.dataset_version || null, now: createdAt, previousPolicyVersion: policyVersion })
+    : { trained: false, reason: "gates_not_passed" };
+  const activation = passed && activate && training.trained
+    ? activatePolicy({ policyVersion: training.policyVersion, datasetVersion: dataset?.dataset_version || null, reason: `${reason}:learned_policy`, now: createdAt })
+    : { activated: false, reason: passed ? "activation_disabled" : "gates_not_passed" };
+  return { policyVersion, datasetVersion: dataset?.dataset_version || null, decision, reason, gates, metrics, training, activation };
 }
 
 function rollbackPolicy({ reason = "quality_gate_failed", now = new Date().toISOString() } = {}) {
@@ -409,21 +591,26 @@ function status() {
     })),
     note: policy.state === "active_limited"
       ? "Limited ranking policy is active only inside existing eligible selection pools."
-      : "Feedback is measuring and comparing in shadow; it is not changing live ranking.",
+      : "Feedback is measuring and comparing in shadow for a 7-trading-session window; live ranking changes only after the gates pass.",
   };
 }
 
 module.exports = {
   BASELINE_POLICY_VERSION,
+  SHADOW_POLICY_VERSION,
   FEATURE_SCHEMA_VERSION,
   GATE_VERSION,
+  LEARNER_VERSION,
   activePolicy,
   ensureShadowPolicy,
+  tradingSessionsSince,
+  trainLearnedPolicy,
   scoreCandidate,
   maybeApplyPolicyToList,
   recordSelectionDecision,
   buildDataset,
   evaluateGates,
+  activatePolicy,
   rollbackPolicy,
   status,
 };
