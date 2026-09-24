@@ -66,11 +66,43 @@ function compactFeatures(signal) {
   const atrPct = signal.daily?.atr14 && signal.daily?.price
     ? (signal.daily.atr14 / signal.daily.price) * 100
     : null;
+  const decisionAt = signal.createdAt || signal.publishedAt || new Date().toISOString();
+  const decisionTime = Date.parse(decisionAt);
+  const decisionHourNy = Number.isFinite(decisionTime)
+    ? Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", hour: "2-digit" }).format(new Date(decisionTime)))
+    : null;
+  const priceAt = Date.parse(signal.priceAt || signal.provenance?.priceAt || 0);
+  const priceFreshnessMs = Number.isFinite(priceAt) && Number.isFinite(decisionTime)
+    ? Math.max(0, decisionTime - priceAt)
+    : null;
+  const missingMask = {
+    rvol: signal.rvol == null,
+    gapPct: signal.gapPct == null,
+    atrPct: atrPct == null,
+    adv20: signal.daily?.avgDollarVolume20d == null,
+    decisionHourNy: decisionHourNy == null,
+    priceFreshnessMs: priceFreshnessMs == null,
+  };
   return {
+    featureSchemaVersion: "feedback-snapshot-v2",
+    strategy: signal.strategy,
+    strategyVersion: signal.strategyVersion || signal.version || null,
+    lane: signal.mode === "day" ? "day" : "swing",
+    decisionAt,
+    featureAvailableAt: decisionAt,
     gapPct: signal.gapPct ?? null,
     rvol: signal.rvol ?? null,
     atrPct,
     adv20: signal.daily?.avgDollarVolume20d ?? null,
+    decisionHourNy,
+    priceFreshnessMs,
+    missingMask,
+    sourceVersions: {
+      dailyFeed: signal.provenance?.dailyFeed || null,
+      intradayFeed: signal.provenance?.intradayFeed || null,
+      priceFeed: signal.provenance?.priceFeed || null,
+      volumeContext: signal.provenance?.volumeContext || null,
+    },
     dataCutoff: signal.createdAt,
     rank: signal.rank ?? null,
   };

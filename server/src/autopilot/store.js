@@ -278,6 +278,7 @@ function database() {
       CREATE INDEX IF NOT EXISTS idx_selection_decisions_scan ON selection_decisions(scan_id,strategy,selected);
       CREATE INDEX IF NOT EXISTS idx_feedback_dataset_rows_dataset ON feedback_dataset_rows(dataset_id,strategy,coverage_status);
       CREATE INDEX IF NOT EXISTS idx_policy_candidates_state ON policy_candidates(state,updated_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_candidates_single_active_limited ON policy_candidates(state) WHERE state='active_limited';
     `);
     db.prepare("INSERT OR IGNORE INTO recommendation_migrations(version,applied_at) VALUES(?,?)").run(1, new Date().toISOString());
     const columns = db.prepare("PRAGMA table_info(records)").all().map((row) => row.name);

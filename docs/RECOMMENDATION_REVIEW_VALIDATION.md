@@ -178,3 +178,79 @@ Not completed in this local validation:
 - The feedback policy remains `shadow_insufficient_evidence`/shadow by design
   until prospective gates are met. This is not a claim of improved
   recommendation accuracy or profitability.
+
+## Feedback learning hardening, 2026-09-24
+
+Implemented after `SPEC_FEEDBACK_LEARNING_AND_NEWS_VALIDATION_GPT55.md`:
+
+- Replaced the compact feedback feature contract with `feedback-snapshot-v2`.
+  New recommendation and shadow-candidate snapshots now carry decision time,
+  feature availability time, lane, RVOL, gap, ATR%, ADV20, NY decision hour,
+  price freshness, source versions and an explicit missing mask.
+- Removed the unsafe live-learning fallback that treated strategy `score` as
+  RVOL. Missing RVOL stays missing; legacy snapshots are marked
+  `schema_incompatible` and are excluded from training.
+- Made feedback datasets immutable for a given version/checksum. A later
+  evaluation revision must create a new dataset version instead of silently
+  rewriting rows.
+- Tightened policy gates. Seven trading sessions are now only the minimum
+  elapsed window. Activation also requires prospective resolved examples after
+  shadow start, completed replay coverage and an explicit validation advantage.
+  Old labels alone now keep the policy in `shadow_insufficient_evidence` with a
+  named reason such as `prospective_evidence_insufficient`.
+- Changed `no_observed_fill`, `ambiguous` and `unresolved` so they are not
+  converted to numeric training losses. They remain denominator/quality
+  outcomes, not fake returns.
+- Made activation and rollback transactional. Activating a policy replaces any
+  prior `active_limited` policy in the same transaction, records audit, and a
+  partial unique index prevents two active limited policies.
+- Added tests that prove old historical labels cannot promote a policy, a
+  synthetic prospective v2 dataset can still exercise activation/rollback, and
+  active ranking uses explicit RVOL instead of strategy score.
+
+Validation commands for this hardening:
+
+```powershell
+npm test --workspace server -- --test-name-pattern feedback
+npm test --workspace server
+npm run build
+npm run recommendations:stress --workspace server -- --count=10000
+npm run recommendations:probe-data --workspace server -- --symbols=AAPL,MSFT
+```
+
+Result:
+
+- `npm test --workspace server -- --test-name-pattern feedback` passed:
+  336/336.
+- `npm test --workspace server` passed: 336/336.
+- `npm run build` passed.
+- `npm run recommendations:stress --workspace server -- --count=10000`
+  passed in 20,479ms. Reported RSS was 330MB. This is acceptable for the local
+  smoke stress run but higher than earlier runs, so a longer environment load
+  test is still required before calling the system production-ready.
+- `npm run recommendations:probe-data --workspace server -- --symbols=AAPL,MSFT`
+  ran through the adapters. In this local shell Alpaca and Finnhub were
+  `not_configured`; SEC was configured but ticker mapping returned
+  `fetch failed` and the probe surfaced `unknown_identity`. This is local
+  availability/credential evidence only, not proof of missing production
+  entitlement.
+- Local API check against the running server passed: unauthenticated
+  recommendations returned 401; session login returned 200; authenticated
+  dashboard, `feedback-status`, `quality-report`, `review-summary` and
+  recommendations returned 200. The feedback status was `shadow`.
+- Browser check: Playwright CLI still failed with local npm-cache `EACCES` while
+  trying to fetch `@playwright/cli`. The Codex in-app browser successfully
+  loaded `http://localhost:5173`, opened the Results tab, and displayed the
+  feedback panel with `shadow` status, policy version, dataset/gate text and no
+  profit claim.
+
+Limits:
+
+- Replay and validation metrics are still represented as dataset evidence
+  fields; this change blocks unsafe activation unless those fields are present,
+  but it does not yet implement a complete real-pool replay engine.
+- The system still must accumulate real prospective labels before any real
+  learned policy should be trusted. Unit tests and synthetic activation do not
+  prove improved accuracy, profitability or production readiness.
+- The 30-minute / one-million-receipt stress test, backup/restore drill and
+  deployment scheduler verification were not run in this local turn.
