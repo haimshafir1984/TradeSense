@@ -1,7 +1,7 @@
 const store = require("./store");
 const config = require("./settings");
 const market = require("./market");
-const { STRATEGIES, evaluateDetailed } = require("./strategies");
+const { STRATEGIES, DAY_STRATEGY_KEYS, SWING_STRATEGY_KEYS, isDayStrategy, evaluateDetailed } = require("./strategies");
 const tracking = require("./tracking");
 const notices = require("./notifications");
 const users = require("./users");
@@ -107,7 +107,7 @@ async function scan(now, calendar, today) {
     if (store.get("scanAttempt", id)) return;
     store.put("scanAttempt", id, {
       scanId, symbol: row.symbol, strategy, reasonCode,
-      lane: ["orb15", "gap_pullback", "vwap_reclaim"].includes(strategy) ? "day" : "swing",
+      lane: isDayStrategy(strategy) ? "day" : "swing",
       liquidityBucket: row.avgDollarVolume20d < 20_000_000 ? "lower_liquidity" : row.avgDollarVolume20d < 100_000_000 ? "medium_liquidity" : "high_liquidity",
       dailyFeed: "sip", triggerFeed: "iex", observedAt: new Date(at).toISOString(), ...flags,
     });
@@ -122,7 +122,7 @@ async function scan(now, calendar, today) {
         featureSchemaVersion: feedback.FEATURE_SCHEMA_VERSION,
         strategy,
         strategyVersion: null,
-        lane: ["orb15", "gap_pullback", "vwap_reclaim"].includes(strategy) ? "day" : "swing",
+        lane: isDayStrategy(strategy) ? "day" : "swing",
         decisionAt: new Date(at).toISOString(),
         featureAvailableAt: new Date(at).toISOString(),
         rvol: row.rvol ?? null,
@@ -248,8 +248,8 @@ async function scan(now, calendar, today) {
     const sipLimit = Number.isFinite(sipLimitValue) ? Math.min(40, Math.max(0, Math.floor(sipLimitValue))) : 40;
     const cachedSelectedRvol = history.cachedRvolScores(ranked.map((row) => row.symbol), calendar, today, selectionNow);
     const prioritizedSip = [
-      ...ranked.filter((row) => row.selectedFor !== "rotation" && row.price && row.eligibleStrategies?.some((key) => ["orb15", "gap_pullback", "vwap_reclaim"].includes(key)) && cachedSelectedRvol.get(row.symbol) == null),
-      ...ranked.filter((row) => row.selectedFor !== "rotation" && row.eligibleStrategies?.some((key) => ["reversal5", "pullback2_v1", "breakout20_v1"].includes(key))),
+      ...ranked.filter((row) => row.selectedFor !== "rotation" && row.price && row.eligibleStrategies?.some((key) => DAY_STRATEGY_KEYS.includes(key)) && cachedSelectedRvol.get(row.symbol) == null),
+      ...ranked.filter((row) => row.selectedFor !== "rotation" && row.eligibleStrategies?.some((key) => SWING_STRATEGY_KEYS.includes(key))),
       ...ranked.filter((row) => row.selectedFor === "rotation"),
     ];
     const pressureState = pressure();
@@ -357,6 +357,8 @@ async function scan(now, calendar, today) {
         ? market.delayedSipOpeningRvol(sipBars.get(row.symbol), calendar, today, asOf, sipCutoff)
         : null;
       const effectiveRvol = rvol == null ? sipRvol : rvol;
+      row.rvol = effectiveRvol;
+      row.gapPct = gapPct;
       let detailed = evaluateDetailed({
         daily,
         bars,
@@ -367,8 +369,9 @@ async function scan(now, calendar, today) {
         gapPct,
         hasNews: null,
       });
-      const gapResult = detailed.results.get("gap_pullback");
-      if (row.eligibleStrategies?.includes("gap_pullback") && gapResult?.reasonCode === "news_needed") {
+      const newsGatedStrategies = ["gap_pullback", "momentum_bull_flag"];
+      const needsNews = newsGatedStrategies.some((key) => row.eligibleStrategies?.includes(key) && detailed.results.get(key)?.reasonCode === "news_needed");
+      if (needsNews) {
         let news = store.get("news", row.symbol);
         if (!news || asOf - news.at > 1800000) {
           const count = await finnhub.getRecentNewsCount(row.symbol);

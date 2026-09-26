@@ -515,7 +515,7 @@ export default function App() {
                     </p>
                     <p>
                       {selectionStatus.listSizes
-                        ? `פיזור בחירה: ORB ${number(selectionStatus.listSizes.orb15)} · Gap ${number(selectionStatus.listSizes.gap_pullback)} · VWAP ${number(selectionStatus.listSizes.vwap_reclaim)} · Reversal ${number(selectionStatus.listSizes.reversal5)}`
+                        ? `פיזור בחירה: ORB ${number(selectionStatus.listSizes.orb15)} · ORB Retest ${number(selectionStatus.listSizes.orb15_retest)} · Gap ${number(selectionStatus.listSizes.gap_pullback)} · VWAP ${number(selectionStatus.listSizes.vwap_reclaim)} · VWAP Pullback ${number(selectionStatus.listSizes.vwap_pullback)} · Bull Flag ${number(selectionStatus.listSizes.momentum_bull_flag)} · Reversal ${number(selectionStatus.listSizes.reversal5)}`
                         : ""}
                     </p>
                   </details>

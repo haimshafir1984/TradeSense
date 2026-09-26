@@ -127,6 +127,75 @@ test("opening breakout uses closed bars only and requires complete opening range
   assert.deepEqual(strategy.evaluate({ ...args, rvol: null }), []);
   assert.equal(strategy.vwap([{ v: 100, c: 100 }]), null);
 });
+test("new day strategy variants require confirmation instead of chasing the first move", () => {
+  const daily = { price: 100, atr14: 2 };
+  const sessionClose = start + 23400000;
+  const orbBars = [
+    bar(0, { o: 100, h: 101, l: 99, c: 100 }),
+    bar(1, { o: 100, h: 101.2, l: 99.5, c: 100.5 }),
+    bar(2, { o: 100.5, h: 101.5, l: 100, c: 101 }),
+    bar(3, { o: 101.2, h: 102.5, l: 101, c: 102.1 }),
+    bar(4, { o: 101.4, h: 102.2, l: 101.45, c: 102 }),
+  ];
+  const orbPlans = strategy.evaluate({
+    daily,
+    bars: orbBars,
+    asOf: start + 1500000,
+    sessionOpen: start,
+    sessionClose,
+    rvol: 2,
+  });
+  assert.ok(orbPlans.some((plan) => plan.strategy === "orb15_retest"));
+
+  const vwapBars = [
+    bar(0, { o: 100, h: 101, l: 99.8, c: 100.5, v: 100, vw: 100.2 }),
+    bar(1, { o: 100.5, h: 102, l: 100.4, c: 101.8, v: 120, vw: 101 }),
+    bar(2, { o: 101.8, h: 102.5, l: 101.2, c: 102, v: 120, vw: 101.8 }),
+    bar(3, { o: 102, h: 102.2, l: 100.9, c: 101.4, v: 80, vw: 101.2 }),
+    bar(4, { o: 101.3, h: 102.4, l: 101.05, c: 102.3, v: 110, vw: 101.5 }),
+    bar(5, { o: 101.5, h: 103, l: 101.35, c: 102.8, v: 140, vw: 102.4 }),
+  ];
+  const vwapPlans = strategy.evaluate({
+    daily,
+    bars: vwapBars,
+    asOf: start + 1800000,
+    sessionOpen: start,
+    sessionClose,
+    rvol: 1.6,
+  });
+  assert.ok(vwapPlans.some((plan) => plan.strategy === "vwap_pullback"));
+
+  const flagBars = [
+    bar(0, { o: 104, h: 104.5, l: 103.5, c: 104.2, v: 200 }),
+    bar(1, { o: 104.2, h: 106, l: 104, c: 105.6, v: 400 }),
+    bar(2, { o: 105.6, h: 107, l: 105.5, c: 106.8, v: 500 }),
+    bar(3, { o: 106.8, h: 107, l: 106, c: 106.4, v: 250 }),
+    bar(4, { o: 106.4, h: 106.6, l: 105.9, c: 106.2, v: 220 }),
+    bar(5, { o: 106.2, h: 108, l: 106.1, c: 107.5, v: 450 }),
+  ];
+  const flagPlans = strategy.evaluate({
+    daily,
+    bars: flagBars,
+    asOf: start + 1800000,
+    sessionOpen: start,
+    sessionClose,
+    rvol: 2.5,
+    gapPct: 4,
+    hasNews: true,
+  });
+  assert.ok(flagPlans.some((plan) => plan.strategy === "momentum_bull_flag"));
+  const waitingForNews = strategy.evaluateDetailed({
+    daily,
+    bars: flagBars,
+    asOf: start + 1800000,
+    sessionOpen: start,
+    sessionClose,
+    rvol: 2.5,
+    gapPct: 4,
+    hasNews: null,
+  });
+  assert.equal(waitingForNews.results.get("momentum_bull_flag").reasonCode, "news_needed");
+});
 test("day strategies can be diagnosed with ATR even when MA200 is unavailable", () => {
   const bars = [bar(0), bar(1), bar(2), bar(3, { c: 100.5, h: 101 })];
   const detailed = strategy.evaluateDetailed({

@@ -9,6 +9,16 @@ const STRATEGIES = [
     source: "https://ssrn.com/abstract=4729284",
   },
   {
+    key: "orb15_retest",
+    label: "פריצת פתיחה ובדיקה חוזרת",
+    mode: "day",
+    risk: "balanced",
+    description:
+      "פריצה מעל טווח 15 הדקות הראשונות, נסיגה לבדיקה חוזרת של הרמה, ואז נר אישור עולה.",
+    source: "ORB retest hypothesis derived from the existing v3 ORB playbook",
+    origin: "custom_hypothesis",
+  },
+  {
     key: "gap_pullback",
     label: "גאפ ותיקון ראשון",
     mode: "day",
@@ -26,6 +36,26 @@ const STRATEGIES = [
       "המחיר חוזר מעל הממוצע המשוקלל בנפח של היום. החישוב מבוסס IEX בלבד.",
     source:
       "https://members.bearbulltraders.com/trading-the-vwap-breakout-structure-timing-and-execution/",
+  },
+  {
+    key: "vwap_pullback",
+    label: "תיקון ל־VWAP במגמה",
+    mode: "day",
+    risk: "balanced",
+    description:
+      "מניה מעל VWAP נסוגה אל האזור וחוזרת לעלות בנר סגור, בלי לרדוף אחרי נר קיצוני.",
+    source: "VWAP pullback hypothesis derived from the existing v3 VWAP playbook",
+    origin: "custom_hypothesis",
+  },
+  {
+    key: "momentum_bull_flag",
+    label: "מומנטום ודגל שורי",
+    mode: "day",
+    risk: "aggressive",
+    description:
+      "גאפ חיובי עם חדשות, RVOL גבוה, דחף ראשון, תיקון קצר בנפח יורד ופריצה חוזרת.",
+    source: "Gap-and-go bull-flag hypothesis derived from the existing v3 momentum playbook",
+    origin: "custom_hypothesis",
   },
   {
     key: "reversal5",
@@ -56,7 +86,17 @@ const STRATEGIES = [
     enabledByDefault: false,
     origin: "custom_hypothesis",
   },
-].map((s) => ({ ...s, version: s.key.endsWith("_v1") ? "1.0.0" : "3.1.0", evidence: "experimental" }));
+].map((s) => ({
+  ...s,
+  version: s.key.endsWith("_v1") || s.origin === "custom_hypothesis" ? "1.0.0" : "3.1.0",
+  evidence: "experimental",
+}));
+const DAY_STRATEGY_KEYS = STRATEGIES.filter((strategy) => strategy.mode === "day").map((strategy) => strategy.key);
+const SWING_STRATEGY_KEYS = STRATEGIES.filter((strategy) => strategy.mode === "swing").map((strategy) => strategy.key);
+const ALL_STRATEGY_KEYS = STRATEGIES.map((strategy) => strategy.key);
+function isDayStrategy(key) {
+  return DAY_STRATEGY_KEYS.includes(key);
+}
 function completed(bars, asOf, intervalMs = 300000) {
   return (bars || [])
     .filter(
@@ -75,6 +115,16 @@ function vwap(bars) {
   const vol = bars.reduce((s, b) => s + b.v, 0);
   return vol > 0 ? bars.reduce((s, b) => s + b.v * b.vw, 0) / vol : null;
 }
+function vwapSeries(bars) {
+  let volume = 0;
+  let dollars = 0;
+  return bars.map((bar) => {
+    if (!Number.isFinite(bar.vw) || !Number.isFinite(bar.v) || bar.v <= 0) return null;
+    volume += bar.v;
+    dollars += bar.v * bar.vw;
+    return volume > 0 ? dollars / volume : null;
+  });
+}
 function swingEligible(key, daily) {
   if (!(daily?.barCount >= 200 && daily.price >= 5 && daily.price > daily.ma200 &&
         daily.avgDollarVolume20d >= 20000000 && daily.atr14 > 0)) return false;
@@ -87,6 +137,25 @@ function swingEligible(key, daily) {
   }
   return daily.ma20 > daily.ma50 && daily.ma50 > daily.ma200 &&
     Number.isFinite(daily.high20) && daily.high20 - daily.price <= daily.atr14;
+}
+function momentumBullFlagReady(candles, daily) {
+  if (!Number.isFinite(daily?.atr14) || candles.length < 6) return false;
+  const recent = candles.slice(-6);
+  const impulse = recent.slice(0, 3).some((bar) => bar.c > bar.o && (bar.c - bar.o) >= 0.35 * daily.atr14);
+  const flag = recent.slice(3, 5);
+  const flagHigh = Math.max(...flag.map((bar) => bar.h));
+  const flagLow = Math.min(...flag.map((bar) => bar.l));
+  const flagVolumeDeclines = flag.every((bar) => bar.v <= Math.max(...recent.slice(0, 3).map((item) => item.v)));
+  const last = recent.at(-1);
+  return (
+    impulse &&
+    flag.length === 2 &&
+    flag.every((bar) => bar.c <= bar.o || Math.abs(bar.c - bar.o) <= 0.2 * daily.atr14) &&
+    flagLow > candles[0].l &&
+    flagVolumeDeclines &&
+    last.c > flagHigh &&
+    last.c > last.o
+  );
 }
 function evaluate({
   daily,
@@ -159,6 +228,24 @@ function evaluate({
     );
   }
   if (
+    minutes >= 25 &&
+    minutes <= 180 &&
+    rangeComplete &&
+    rvol >= 1.5 &&
+    candles.slice(3, -1).some((bar) => bar.c > high) &&
+    last.l <= high * 1.003 &&
+    last.c > high &&
+    last.c > last.o
+  ) {
+    const stop = Math.min(last.l, high - 0.15 * daily.atr14);
+    add(
+      "orb15_retest",
+      stop,
+      last.c + 2 * (last.c - stop),
+      "פריצה מעל טווח הפתיחה, בדיקה חוזרת של הרמה ונר אישור",
+    );
+  }
+  if (
     minutes >= 20 &&
     minutes <= 120 &&
     gapPct >= 3 &&
@@ -201,6 +288,52 @@ function evaluate({
       stop,
       last.c + 2 * (last.c - stop),
       "חזרה מעל VWAP של IEX עם אישור בנר סגור",
+    );
+  }
+  const vwSeries = vwapSeries(candles);
+  const lastVw = vwSeries.at(-1);
+  const priorAboveVwap = candles.slice(Math.max(0, candles.length - 5), -1)
+    .some((bar, index, subset) => {
+      const absoluteIndex = candles.length - subset.length - 1 + index;
+      const itemVwap = vwSeries[absoluteIndex];
+      return itemVwap && bar.c > itemVwap;
+    });
+  if (
+    minutes >= 30 &&
+    minutes <= 300 &&
+    lastVw &&
+    rvol >= 1.2 &&
+    priorAboveVwap &&
+    last.l <= lastVw * 1.003 &&
+    last.c > lastVw &&
+    last.c > last.o &&
+    last.c > prev.h
+  ) {
+    const stop = Math.min(last.l, lastVw - 0.1 * daily.atr14);
+    add(
+      "vwap_pullback",
+      stop,
+      last.c + 2 * (last.c - stop),
+      "תיקון ל־VWAP במגמה עולה וחידוש עלייה בנר סגור",
+    );
+  }
+  if (
+    minutes >= 20 &&
+    minutes <= 150 &&
+    gapPct >= 3 &&
+    hasNews === true &&
+    rvol >= 2 &&
+    momentumBullFlagReady(candles, daily)
+  ) {
+    const recent = candles.slice(-6);
+    const flag = recent.slice(3, 5);
+    const flagLow = Math.min(...flag.map((bar) => bar.l));
+    const stop = Math.min(flagLow, last.l);
+    add(
+      "momentum_bull_flag",
+      stop,
+      last.c + 2 * (last.c - stop),
+      "גאפ עם חדשות, דחף ראשון, דגל קצר ופריצה חוזרת בנפח יחסי גבוה",
     );
   }
   if (
@@ -289,6 +422,12 @@ function evaluateDetailed(args) {
   else if (args.rvol < 1.5) setReason("orb15", "rvol_below_threshold");
   else if (!(prev.c <= high && last.c > high && last.c > last.o)) setReason("orb15", "trigger_not_met");
 
+  if (minutes < 25 || minutes > 180) setReason("orb15_retest", "outside_window");
+  else if (!rangeComplete) setReason("orb15_retest", "opening_range_incomplete");
+  else if (args.rvol == null) setReason("orb15_retest", "rvol_missing");
+  else if (args.rvol < 1.5) setReason("orb15_retest", "rvol_below_threshold");
+  else if (!(candles.slice(3, -1).some((bar) => bar.c > high) && last.l <= high * 1.003 && last.c > high && last.c > last.o)) setReason("orb15_retest", "trigger_not_met");
+
   if (minutes < 20 || minutes > 120) setReason("gap_pullback", "outside_window");
   else if (!(args.gapPct >= 3)) setReason("gap_pullback", "daily_missing");
   else if (args.rvol == null) setReason("gap_pullback", "rvol_missing");
@@ -311,6 +450,29 @@ function evaluateDetailed(args) {
   else if (!vw || !prevVw) setReason("vwap_reclaim", "intraday_missing");
   else if (!(prev.c <= prevVw && last.c > vw && last.c > last.o)) setReason("vwap_reclaim", "trigger_not_met");
 
+  const vwSeries = vwapSeries(candles);
+  const lastVw = vwSeries.at(-1);
+  const priorAboveVwap = candles.slice(Math.max(0, candles.length - 5), -1)
+    .some((bar, index, subset) => {
+      const absoluteIndex = candles.length - subset.length - 1 + index;
+      const itemVwap = vwSeries[absoluteIndex];
+      return itemVwap && bar.c > itemVwap;
+    });
+  if (minutes < 30 || minutes > 300) setReason("vwap_pullback", "outside_window");
+  else if (args.rvol == null) setReason("vwap_pullback", "rvol_missing");
+  else if (args.rvol < 1.2) setReason("vwap_pullback", "rvol_below_threshold");
+  else if (!lastVw) setReason("vwap_pullback", "intraday_missing");
+  else if (!(priorAboveVwap && last.l <= lastVw * 1.003 && last.c > lastVw && last.c > last.o && last.c > prev.h)) setReason("vwap_pullback", "trigger_not_met");
+
+  if (minutes < 20 || minutes > 150) setReason("momentum_bull_flag", "outside_window");
+  else if (!(args.gapPct >= 3)) setReason("momentum_bull_flag", "daily_missing");
+  else if (args.rvol == null) setReason("momentum_bull_flag", "rvol_missing");
+  else if (args.rvol < 2) setReason("momentum_bull_flag", "rvol_below_threshold");
+  else if (!momentumBullFlagReady(candles, args.daily)) setReason("momentum_bull_flag", "trigger_not_met");
+  else if (args.hasNews == null) setReason("momentum_bull_flag", "news_needed");
+  else if (args.hasNews === "unavailable") setReason("momentum_bull_flag", "news_unavailable");
+  else if (args.hasNews === false) setReason("momentum_bull_flag", "news_absent");
+
   if (minutes < 20 || minutes > 330) setReason("reversal5", "outside_window");
   else if (!(args.daily?.price > args.daily?.ma200)) setReason("reversal5", "daily_missing");
   else if (!(args.daily?.return5d <= -5 && args.daily?.rsi14 < 35)) setReason("reversal5", "daily_missing");
@@ -329,4 +491,17 @@ function evaluateDetailed(args) {
   }
   return { plans, results: byStrategy };
 }
-module.exports = { STRATEGIES, evaluate, evaluateDetailed, completed, vwap, swingEligible };
+module.exports = {
+  STRATEGIES,
+  DAY_STRATEGY_KEYS,
+  SWING_STRATEGY_KEYS,
+  ALL_STRATEGY_KEYS,
+  isDayStrategy,
+  evaluate,
+  evaluateDetailed,
+  completed,
+  vwap,
+  vwapSeries,
+  swingEligible,
+  momentumBullFlagReady,
+};

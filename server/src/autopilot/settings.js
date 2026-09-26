@@ -1,4 +1,5 @@
 const store = require("./store");
+const { ALL_STRATEGY_KEYS } = require("./strategies");
 const DEFAULTS = {
   enabled: true,
   equity: 100,
@@ -12,11 +13,11 @@ const DEFAULTS = {
   fractional: true,
   fees: "none",
   slippagePct: 0.1,
-  strategies: ["orb15", "gap_pullback", "vwap_reclaim", "reversal5"],
+  strategies: ["orb15", "orb15_retest", "gap_pullback", "vwap_reclaim", "vwap_pullback", "momentum_bull_flag", "reversal5"],
   excludedSymbols: [],
   setupComplete: false,
 };
-const ALLOWED_STRATEGIES = ["orb15", "gap_pullback", "vwap_reclaim", "reversal5", "pullback2_v1", "breakout20_v1"];
+const ALLOWED_STRATEGIES = ALL_STRATEGY_KEYS;
 function read(userId) {
   const saved = userId
     ? store.getUser(userId, "config", "settings")

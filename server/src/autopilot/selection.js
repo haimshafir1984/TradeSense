@@ -1,6 +1,6 @@
 const store = require("./store");
 const market = require("./market");
-const { swingEligible } = require("./strategies");
+const { ALL_STRATEGY_KEYS, swingEligible, isDayStrategy } = require("./strategies");
 const feedback = require("./feedback");
 
 const parsedCap = Number(process.env.AUTOPILOT_DEEP_SCAN_MAX || 120);
@@ -72,6 +72,9 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
     if (strategySet.has("orb15") && chg > 0) {
       pushSorted(lists, "orb15", { ...row, price, snapshot, daily, score: chg, volume, candidateFor: "orb15" });
     }
+    if (strategySet.has("orb15_retest") && chg > 0) {
+      pushSorted(lists, "orb15_retest", { ...row, price, snapshot, daily, score: chg, volume, candidateFor: "orb15_retest" });
+    }
     const gap = openingGapPct(snapshot, row.close || daily?.price, todayDate);
     if (strategySet.has("gap_pullback") && gap >= 3) {
       pushSorted(lists, "gap_pullback", {
@@ -84,6 +87,18 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
         candidateFor: "gap_pullback",
       });
     }
+    if (strategySet.has("momentum_bull_flag") && gap >= 3) {
+      pushSorted(lists, "momentum_bull_flag", {
+        ...row,
+        price,
+        snapshot,
+        daily,
+        score: gap,
+        volume,
+        gapPct: gap,
+        candidateFor: "momentum_bull_flag",
+      });
+    }
     if (strategySet.has("vwap_reclaim") && volume > 0) {
       const rvolScore = rvolScores ? rvolScores.get(row.symbol) : comparableRvolScore(row.symbol, intradayCache, calendar, today, now);
       pushSorted(lists, "vwap_reclaim", {
@@ -94,6 +109,18 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
         score: Number.isFinite(rvolScore) ? rvolScore : null,
         volume,
         candidateFor: "vwap_reclaim",
+      });
+    }
+    if (strategySet.has("vwap_pullback") && volume > 0) {
+      const rvolScore = rvolScores ? rvolScores.get(row.symbol) : comparableRvolScore(row.symbol, intradayCache, calendar, today, now);
+      pushSorted(lists, "vwap_pullback", {
+        ...row,
+        price,
+        snapshot,
+        daily,
+        score: Number.isFinite(rvolScore) ? rvolScore : null,
+        volume,
+        candidateFor: "vwap_pullback",
       });
     }
     if (
@@ -127,7 +154,7 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
       if (key === "reversal5") {
         return left.score - right.score || left.secondary - right.secondary || left.symbol.localeCompare(right.symbol);
       }
-      if (key === "vwap_reclaim") {
+      if (key === "vwap_reclaim" || key === "vwap_pullback") {
         const leftScore = left.score == null ? -Infinity : left.score;
         const rightScore = right.score == null ? -Infinity : right.score;
         return rightScore - leftScore || right.volume - left.volume || left.symbol.localeCompare(right.symbol);
@@ -155,8 +182,7 @@ function buildLists({ rows, snapshots, dailyFeatures, intradayCache, rvolScores,
 }
 
 function roundRobin(lists, limit = MAX_STRATEGY_SELECTED, lane = null, fairBuckets = true) {
-  const allKeys = ["orb15", "gap_pullback", "vwap_reclaim", "reversal5", "pullback2_v1", "breakout20_v1"];
-  const keys = allKeys.filter((key) => lists[key]?.length && (!lane || (["orb15", "gap_pullback", "vwap_reclaim"].includes(key) ? lane === "day" : lane === "swing")));
+  const keys = ALL_STRATEGY_KEYS.filter((key) => lists[key]?.length && (!lane || (isDayStrategy(key) ? lane === "day" : lane === "swing")));
   if (!fairBuckets) {
     const indexes = Object.fromEntries(keys.map((key) => [key, 0]));
     const picked = [], seenSymbols = new Set();

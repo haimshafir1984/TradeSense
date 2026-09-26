@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const store = require("./store");
 const market = require("./market");
+const { isDayStrategy } = require("./strategies");
 
 const BASELINE_POLICY_VERSION = "baseline-v3";
 const SHADOW_POLICY_VERSION = "feedback-simple-shadow-v1";
@@ -136,7 +137,7 @@ function candidateFeatureSnapshot(row = {}, strategy = row.selectedFor || row.ca
     featureSchemaVersion: FEATURE_SCHEMA_VERSION,
     strategy: strategy || features.strategy || "unknown",
     strategyVersion: row.strategyVersion || row.version || features.strategyVersion || null,
-    lane: row.lane || features.lane || (["orb15", "gap_pullback", "vwap_reclaim"].includes(strategy) ? "day" : "swing"),
+    lane: row.lane || features.lane || (isDayStrategy(strategy) ? "day" : "swing"),
     decisionAt,
     featureAvailableAt,
     rvol,
@@ -269,7 +270,7 @@ function recordSelectionDecision({ scanId, row, strategy, selected, baselineRank
     setupId,
     row.symbol,
     strategy,
-    ["orb15", "gap_pullback", "vwap_reclaim"].includes(strategy) ? "day" : "swing",
+    isDayStrategy(strategy) ? "day" : "swing",
     selected ? 1 : 0,
     baselineRank ?? null,
     policyRank ?? null,

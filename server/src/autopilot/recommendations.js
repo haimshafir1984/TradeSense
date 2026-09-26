@@ -109,14 +109,14 @@ function compactFeatures(signal) {
 }
 
 function fastMomentumTags(signal) {
-  const momentum = ["orb15", "gap_pullback"].includes(signal.strategy);
+  const momentum = ["orb15", "orb15_retest", "gap_pullback", "vwap_pullback", "momentum_bull_flag"].includes(signal.strategy);
   const atrPct = signal.daily?.atr14 && signal.daily?.price
     ? (signal.daily.atr14 / signal.daily.price) * 100
     : null;
   const fast = momentum && signal.rvol >= 2 && atrPct >= 3;
   return {
     fast_momentum_candidate: fast,
-    fast_momentum_reason: fast ? "momentum_strategy_rvol2_atr3" : null,
+    fast_momentum_reason: fast ? "day_momentum_strategy_rvol2_atr3" : null,
   };
 }
 

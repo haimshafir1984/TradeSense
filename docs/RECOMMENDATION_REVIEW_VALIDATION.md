@@ -254,3 +254,58 @@ Limits:
   prove improved accuracy, profitability or production readiness.
 - The 30-minute / one-million-receipt stress test, backup/restore drill and
   deployment scheduler verification were not run in this local turn.
+
+## Intraday strategy expansion, 2026-09-26
+
+Implemented after reviewing the short-term strategy suggestions against the
+current V3 engine:
+
+- Added three measurable, separately versioned strategy variants instead of
+  changing the historical meaning of existing strategy keys:
+  - `orb15_retest` — opening-range breakout only after a prior break, retest of
+    the 15-minute range high and a confirming closed candle.
+  - `vwap_pullback` — trend-above-VWAP continuation after a pullback into the
+    VWAP area and a confirming closed candle.
+  - `momentum_bull_flag` — aggressive gap/news/RVOL setup requiring a first
+    impulse, two-bar flag/pullback and breakout confirmation.
+- Kept old strategy versions unchanged at `3.1.0`; the new hypothesis variants
+  are `1.0.0` and are tracked separately in recommendation IDs, quality reports
+  and feedback datasets.
+- Added shared strategy metadata helpers so day/swing lane assignment is no
+  longer hardcoded to only `orb15`, `gap_pullback` and `vwap_reclaim`.
+- Connected the new variants to selection lists, round-robin allocation,
+  SIP-context prioritization, scan attempts, shadow candidates, compact feedback
+  snapshots and selection-decision logging.
+- Added `orb15_retest` and `vwap_pullback` to the default strategy list.
+  `momentum_bull_flag` is present in the default list but remains `aggressive`,
+  so balanced-risk users are filtered out by the existing risk gate.
+- Extended the existing news gate so `momentum_bull_flag`, like
+  `gap_pullback`, asks Finnhub for news only after the price pattern is otherwise
+  ready. If the pattern is not ready, the reason remains `trigger_not_met`.
+- Updated `fast_momentum_candidate` tagging so the new intraday continuation
+  variants are tracked in recommendation summaries when RVOL and ATR% are high
+  enough.
+- Updated the dashboard scan-distribution text to show counts for ORB Retest,
+  VWAP Pullback and Bull Flag candidates.
+
+Validation commands:
+
+```powershell
+npm test --workspace server -- --test-name-pattern "new day strategy variants|gap pullback asks|selection uses strategy|VWAP selection"
+```
+
+Result:
+
+- Targeted server tests passed: 337/337. The new test covers ORB Retest, VWAP
+  Pullback, Momentum Bull Flag, and the requirement that Bull Flag asks for news
+  only after the price trigger is ready.
+
+Limits:
+
+- These are implementation-level hypothesis variants, not proven profitable
+  strategies.
+- The variants depend on the existing IEX 5-minute intraday feed, RVOL context
+  and Finnhub news availability; missing provider data remains fail-closed or
+  shadow-only according to the existing scan rules.
+- No live market/browser validation or long stress run is implied by the
+  targeted test above; those must be reported separately per release run.
