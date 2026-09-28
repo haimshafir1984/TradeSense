@@ -1,17 +1,72 @@
 const { DatabaseSync } = require("node:sqlite");
 const path = require("node:path");
 const fs = require("node:fs");
+const os = require("node:os");
 let db;
+let dbFile;
+
+function ensureWritableDirectory(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, `.tradesense-write-test-${process.pid}-${Date.now()}`);
+    fs.writeFileSync(probe, "ok");
+    fs.unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function defaultDatabaseCandidates() {
+  const local = path.resolve(__dirname, "../data/autopilot.sqlite");
+  const temp = path.join(os.tmpdir(), "tradesense", "autopilot.sqlite");
+  if (process.env.RENDER) return ["/var/data/autopilot.sqlite", temp];
+  return [local, "/var/data/autopilot.sqlite", temp];
+}
+
+function resolveDatabaseFile() {
+  if (process.env.AUTOPILOT_DB_PATH) return path.resolve(process.env.AUTOPILOT_DB_PATH);
+  for (const candidate of defaultDatabaseCandidates()) {
+    if (ensureWritableDirectory(path.dirname(candidate))) return candidate;
+  }
+  return path.join(os.tmpdir(), "tradesense", "autopilot.sqlite");
+}
+
+function configureJournal(database, file) {
+  database.exec("PRAGMA busy_timeout=5000;");
+  try {
+    database.exec("PRAGMA journal_mode=WAL;");
+  } catch (error) {
+    console.warn(`[autopilot-store] WAL unavailable for ${file}; falling back to DELETE journal. ${error.message}`);
+    database.exec("PRAGMA journal_mode=DELETE;");
+  }
+}
+
+function openDatabase(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const database = new DatabaseSync(file);
+  configureJournal(database, file);
+  database.exec(
+    "CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL, metadata TEXT, PRIMARY KEY(kind,id));",
+  );
+  return database;
+}
+
 function database() {
   if (!db) {
-    const file =
-      process.env.AUTOPILOT_DB_PATH ||
-      path.resolve(__dirname, "../data/autopilot.sqlite");
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    db = new DatabaseSync(file);
-    db.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL, metadata TEXT, PRIMARY KEY(kind,id));",
-    );
+    const file = resolveDatabaseFile();
+    try {
+      db = openDatabase(file);
+      dbFile = file;
+      if (!process.env.AUTOPILOT_DB_PATH && process.env.RENDER && !file.startsWith("/var/data/")) {
+        console.warn(`[autopilot-store] AUTOPILOT_DB_PATH is not set and /var/data is not writable. Using ephemeral SQLite at ${file}; data will not survive deploys.`);
+      } else {
+        console.log(`[autopilot-store] SQLite path: ${file}`);
+      }
+    } catch (error) {
+      error.message = `Failed to initialize autopilot SQLite at ${file}: ${error.message}. On Render, attach a persistent disk mounted at /var/data and set AUTOPILOT_DB_PATH=/var/data/autopilot.sqlite.`;
+      throw error;
+    }
     db.exec(`
       PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS recommendation_migrations (
@@ -361,10 +416,14 @@ function close() {
   if (db) {
     db.close();
     db = null;
+    dbFile = null;
   }
 }
 module.exports = {
   database,
+  resolveDatabaseFile,
+  ensureWritableDirectory,
+  get dbFile() { return dbFile; },
   get,
   list,
   listIds,
