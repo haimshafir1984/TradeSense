@@ -15,12 +15,30 @@ console.log(
 );
 startMemoryDiagnostics();
 
+let autopilotRetryTimer = null;
+function startAutopilotSafely() {
+  try {
+    require("./autopilot/engine").start();
+    console.log("[startup] Autopilot scheduler started");
+  } catch (error) {
+    console.error(`[startup] Autopilot scheduler failed to start: ${error.stack || error.message}`);
+    if (!autopilotRetryTimer) {
+      autopilotRetryTimer = setTimeout(() => {
+        autopilotRetryTimer = null;
+        startAutopilotSafely();
+      }, 60000);
+      autopilotRetryTimer.unref?.();
+    }
+  }
+}
+
 // The server owns the persistent v3 scheduler; browser visits never trigger monitoring.
 app.listen(port, () => {
   console.log(`TradeSense API listening on port ${port}`);
-  require("./autopilot/engine").start();
+  startAutopilotSafely();
 });
 process.on("SIGTERM", () => {
+  if (autopilotRetryTimer) clearTimeout(autopilotRetryTimer);
   require("./autopilot/engine").stop();
   process.exit(0);
 });
