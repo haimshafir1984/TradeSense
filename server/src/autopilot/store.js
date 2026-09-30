@@ -32,13 +32,26 @@ function resolveDatabaseFile() {
   return path.join(os.tmpdir(), "tradesense", "autopilot.sqlite");
 }
 
+function fallbackDatabaseFile(primaryFile) {
+  const temp = path.join(os.tmpdir(), "tradesense", "autopilot.sqlite");
+  return path.resolve(primaryFile) === path.resolve(temp) ? null : temp;
+}
+
 function configureJournal(database, file) {
-  database.exec("PRAGMA busy_timeout=5000;");
+  try {
+    database.exec("PRAGMA busy_timeout=5000;");
+  } catch (error) {
+    console.warn(`[autopilot-store] busy_timeout unavailable for ${file}; continuing. ${error.message}`);
+  }
   try {
     database.exec("PRAGMA journal_mode=WAL;");
   } catch (error) {
     console.warn(`[autopilot-store] WAL unavailable for ${file}; falling back to DELETE journal. ${error.message}`);
-    database.exec("PRAGMA journal_mode=DELETE;");
+    try {
+      database.exec("PRAGMA journal_mode=DELETE;");
+    } catch (fallbackError) {
+      console.warn(`[autopilot-store] DELETE journal unavailable for ${file}; continuing with SQLite default. ${fallbackError.message}`);
+    }
   }
 }
 
@@ -64,8 +77,20 @@ function database() {
         console.log(`[autopilot-store] SQLite path: ${file}`);
       }
     } catch (error) {
-      error.message = `Failed to initialize autopilot SQLite at ${file}: ${error.message}. On Render, attach a persistent disk mounted at /var/data and set AUTOPILOT_DB_PATH=/var/data/autopilot.sqlite.`;
-      throw error;
+      const fallback = fallbackDatabaseFile(file);
+      console.warn(`[autopilot-store] Failed to initialize SQLite at ${file}: ${error.message}`);
+      if (!fallback) {
+        error.message = `Failed to initialize autopilot SQLite at ${file}: ${error.message}. On Render, attach a persistent disk mounted at /var/data and set AUTOPILOT_DB_PATH=/var/data/autopilot.sqlite.`;
+        throw error;
+      }
+      try {
+        db = openDatabase(fallback);
+        dbFile = fallback;
+        console.warn(`[autopilot-store] Using ephemeral fallback SQLite at ${fallback}; data will not survive deploys. Fix /var/data or AUTOPILOT_DB_PATH for persistence.`);
+      } catch (fallbackError) {
+        fallbackError.message = `Failed to initialize autopilot SQLite at ${file} and fallback ${fallback}: ${fallbackError.message}. On Render, attach a persistent disk mounted at /var/data and set AUTOPILOT_DB_PATH=/var/data/autopilot.sqlite.`;
+        throw fallbackError;
+      }
     }
     db.exec(`
       PRAGMA foreign_keys=ON;
