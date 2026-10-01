@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 let db;
 let dbFile;
+let persistence = { ephemeral: false, reason: null, file: null, detectedAt: null };
 
 function ensureWritableDirectory(dir) {
   try {
@@ -72,7 +73,16 @@ function database() {
       db = openDatabase(file);
       dbFile = file;
       if (!process.env.AUTOPILOT_DB_PATH && process.env.RENDER && !file.startsWith("/var/data/")) {
-        console.warn(`[autopilot-store] AUTOPILOT_DB_PATH is not set and /var/data is not writable. Using ephemeral SQLite at ${file}; data will not survive deploys.`);
+        persistence = {
+          ephemeral: true,
+          reason: "/var/data is not writable and AUTOPILOT_DB_PATH is not set",
+          file,
+          detectedAt: new Date().toISOString(),
+        };
+        // Loud and repeated on purpose: this used to fail silently (push subscriptions and
+        // signal history reset on every Render restart with no visible symptom beyond
+        // "notifications stopped"). See docs/DEPLOYMENT.md persistent-disk section.
+        console.error(`[autopilot-store] EPHEMERAL STORAGE: AUTOPILOT_DB_PATH is not set and /var/data is not writable. Using ${file}. Push subscriptions and signal/trade history will be LOST on every deploy or restart. Attach a persistent disk mounted at /var/data and set AUTOPILOT_DB_PATH=/var/data/autopilot.sqlite.`);
       } else {
         console.log(`[autopilot-store] SQLite path: ${file}`);
       }
@@ -86,7 +96,13 @@ function database() {
       try {
         db = openDatabase(fallback);
         dbFile = fallback;
-        console.warn(`[autopilot-store] Using ephemeral fallback SQLite at ${fallback}; data will not survive deploys. Fix /var/data or AUTOPILOT_DB_PATH for persistence.`);
+        persistence = {
+          ephemeral: true,
+          reason: `failed to initialize SQLite at ${file}: ${error.message}`,
+          file: fallback,
+          detectedAt: new Date().toISOString(),
+        };
+        console.error(`[autopilot-store] EPHEMERAL STORAGE: using fallback SQLite at ${fallback} because ${file} failed to initialize (${error.message}). Push subscriptions and signal/trade history will be LOST on every deploy or restart. Fix /var/data or AUTOPILOT_DB_PATH for persistence.`);
       } catch (fallbackError) {
         fallbackError.message = `Failed to initialize autopilot SQLite at ${file} and fallback ${fallback}: ${fallbackError.message}. On Render, attach a persistent disk mounted at /var/data and set AUTOPILOT_DB_PATH=/var/data/autopilot.sqlite.`;
         throw fallbackError;
@@ -442,12 +458,17 @@ function close() {
     db.close();
     db = null;
     dbFile = null;
+    persistence = { ephemeral: false, reason: null, file: null, detectedAt: null };
   }
+}
+function persistenceStatus() {
+  return { ...persistence };
 }
 module.exports = {
   database,
   resolveDatabaseFile,
   ensureWritableDirectory,
+  persistenceStatus,
   get dbFile() { return dbFile; },
   get,
   list,

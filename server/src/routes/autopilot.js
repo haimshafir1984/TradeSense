@@ -82,6 +82,7 @@ router.get("/dashboard", (req, res) => {
     stats: tracking.statistics(trades),
     events: store.listUser(req.userId, "event").slice(0, 60),
     pushDevices: store.listUser(req.userId, "subscription").length,
+    storage: store.persistenceStatus(),
   });
 });
 router.get("/recommendations/review-summary", (req, res) => {

@@ -505,6 +505,18 @@ summary {
   color: #a83930;
   border: 1px solid #f4d1cb;
 }
+.storage-banner > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.storage-banner strong {
+  font-size: 13px;
+}
+.storage-banner span {
+  font-size: 12px;
+  opacity: 0.85;
+}
 .success {
   background: #e6f5ed;
   color: #146849;

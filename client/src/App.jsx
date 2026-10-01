@@ -178,7 +178,8 @@ export default function App() {
     await api("/push/test", { method: "POST" });
   }
   const runtime = data?.runtime || {},
-    settings = data?.settings;
+    settings = data?.settings,
+    storage = data?.storage || {};
   const diagnostics = runtime.diagnostics || {},
     marketDiagnostics = runtime.marketDiagnostics || {},
     universeStatus = marketDiagnostics.universe || {},
@@ -213,6 +214,14 @@ export default function App() {
           ביצוע ידני אצל הברוקר שלך
         </span>
       </header>
+      {storage.ephemeral && (
+        <div className="banner error storage-banner" role="alert">
+          <div>
+            <strong>⚠ אחסון השרת זמני — היסטוריית איתותים ועסקאות עלולות להימחק, והתראות Push עלולות להפסיק לעבוד, בכל הפעלה מחדש של השרת.</strong>
+            <span>יש לוודא ב-Render שדיסק קבוע מחובר ב-Mount Path בדיוק /var/data, ושמשתנה הסביבה AUTOPILOT_DB_PATH מצביע עליו. פירוט: docs/DEPLOYMENT.md.</span>
+          </div>
+        </div>
+      )}
       <div className="workspace">
         <aside className="sidebar">
           <nav aria-label="ניווט ראשי">
