@@ -54,6 +54,10 @@ function session(input = {}) {
       codeHash: hash(userId, code),
       createdAt: new Date().toISOString(),
     };
+  } else if (!user.codeHash) {
+    // Set only by applyConfiguredReset(): the next login from this profile chooses a new code.
+    user.codeHash = hash(userId, code);
+    delete user.codeResetAt;
   } else if (!same(user.codeHash, hash(userId, code))) {
     const error = new Error("קוד הכניסה לא תואם לפרופיל הזה");
     error.status = 401;
@@ -77,4 +81,32 @@ function requireUser(req, _res, next) {
   }
 }
 
-module.exports = { all, session, requireUser };
+// Operator-initiated, one-shot access-code reset. Clears only the code hash: the profile id and
+// everything stored under it (signals, trades, settings, push subscriptions) stay intact.
+// AUTOPILOT_CODE_RESET is an arbitrary token; each distinct value is applied once, so leaving
+// the variable set does not reset the code again on every restart.
+// AUTOPILOT_CODE_RESET_USER is "first" (the oldest profile, default) or an explicit profile id.
+function applyConfiguredReset(env = process.env) {
+  const token = (env.AUTOPILOT_CODE_RESET || "").trim();
+  if (!token) return null;
+  const done = store.get("runtime", "code-reset") || { tokens: [] };
+  if (done.tokens.includes(token)) return null;
+  const target = (env.AUTOPILOT_CODE_RESET_USER || "first").trim();
+  const profiles = all();
+  const user =
+    target === "first"
+      ? [...profiles].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))[0]
+      : profiles.find((item) => item.id === target);
+  if (!user) {
+    console.warn(`[users] Access-code reset requested but profile "${target}" was not found; nothing changed.`);
+    return null;
+  }
+  store.transaction(() => {
+    store.put("user", user.id, { ...user, codeHash: null, codeResetAt: new Date().toISOString() });
+    store.put("runtime", "code-reset", { tokens: [...done.tokens, token].slice(-20) });
+  });
+  console.warn(`[users] Access code reset for profile ${user.id}. The next login from that profile sets a new code.`);
+  return { userId: user.id };
+}
+
+module.exports = { all, session, requireUser, applyConfiguredReset };

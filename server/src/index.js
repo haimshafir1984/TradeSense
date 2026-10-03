@@ -18,6 +18,11 @@ startMemoryDiagnostics();
 let autopilotRetryTimer = null;
 function startAutopilotSafely() {
   try {
+    require("./autopilot/users").applyConfiguredReset();
+  } catch (error) {
+    console.error(`[startup] Access-code reset failed: ${error.message}`);
+  }
+  try {
     require("./autopilot/engine").start();
     console.log("[startup] Autopilot scheduler started");
   } catch (error) {
