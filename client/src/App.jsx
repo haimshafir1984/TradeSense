@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-const BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
+// Production builds default to same-origin (the API serves this site); dev talks to :4000.
+const BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? "" : "http://localhost:4000");
 const money = (n) =>
   Number.isFinite(n)
     ? new Intl.NumberFormat("en-US", {

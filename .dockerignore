@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+node_modules
+**/node_modules
+client/dist
+research
+output
+docs
+deploy
+.env
+.env.*
+server/src/data/*.json
+server/src/data/*.sqlite*
+**/*.log

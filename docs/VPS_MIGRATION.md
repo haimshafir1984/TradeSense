@@ -1,5 +1,7 @@
 # מעבר מ־Render ל־VPS
 
+> **שרת שמריץ Dokploy או Traefik (כמו ה־VPS שלך)?** משתמשים במסמך `docs/DOKPLOY_DEPLOYMENT.md` ולא ב־`deploy/vps/setup.sh`.
+
 המטרה: להפסיק לשלם על שירות ה־Backend והדיסק ב־Render. האתר (הלקוח) וה־API ירוצו על אותו VPS מאחורי Caddy עם HTTPS אוטומטי, תחת שם דומיין אחד. קבצי ההפעלה נמצאים ב־`deploy/vps/`.
 
 אין קוד אפליקציה ששונה. נוסף רק `server/scripts/backupDb.js` (`npm run db:backup --workspace server`), גיבוי עקבי של ה־SQLite שרץ גם כשהשרת פעיל.

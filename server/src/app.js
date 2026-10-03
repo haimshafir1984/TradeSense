@@ -1,3 +1,5 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const express = require("express");
 const cors = require("cors");
 const portfolioRouter = require("./routes/portfolio");
@@ -48,5 +50,26 @@ app.use("/api/ledger", ledgerRouter);
 app.use("/api/portfolio", portfolioRouter);
 app.use("/api/backtest", backtestRouter);
 app.use("/api/anomaly-match", anomalyMatchRouter);
+
+// Single-container deployments (Dockerfile) serve the built client from the same origin. With no
+// client/dist present (dev, the Render API service) nothing is registered and behaviour is unchanged.
+const clientDist = path.resolve(process.env.CLIENT_DIST_DIR || path.join(__dirname, "../../client/dist"));
+if (fs.existsSync(path.join(clientDist, "index.html"))) {
+  app.use(
+    express.static(clientDist, {
+      index: false,
+      setHeaders(res, file) {
+        if (path.basename(file) === "sw.js" || path.basename(file) === "index.html") {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }),
+  );
+  app.use((req, res, next) => {
+    if ((req.method !== "GET" && req.method !== "HEAD") || req.path.startsWith("/api/")) return next();
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
 
 module.exports = app;
