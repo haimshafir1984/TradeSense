@@ -1,0 +1,22 @@
+[Unit]
+Description=TradeSense API and autopilot scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tradesense
+Group=tradesense
+WorkingDirectory=/opt/tradesense/server
+EnvironmentFile=/etc/tradesense/tradesense.env
+ExecStart=/opt/node24/bin/node src/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

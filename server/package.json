@@ -18,7 +18,8 @@
     "recommendations:probe-data": "node scripts/probeRecommendationData.js",
     "recommendations:stress": "node scripts/stressRecommendationArchive.js",
     "ledger:backfill": "node scripts/runLedgerBackfill.js",
-    "ledger:resolve": "node scripts/runLedgerResolve.js"
+    "ledger:resolve": "node scripts/runLedgerResolve.js",
+    "db:backup": "node scripts/backupDb.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

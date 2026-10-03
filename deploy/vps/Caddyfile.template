@@ -1,0 +1,15 @@
+__DOMAIN__ {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:4000
+	}
+
+	handle {
+		root * /opt/tradesense/client/dist
+		@serviceworker path /sw.js
+		header @serviceworker Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
