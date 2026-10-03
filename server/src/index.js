@@ -18,6 +18,11 @@ startMemoryDiagnostics();
 let autopilotRetryTimer = null;
 function startAutopilotSafely() {
   try {
+    require("./autopilot/feedback").pruneHistory();
+  } catch (error) {
+    console.error(`[startup] History pruning failed: ${error.message}`);
+  }
+  try {
     require("./autopilot/users").applyConfiguredReset();
   } catch (error) {
     console.error(`[startup] Access-code reset failed: ${error.message}`);

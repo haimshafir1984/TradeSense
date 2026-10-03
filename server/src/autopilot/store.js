@@ -442,7 +442,11 @@ function transaction(fn) {
     database().exec("COMMIT");
     return result;
   } catch (error) {
-    database().exec("ROLLBACK");
+    try {
+      database().exec("ROLLBACK");
+    } catch {
+      // SQLite already rolled back (e.g. "database or disk is full"); keep the original error.
+    }
     throw error;
   }
 }

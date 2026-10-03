@@ -417,6 +417,35 @@ function buildDataset({ asOf = new Date().toISOString(), horizon = "d5", policyV
   return { datasetId, datasetVersion, asOf, horizon, counts, coverage, checksum };
 }
 
+// Every dataset build copies the whole history into a new set of rows, and shadow/selection rows
+// were never deleted, so the database grew without bound until the Render disk filled up.
+// Gate and training metrics read only labelled rows of the latest dataset, so older dataset copies
+// and aged unlabelled shadow rows are safe to drop. Dataset headers (counts, checksum) are kept.
+function pruneHistory({ now = Date.now(), env = process.env } = {}) {
+  const retentionDays = Math.max(1, Number(env.AUTOPILOT_SHADOW_RETENTION_DAYS) || 14);
+  const keepDatasets = Math.max(1, Math.floor(Number(env.AUTOPILOT_KEEP_DATASETS) || 3));
+  const cutoff = new Date(now - retentionDays * 86400000).toISOString();
+  const result = { datasetRows: 0, shadowCandidates: 0, selectionDecisions: 0 };
+  store.transaction(() => {
+    result.datasetRows = Number(run(
+      `DELETE FROM feedback_dataset_rows WHERE dataset_id NOT IN (
+         SELECT id FROM feedback_datasets ORDER BY created_at DESC, id DESC LIMIT ?)`,
+      keepDatasets,
+    ).changes || 0);
+    result.shadowCandidates = Number(run("DELETE FROM shadow_candidates WHERE decision_at<?", cutoff).changes || 0);
+    result.selectionDecisions = Number(run("DELETE FROM selection_decisions WHERE decision_at<?", cutoff).changes || 0);
+  });
+  if (result.datasetRows + result.shadowCandidates + result.selectionDecisions > 0) {
+    try {
+      db().exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    } catch {
+      // Journal mode or locks may prevent it; freed pages are still reused by later writes.
+    }
+    console.warn(`[feedback] pruned ${JSON.stringify(result)} (retention ${retentionDays}d, keeping ${keepDatasets} datasets)`);
+  }
+  return result;
+}
+
 function ensureShadowPolicy({ now = new Date().toISOString() } = {}) {
   const existing = get("SELECT * FROM policy_candidates WHERE policy_version=?", SHADOW_POLICY_VERSION);
   if (existing) return activePolicy();
@@ -697,6 +726,7 @@ module.exports = {
   maybeApplyPolicyToList,
   recordSelectionDecision,
   buildDataset,
+  pruneHistory,
   evaluateGates,
   activatePolicy,
   rollbackPolicy,

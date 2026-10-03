@@ -788,6 +788,7 @@ async function reviewTick() {
       if (result.counts.complete || result.counts.retryable || result.counts.failed) {
         const dataset = feedback.buildDataset({ asOf: new Date(now).toISOString(), horizon: "d5" });
         feedback.evaluateGates({ datasetVersion: dataset.datasetVersion });
+        feedback.pruneHistory({ now });
       }
       state({ recommendationReview: { ...result, checkedAt: new Date().toISOString() }, feedback: feedback.status() });
     }
