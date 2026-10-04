@@ -505,6 +505,19 @@ summary {
   color: #a83930;
   border: 1px solid #f4d1cb;
 }
+.system-switch {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #d8e8e0;
+  background: #fff;
+  cursor: pointer;
+}
+.system-switch.paused {
+  background: #a83930;
+  border-color: #a83930;
+  color: #fff;
+}
 .storage-banner > div {
   display: flex;
   flex-direction: column;

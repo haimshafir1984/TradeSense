@@ -683,8 +683,18 @@ async function monitor(now) {
     }
   }
 }
+function isSystemPaused() {
+  return store.get("runtime", "system")?.paused === true;
+}
+function setSystemPaused(paused) {
+  store.put("runtime", "system", { paused: Boolean(paused), changedAt: new Date().toISOString() });
+}
 async function tick() {
   if (running) return;
+  if (isSystemPaused()) {
+    state({ heartbeatAt: new Date().toISOString(), paused: true });
+    return;
+  }
   running = true;
   try {
     const now = Date.now(),
@@ -778,7 +788,7 @@ async function tick() {
   }
 }
 async function reviewTick() {
-  if (reviewRunning) return;
+  if (reviewRunning || isSystemPaused()) return;
   reviewRunning = true;
   const now = Date.now();
   try {
@@ -820,4 +830,4 @@ function requestScan() {
   store.remove("lease", "scan");
   tick();
 }
-module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick };
+module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick, isSystemPaused, setSystemPaused };

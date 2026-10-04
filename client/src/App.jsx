@@ -211,6 +211,22 @@ export default function App() {
           <i className={runtime.marketOpen ? "dot live" : "dot"} />
           {runtime.marketOpen ? "השוק האמריקאי פתוח" : "השוק האמריקאי סגור"}
         </div>
+        <button
+          className={data?.systemPaused ? "system-switch paused" : "system-switch"}
+          disabled={busy}
+          onClick={() =>
+            act(
+              () =>
+                api("/system", {
+                  method: "POST",
+                  body: JSON.stringify({ paused: !data?.systemPaused }),
+                }),
+              data?.systemPaused ? "המערכת הופעלה" : "המערכת כובתה",
+            )
+          }
+        >
+          {data?.systemPaused ? "⏻ המערכת כבויה — להפעלה" : "⏻ כיבוי מערכת"}
+        </button>
         <span className="broker-label">
           ביצוע ידני אצל הברוקר שלך
         </span>
@@ -383,7 +399,9 @@ export default function App() {
                     />
                     <div>
                       <strong>
-                        {!runtime.healthy
+                        {data?.systemPaused
+                          ? "המערכת כבויה — אין סריקות או התראות חדשות"
+                          : !runtime.healthy
                           ? "אין כרגע חיבור פעיל למנוע"
                           : runtime.error
                             ? "נדרשת תשומת לב לנתונים"

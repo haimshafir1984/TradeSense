@@ -83,6 +83,7 @@ router.get("/dashboard", (req, res) => {
     events: store.listUser(req.userId, "event").slice(0, 60),
     pushDevices: store.listUser(req.userId, "subscription").length,
     storage: store.persistenceStatus(),
+    systemPaused: engine.isSystemPaused(),
   });
 });
 router.get("/recommendations/review-summary", (req, res) => {
@@ -108,6 +109,20 @@ router.get("/recommendations/:id", (req, res, next) => {
     return next(error);
   }
   res.json(item);
+});
+// Global pause for the whole engine (scans, monitoring, notifications). Stored data stays intact.
+router.post("/system", (req, res, next) => {
+  try {
+    if (typeof req.body?.paused !== "boolean") {
+      const error = new Error("ערך לא תקין");
+      error.status = 400;
+      throw error;
+    }
+    engine.setSystemPaused(req.body.paused);
+    res.json({ paused: engine.isSystemPaused() });
+  } catch (e) {
+    next(e);
+  }
 });
 router.patch("/settings", (req, res, next) => {
   try {
