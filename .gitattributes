@@ -2,3 +2,4 @@ deploy/vps/*.sh text eol=lf
 deploy/vps/Caddyfile.template text eol=lf
 deploy/vps/tradesense.service text eol=lf
 deploy/vps/tradesense.env.example text eol=lf
+deploy/dokploy/*.sh text eol=lf
