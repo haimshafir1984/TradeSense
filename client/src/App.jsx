@@ -38,7 +38,7 @@ const names = {
 
 export default function App() {
   const [data, setData] = useState(null),
-    [tab, setTab] = useState("today"),
+    [tab, setTab] = useState("trades"),
     [filter, setFilter] = useState("all"),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -46,7 +46,9 @@ export default function App() {
     [auth, setAuth] = useState(false),
     [code, setCode] = useState(""),
     [modal, setModal] = useState(null),
-    [legacy, setLegacy] = useState(null);
+    [legacy, setLegacy] = useState(null),
+    [executionOrders, setExecutionOrders] = useState(null),
+    [executionState, setExecutionState] = useState(null);
   useEffect(() => {
     if (tab === "trades")
       api("/legacy")
@@ -82,6 +84,21 @@ export default function App() {
     }
     return result;
   }
+  async function executionApi(path, options = {}) {
+    const response = await fetch(`${BASE}/api/execution${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token.current ? { Authorization: `Bearer ${token.current}` } : {}),
+        ...(userId.current ? { "X-TradeSense-User": userId.current } : {}),
+        ...options.headers,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "פקודות הביצוע אינן זמינות");
+    return result;
+  }
   async function login(event) {
     event.preventDefault();
     token.current = code;
@@ -102,6 +119,17 @@ export default function App() {
       setData(result);
       setAuth(false);
       setError("");
+      try {
+        const queue = await executionApi("/orders");
+        setExecutionOrders(queue.orders || []);
+      } catch {
+        setExecutionOrders(null);
+      }
+      try {
+        setExecutionState(await executionApi("/control"));
+      } catch {
+        setExecutionState(null);
+      }
     } catch (e) {
       setError(
         e.name === "TimeoutError"
@@ -208,8 +236,12 @@ export default function App() {
           </span>
         </div>
         <div className="market-pill">
-          <i className={runtime.marketOpen ? "dot live" : "dot"} />
-          {runtime.marketOpen ? "השוק האמריקאי פתוח" : "השוק האמריקאי סגור"}
+          <i className={runtime.marketOpen === true ? "dot live" : "dot"} />
+          {runtime.marketOpen === true
+            ? "השוק האמריקאי פתוח"
+            : runtime.marketOpen === false
+              ? "השוק האמריקאי סגור"
+              : "מצב השוק: לא זמין"}
         </div>
         <button
           className={data?.systemPaused ? "system-switch paused" : "system-switch"}
@@ -239,18 +271,21 @@ export default function App() {
           </div>
         </div>
       )}
+      <StatusRibbon data={data} executionState={executionState} />
       <div className="workspace">
         <aside className="sidebar">
           <nav aria-label="ניווט ראשי">
-            {[
+            {[ 
+              ["trades", "↗", "עסקאות פתוחות"],
+              ["terminal", "⌂", "מרכז שליטה"],
               ["today", "◎", "הזדמנויות היום"],
-              ["trades", "↗", "העסקאות שלי"],
-              ["results", "▤", "תוצאות ומעקב"],
+              ["results", "▤", "היסטוריית עסקאות"],
               ["settings", "⚙", "הגדרות"],
+              ["activity", "≋", "יומן פעילות"],
             ].map(([key, icon, label]) => (
               <button
                 key={key}
-                className={tab === key ? "nav-item selected" : "nav-item"}
+                className={`${tab === key ? "nav-item selected" : "nav-item"}${key === "trades" ? " priority" : ""}`}
                 onClick={() => setTab(key)}
               >
                 <span>{icon}</span>
@@ -321,6 +356,45 @@ export default function App() {
             </div>
           ) : (
             <>
+              {tab === "terminal" && (
+                <ControlTerminal
+                  data={data}
+                  executionOrders={executionOrders}
+                  executionState={executionState}
+                  busy={busy}
+                  onStart={() =>
+                    act(
+                      () => api("/system", { method: "POST", body: JSON.stringify({ paused: false }) }),
+                      "מנוע האיתותים הופעל",
+                    )
+                  }
+                  onStop={() =>
+                    act(
+                      () => api("/system", { method: "POST", body: JSON.stringify({ paused: true }) }),
+                      "מנוע האיתותים נעצר",
+                    )
+                  }
+                  onSettings={() => setTab("settings")}
+                  onAutonomousStart={() =>
+                    act(
+                      () => executionApi("/control", { method: "POST", body: JSON.stringify({ mode: "autonomous" }) }),
+                      "מסחר עצמאי הופעל בשרת",
+                    )
+                  }
+                  onAutonomousStop={() =>
+                    act(
+                      () => executionApi("/control", { method: "POST", body: JSON.stringify({ mode: "scanner" }) }),
+                      "מסחר עצמאי נעצר; הסריקה יכולה להמשיך",
+                    )
+                  }
+                  onEmergencyStop={() =>
+                    act(
+                      () => executionApi("/control", { method: "POST", body: JSON.stringify({ mode: "off" }) }),
+                      "מסחר עצמאי נעצר",
+                    )
+                  }
+                />
+              )}
               {!settings.setupComplete && (
                 <div className="setup-strip">
                   <div>
@@ -597,12 +671,32 @@ export default function App() {
                 <>
                   <div className="page-heading">
                     <div>
-                      <span className="eyebrow">העסקאות שלך</span>
-                      <h1>העסקאות שלי</h1>
+                      <span className="eyebrow">חשיפה נוכחית</span>
+                      <h1>עסקאות פתוחות</h1>
                       <p>
-                        כניסות ויציאות לפי הדיווח שלך. המערכת אינה מחוברת
-                        לחשבון.
+                        לפי הדיווח שלך. המערכת עדיין אינה מחוברת לחשבון הברוקר,
+                        ולכן אין סגירה אוטומטית של עסקאות.
                       </p>
+                    </div>
+                  </div>
+                  <div className="panel open-summary">
+                    <div>
+                      <span>עסקאות פתוחות</span>
+                      <strong>{open.length}</strong>
+                    </div>
+                    <div>
+                      <span>רווח/הפסד לא ממומש</span>
+                      {(() => {
+                        const priced = open.filter((t) => Number.isFinite(Number(t.lastPrice)) && Number.isFinite(Number(t.entry)) && Number.isFinite(Number(t.shares)));
+                        if (!open.length) return <strong>—</strong>;
+                        if (priced.length !== open.length) return <strong>לא זמין</strong>;
+                        const total = priced.reduce((sum, t) => sum + (Number(t.lastPrice) - Number(t.entry)) * Number(t.shares), 0);
+                        return <strong className={total >= 0 ? "pl-up" : "pl-down"} dir="ltr">{money(total)}</strong>;
+                      })()}
+                    </div>
+                    <div>
+                      <span>סגירה דרך MT4</span>
+                      <strong>לא זמין</strong>
                     </div>
                   </div>
                   {open.length ? (
@@ -632,6 +726,15 @@ export default function App() {
                             sub={time(t.priceAt)}
                           />
                           <Metric
+                            label="רווח/הפסד לא ממומש"
+                            value={
+                              Number.isFinite(Number(t.lastPrice)) && Number.isFinite(Number(t.entry)) && Number.isFinite(Number(t.shares))
+                                ? money((Number(t.lastPrice) - Number(t.entry)) * Number(t.shares))
+                                : "לא זמין"
+                            }
+                            sub="לפי מחיר שנצפה"
+                          />
+                          <Metric
                             label="סטופ / יעד"
                             value={`${money(t.stop)} / ${money(t.target)}`}
                             sub={`מועד יציאה: ${time(t.deadline)}`}
@@ -648,7 +751,7 @@ export default function App() {
                   ) : (
                     <div className="panel empty">
                       <span className="empty-icon">↗</span>
-                      <h2>עדיין אין עסקאות במעקב אישי</h2>
+                      <h2>אין עסקאות פתוחות כרגע</h2>
                       <p>
                         אחרי ביצוע עסקה אצל הברוקר, לחץ על ״דיווח על קנייה״
                         בכרטיס האיתות והזן את המחיר, הכמות וזמן הביצוע.
@@ -879,6 +982,7 @@ export default function App() {
                   onPush={() => act(enablePush, "ההתראות חוברו ונשלחה בדיקה")}
                 />
               )}
+              {tab === "activity" && <ActivityLog events={data.events || []} />}
               <footer>
                 TradeSense · המלצות ומעקב, ללא ביצוע פקודות · לא תחליף לייעוץ
                 השקעות · נתוני שוק בכיסוי חלקי
@@ -913,6 +1017,153 @@ export default function App() {
     </div>
   );
 }
+
+function StatusRibbon({ data, executionState }) {
+  if (!data) return null;
+  const runtime = data.runtime || {};
+  const executionMode = executionState?.mode || "off";
+  const scanner = data.systemPaused ? "מושהה" : runtime.healthy ? "פעיל" : "לא זמין";
+  const scannerTone = data.systemPaused ? "warn" : runtime.healthy ? "ok" : "muted";
+  const bot = executionMode === "autonomous" ? "פעיל" : executionMode === "scanner" ? "סורק בלבד" : executionMode === "error" ? "שגיאה" : "כבוי";
+  const botTone = executionMode === "autonomous" ? "warn" : executionMode === "error" ? "error" : "muted";
+  const mt4 = executionState?.agentConnected ? "מחובר" : executionState ? "ממתין" : "לא ידוע";
+  const mt4Tone = executionState?.agentConnected ? "ok" : "warn";
+  return (
+    <section className="status-ribbon" aria-label="תמונת מצב של המערכת">
+      <div className="status-ribbon-intro">
+        <span className="eyebrow">תמונת מצב</span>
+        <strong>סביבת דמו בלבד</strong>
+        <small>הביצוע נשאר מוגבל עד לאימות חיבור מלא.</small>
+      </div>
+      <StatusRibbonItem label="סורק" value={scanner} tone={scannerTone} />
+      <StatusRibbonItem label="בוט" value={bot} tone={botTone} />
+      <StatusRibbonItem label="חיבור MT4" value={mt4} tone={mt4Tone} />
+      <StatusRibbonItem label="חשבון" value="לא זמין" note="אין מקור ברוקר" tone="muted" />
+      <StatusRibbonItem label="P/L יומי" value="לא זמין" note="אין דיווח ביצוע" tone="muted" />
+    </section>
+  );
+}
+
+function StatusRibbonItem({ label, value, note, tone = "muted" }) {
+  return (
+    <div className={`status-ribbon-item ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{note || "מצב בזמן אמת"}</small>
+    </div>
+  );
+}
+
+function ActivityLog({ events }) {
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">מעקב שקוף</span>
+          <h1>יומן פעילות</h1>
+          <p>אירועי המערכת שנקלטו מהשרת. אין כאן נתוני חשבון שלא דווחו בפועל.</p>
+        </div>
+        <span className="demo-badge">חשבון דמו בלבד</span>
+      </div>
+      <section className="panel activity-panel">
+        <div className="section-heading">
+          <h2>אירועים אחרונים</h2>
+          <span className="subtle">{events.length} אירועים זמינים</span>
+        </div>
+        {events.length ? (
+          <div className="activity-list">
+            {events.map((event) => (
+              <article className="activity-row" key={event.id || `${event.createdAt}-${event.title}`}>
+                <span className={`activity-dot ${event.type === "exit" ? "green" : ""}`} />
+                <div>
+                  <strong>{event.title || "אירוע מערכת"}</strong>
+                  <p>{event.body || "אין פירוט נוסף"}</p>
+                </div>
+                <time dateTime={event.createdAt}>{time(event.createdAt)}</time>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="activity-empty"><span className="empty-icon small">≋</span><p>עדיין לא נרשמו אירועים.</p></div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function ControlTerminal({ data, executionOrders, executionState, busy, onStart, onStop, onSettings, onAutonomousStart, onAutonomousStop, onEmergencyStop }) {
+  const settings = data?.settings || {};
+  const runtime = data?.runtime || {};
+  const openTrades = (data?.trades || []).filter((trade) => trade.source === "personal" && trade.status === "open");
+  const history = (data?.trades || []).filter((trade) => trade.source === "personal" && trade.status === "closed");
+  const state = data?.systemPaused ? "מושהה" : runtime.healthy ? "פעיל" : "ממתין לחיבור";
+  const executionMode = executionState?.mode || "off";
+  const executionLabel = executionMode === "autonomous" ? "מסחר עצמאי פעיל" : executionMode === "scanner" ? "סורק בלבד" : executionMode === "error" ? "עצירה עקב שגיאה" : executionState ? "כבוי" : "ממתין לחיבור שרת";
+  return (
+    <>
+      <div className="terminal-hero">
+        <div>
+          <span className="eyebrow">מרכז שליטה · סביבת הדגמה</span>
+          <h1>מערכת המסחר שלך</h1>
+          <p>מקום אחד למצב המערכת, להגדרות ולאיתותים. ביצוע פקודות עדיין בבנייה.</p>
+        </div>
+        <span className="demo-badge">חשבון דמו בלבד</span>
+      </div>
+      <div className="connection-banner">
+        <span className="status-led" />
+        <div>
+          <strong>חיבור MT4: {executionState?.agentConnected ? "מחובר לחשבון דמו" : "ממתין לחיבור"}</strong>
+          <span>{executionState?.agentConnected ? "ה־EA דיווח לאחרונה והחשבון זוהה כדמו." : "הפעלת מסחר עצמאי תחסם עד שנקבל heartbeat מאומת מה־EA."}</span>
+        </div>
+        <span className="badge amber">בבנייה</span>
+      </div>
+      <div className="terminal-metrics">
+        <section className="terminal-metric"><span>מצב המערכת</span><strong>{state}</strong><small>{data?.systemPaused ? "סריקות מושהות" : "מנוע האיתותים"}</small></section>
+        <section className="terminal-metric"><span>יתרת חשבון</span><strong>—</strong><small>אין נתון ברוקר מחובר</small></section>
+        <section className="terminal-metric"><span>רווח / הפסד יומי</span><strong>—</strong><small>אין דיווח ביצוע אמיתי</small></section>
+        <section className="terminal-metric"><span>פוזיציות פתוחות</span><strong>{openTrades.length}</strong><small>דיווחים ידניים במעקב</small></section>
+      </div>
+      <div className="terminal-grid">
+        <section className="panel control-panel">
+          <div className="section-heading"><h2>בקרת מסחר עצמאי</h2><span className={executionMode === "autonomous" ? "badge live-badge" : "badge amber"}>{executionLabel}</span></div>
+          <p>הסריקה וההרשאה לשליחת פקודות מופרדות. עצירה מונעת פקודות חדשות; היא אינה טוענת שבוצעה סגירה אצל הברוקר.</p>
+          <div className="control-actions">
+            <button className="primary" disabled={busy || executionMode === "autonomous"} onClick={onAutonomousStart}>הפעל מסחר עצמאי</button>
+            <button className="secondary" disabled={busy || executionMode !== "autonomous"} onClick={onAutonomousStop}>עצור מסחר עצמאי</button>
+            <button className="secondary" disabled={busy || executionMode === "scanner"} onClick={onStart}>הפעל סריקה בלבד</button>
+            <button className="danger" disabled={busy || executionMode === "off"} onClick={onEmergencyStop}>עצירת חירום</button>
+          </div>
+          <div className="control-note"><span>◉</span> מצב נוכחי: {executionLabel}. {executionState?.reason || "השרת לא החזיר מצב ביצוע."}</div>
+        </section>
+        <section className="panel terminal-settings-card">
+          <div className="section-heading"><h2>הגדרות מסחר</h2><button className="text-button" onClick={onSettings}>עריכה מלאה ←</button></div>
+          <div className="settings-summary">
+            <div><span>סגנון</span><b>{settings.risk === "aggressive" ? "אגרסיבי" : "סולידי"}</b></div>
+            <div><span>סיכון לעסקה</span><b>{settings.riskPct ?? "—"}%</b></div>
+            <div><span>הפסד יומי מרבי</span><b>{settings.dailyLossPct ?? "—"}%</b></div>
+            <div><span>פוזיציות מרביות</span><b>{settings.maxPositions ?? "—"}</b></div>
+          </div>
+          <p className="muted">Stop Loss: לפי תוכנית האיתות. אין כרגע הגדרה כללית שמחוברת לביצוע.</p>
+        </section>
+      </div>
+      <div className="terminal-grid lower">
+        <section className="panel">
+          <div className="section-heading"><h2>פקודות ממתינות</h2><span className="badge">{executionOrders ? executionOrders.length : "—"}</span></div>
+          {executionOrders?.length ? <div className="order-list">{executionOrders.map((order) => <div className="order-row" key={order.id}><b dir="ltr">{order.symbol}</b><span>{order.side === "buy" ? "קנייה" : "מכירה"} · {order.quantity}</span><small>{order.status}</small></div>)}</div> : <p className="muted">{executionOrders === null ? "תור הביצוע אינו מחובר לממשק עדיין." : "אין פקודות ממתינות."}</p>}
+        </section>
+        <section className="panel">
+          <div className="section-heading"><h2>איתותים אחרונים</h2><button className="text-button" onClick={onSettings}>ניהול אסטרטגיות ←</button></div>
+          {(data?.signals || []).slice(0, 4).length ? <div className="signal-mini-list">{(data?.signals || []).slice(0, 4).map((signal) => <div className="signal-mini" key={signal.id}><b dir="ltr">{signal.ticker}</b><span>{signal.direction === "short" ? "מכירה" : "קנייה"}</span><small>{signal.status === "active" ? "בתוקף" : "פג"}</small></div>)}</div> : <p className="muted">אין איתותים זמינים כרגע.</p>}
+        </section>
+      </div>
+      <section className="panel terminal-history">
+        <div className="section-heading"><h2>עסקאות והיסטוריה</h2><span className="subtle">מעקב ידני בלבד עד חיבור MT4</span></div>
+        {openTrades.length || history.length ? <div className="history-chips"><span className="badge">פתוחות: {openTrades.length}</span><span className="badge">היסטוריה: {history.length}</span></div> : <p className="muted">עדיין אין עסקאות במעקב. לא יוצגו נתוני חשבון מומצאים.</p>}
+      </section>
+    </>
+  );
+}
+
 function FeedbackStatusPanel({ status }) {
   const policy = status?.activePolicy || {};
   const gate = status?.latestGateCheck;

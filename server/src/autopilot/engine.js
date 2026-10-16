@@ -12,6 +12,9 @@ const history = require("./history");
 const selection = require("./selection");
 const recommendations = require("./recommendations");
 const feedback = require("./feedback");
+const executionBridge = require("../execution/bridge");
+const executionAutonomy = require("../execution/autonomy");
+const executionRisk = require("../execution/risk");
 const { logMemory, pressure } = require("../memoryDiagnostics");
 const SELECTION_INTRADAY_CACHE_LIMIT = 200;
 const INTRADAY_BATCH_SIZE = Math.min(
@@ -508,10 +511,37 @@ async function scan(now, calendar, today) {
             status: "active",
             sizing: config.size(livePlan, settings),
           };
+          let archived;
           store.transaction(() => {
-            const archived = recommendations.archiveSignal({ userId: user.id, signal, now: Date.now() });
+            archived = recommendations.archiveSignal({ userId: user.id, signal, now: Date.now() });
             store.putUser(user.id, "signal", id, { ...signal, recommendationId: archived.id });
           });
+          // Explicit opt-in only. This persists an execution intent and never contacts a broker.
+          // Keep it outside the signal transaction because order creation has its own transaction.
+          if (
+            process.env.EXECUTION_QUEUE_ENABLED === "true" &&
+            process.env.EXECUTION_BROKER_ACCOUNT_ID &&
+            executionAutonomy.state().mode === "autonomous"
+          ) {
+            try {
+              const brokerSymbol = executionBridge.resolveBrokerSymbol(signal);
+              const mappedSignal = { ...signal, brokerSymbol };
+              executionRisk.validateSignal({
+                userId: user.id,
+                signal: mappedSignal,
+                brokerAccountId: process.env.EXECUTION_BROKER_ACCOUNT_ID,
+                symbol: brokerSymbol,
+              });
+              executionBridge.queueSignal({
+                userId: user.id,
+                signal: mappedSignal,
+                brokerAccountId: process.env.EXECUTION_BROKER_ACCOUNT_ID,
+                symbol: brokerSymbol,
+              });
+            } catch (error) {
+              console.warn(`[execution] signal ${id} was not queued: ${error.code || "risk_check_failed"} ${error.message}`);
+            }
+          }
           matches++;
           counters.newSignals++;
           if (!signal.sizing.feasible) counters.infeasibleSizing++;
