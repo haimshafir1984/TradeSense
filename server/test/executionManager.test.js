@@ -67,7 +67,7 @@ test("risk profile validation: defaults, required loss limit, tier rules, short 
     assert.equal(d.maxConcurrent, null);
     assert.equal(d.stopLossPct, null);
     assert.equal(d.endOfDay.mode, "close");
-    assert.equal(d.autoManage, false);
+    assert.equal(d.autoManage, true);
     assert.deepEqual(d.takeProfit.tiers.map((t) => [t.triggerPct, t.sellPct]), [[3, null], [6, null], [null, null]]);
     assert.throws(() => ctx.profile.save({ dailyLoss: { pct: null, amountUsd: null } }), /חובה/);
     assert.throws(() => ctx.profile.save({ takeProfit: { tiers: [{ triggerPct: 6, sellPct: 10 }, { triggerPct: 3, sellPct: 10 }, {}] } }), /גבוה מהמדרגה הקודמת/);
@@ -173,7 +173,7 @@ test("fixed stop loss percentage is applied to long entries only when configured
 test("manager does nothing while automatic management is off, and waits when MT4 is stale", async () => {
   const ctx = load();
   try {
-    setProfile(ctx, { takeProfit: { tiers: TIERS } });
+    setProfile(ctx, { autoManage: false, takeProfit: { tiers: TIERS } });
     report(ctx, [pos("1", { currentPrice: 104 })]);
     const off = await ctx.manager.evaluate({ now: NOW });
     assert.equal(off.enabled, false);

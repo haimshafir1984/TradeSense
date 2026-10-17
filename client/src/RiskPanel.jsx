@@ -207,7 +207,7 @@ export default function RiskPanel({ executionApi, executionState, mt4Positions, 
           <span className={form.autoManage ? "badge live-badge" : "badge amber"}>{form.autoManage ? "פעיל" : "כבוי"}</span>
         </div>
         <label className="inline"><input type="checkbox" checked={form.autoManage} onChange={(e) => set({ autoManage: e.target.checked })} /> לאפשר לשרת לסגור, למכור חלקית ולהזיז סטופ בפוזיציות ש־TradeSense מנהלת (חשבון דמו, לפי ההגדרות למעלה)</label>
-        <p className="muted">כבוי כברירת מחדל. כשהוא כבוי, המגבלות עדיין חוסמות כניסות, אבל שום פוזיציה לא נסגרת ולא משתנה אוטומטית. הפעולות דורשות שה־EA יהיה במצב ביצוע. עסקאות שנפתחו ידנית ב־MT4 לעולם לא נסגרות אוטומטית.</p>
+        <p className="muted">דלוק כברירת מחדל, כך שמגבלת ההפסד היומי וסגירת סוף היום פועלות גם בלי שינוי ערכים; מדרגות הרווח לא יפעלו עד שתזין אחוזי מכירה. הפעולות מגיעות ל־MT4 רק כשדגל התור בשרת וה־EA במצב ביצוע דלוקים. כשהוא כבוי, המגבלות עדיין חוסמות כניסות, אבל שום פוזיציה לא נסגרת ולא משתנה אוטומטית. הפעולות דורשות שה־EA יהיה במצב ביצוע. עסקאות שנפתחו ידנית ב־MT4 לעולם לא נסגרות אוטומטית.</p>
         {(manager.positions || []).length > 0 ? (
           <div className="table-wrap">
             <table>

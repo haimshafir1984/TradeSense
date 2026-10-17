@@ -22,8 +22,10 @@ const DEFAULTS = Object.freeze({
   },
   endOfDay: { mode: "close" },
   // Master switch for automatic management of open positions (loss-limit close, take-profit tiers, end of day).
-  // Off by default: entries are still gated by the limits, but nothing is closed or modified automatically.
-  autoManage: false,
+  // On by default, so the protections work without any setup (daily-loss close, end-of-day close). Take-profit tiers
+  // and stop moves do nothing until values are entered. Nothing reaches MT4 unless EXECUTION_QUEUE_ENABLED is true on the
+  // server and the EA has EnableExecution=true; those remain separate, explicit safety switches.
+  autoManage: true,
   // Short selling stays disabled until the signal engine, Colmex and MT4 support are verified.
   shortEnabled: false,
 });
