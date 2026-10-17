@@ -13,19 +13,46 @@ bool PostFilled(string orderId, int ticket, double filledQuantity)
    return code >= 200 && code < 300;
   }
 
-// Realized result of positions closed since the start of the current server day (needs account history loaded in MT4).
-double ClosedToday()
+// Broker server clock offset from UTC, in seconds. It is only measured on a weekday while quotes are
+// flowing (TimeCurrent() minus the PC's UTC clock must land on a 15 minute multiple) and then remembered,
+// because on weekends TimeCurrent() is stuck on the last tick of Friday and would give a wrong offset.
+bool ServerOffsetSeconds(long &offset)
   {
-   datetime dayStart = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
-   double sum = 0;
-   for(int i = OrdersHistoryTotal() - 1; i >= 0; i--)
+   string name = "TS_ServerOffsetSec";
+   datetime gmt = TimeGMT();
+   int dow = TimeDayOfWeek(gmt);
+   if(IsConnected() && dow >= 1 && dow <= 5)
+     {
+      long diff = (long)TimeCurrent() - (long)gmt;
+      long rounded = (long)MathRound(diff / 900.0) * 900;
+      if(MathAbs(diff - rounded) <= 120 && MathAbs(rounded) <= 14 * 3600)
+         GlobalVariableSet(name, (double)rounded);
+     }
+   if(!GlobalVariableCheck(name)) return false;
+   offset = (long)GlobalVariableGet(name);
+   return true;
+  }
+
+// Closed deals of the last three days with their close time converted to UTC. The server decides which
+// New York trading day each deal belongs to. Empty string = broker clock offset unknown, nothing is claimed.
+string ClosedDealsJson()
+  {
+   long offset = 0;
+   if(!ServerOffsetSeconds(offset)) return "";
+   datetime since = TimeCurrent() - 3 * 86400;
+   string items = "";
+   int count = 0;
+   for(int i = OrdersHistoryTotal() - 1; i >= 0 && count < 200; i--)
      {
       if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY)) continue;
       if(OrderType() != OP_BUY && OrderType() != OP_SELL) continue;
-      if(OrderCloseTime() < dayStart) continue;
-      sum += OrderProfit() + OrderSwap() + OrderCommission();
+      if(OrderCloseTime() < since) continue;
+      long utc = (long)OrderCloseTime() - offset;
+      if(count > 0) items += ",";
+      items += "{\"t\":" + IntegerToString((int)utc) + ",\"p\":" + DoubleToString(OrderProfit() + OrderSwap() + OrderCommission(), 2) + "}";
+      count++;
      }
-   return sum;
+   return "[" + items + "]";
   }
 
 void ReportPositions()
@@ -66,7 +93,8 @@ void ReportPositions()
    payload += ",\"balance\":" + DoubleToString(AccountBalance(), 2);
    payload += ",\"equity\":" + DoubleToString(AccountEquity(), 2);
    payload += ",\"profit\":" + DoubleToString(AccountProfit(), 2);
-   payload += ",\"closedToday\":" + DoubleToString(ClosedToday(), 2);
+   string deals = ClosedDealsJson();
+   if(StringLen(deals) > 0) payload += ",\"closedDeals\":" + deals;
    payload += ",\"positions\":[" + items + "]}";
    string response = "";
    int code = HttpPost(ServerBaseUrl + "/api/execution/agent/positions", payload, response);
