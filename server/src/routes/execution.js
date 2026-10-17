@@ -85,6 +85,11 @@ router.put("/risk-profile", users.requireUser, (req, res) => {
   }
 });
 
+// Realized profit/loss by day, week (Mon-Fri), month, quarter and year, on New York trading dates.
+router.get("/pnl", users.requireUser, (_req, res) => {
+  res.json(require("../execution/pnlHistory").summary());
+});
+
 router.get("/positions", users.requireUser, (_req, res) => {
   res.json(positions.current());
 });

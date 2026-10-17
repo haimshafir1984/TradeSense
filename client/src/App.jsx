@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import RiskPanel from "./RiskPanel.jsx";
+import PnlPanel from "./PnlPanel.jsx";
 // Production builds default to same-origin (the API serves this site); dev talks to :4000.
 const BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? "" : "http://localhost:4000");
 const money = (n) =>
@@ -307,6 +308,7 @@ export default function App() {
               ["trades", "↗", "עסקאות פתוחות"],
               ["terminal", "⌂", "מרכז שליטה"],
               ["risk", "⚖", "ניהול סיכונים"],
+              ["pnl", "₪", "רווח והפסד"],
               ["today", "◎", "הזדמנויות היום"],
               ["results", "▤", "היסטוריית עסקאות"],
               ["settings", "⚙", "הגדרות"],
@@ -446,6 +448,7 @@ export default function App() {
                   </button>
                 </div>
               )}
+              {tab === "pnl" && <PnlPanel executionApi={executionApi} mt4Positions={mt4Positions} />}
               {tab === "risk" && (
                 <RiskPanel
                   executionApi={executionApi}

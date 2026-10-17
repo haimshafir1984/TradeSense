@@ -33,13 +33,13 @@ bool ServerOffsetSeconds(long &offset)
    return true;
   }
 
-// Closed deals of the last three days with their close time converted to UTC. The server decides which
+// Closed deals of the last four days with their close time converted to UTC. The server decides which
 // New York trading day each deal belongs to. Empty string = broker clock offset unknown, nothing is claimed.
 string ClosedDealsJson()
   {
    long offset = 0;
    if(!ServerOffsetSeconds(offset)) return "";
-   datetime since = TimeCurrent() - 3 * 86400;
+   datetime since = TimeCurrent() - 4 * 86400;
    string items = "";
    int count = 0;
    for(int i = OrdersHistoryTotal() - 1; i >= 0 && count < 200; i--)

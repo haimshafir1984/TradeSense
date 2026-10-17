@@ -1,5 +1,6 @@
 const store = require("../autopilot/store");
 const { nyDate } = require("../autopilot/market");
+const pnlHistory = require("./pnlHistory");
 
 // Read-only snapshot of the demo account as reported by the MT4 EA. It never creates or
 // changes orders; the dashboard only displays it.
@@ -68,6 +69,7 @@ function normalize(input = {}, now = Date.now()) {
 function save(input, now = Date.now()) {
   const snapshot = normalize(input, now);
   store.put("runtime", KEY, snapshot);
+  pnlHistory.record(snapshot.closedDeals, now);
   return snapshot;
 }
 
