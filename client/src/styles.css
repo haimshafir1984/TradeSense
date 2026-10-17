@@ -1196,3 +1196,37 @@ footer {
 .open-summary strong.pl-up { color: var(--green); }
 .open-summary strong.pl-down { color: #b34a44; }
 @media (max-width: 720px) { .open-summary { grid-template-columns: 1fr; } }
+
+/* control terminal: readiness + limits */
+.readiness-list, .limits-list { display: grid; gap: 6px; margin: 14px 0; font-size: 0.95rem; }
+.readiness-list > strong, .limits-list > strong { font-size: 0.9rem; opacity: 0.8; }
+.ready-ok span { color: #1a7f4b; font-weight: 700; }
+.ready-warn span { color: #b7791f; font-weight: 700; }
+.ready-block span { color: #c0392b; font-weight: 700; }
+.ready-block small { opacity: 0.75; }
+.close-requests .order-row { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+
+/* MT4 positions table: compact rows */
+.mt4-positions { padding: 14px 18px; }
+.mt4-positions .section-heading { margin-bottom: 6px; }
+.mt4-positions table { width: 100%; border-collapse: collapse; }
+.mt4-positions th, .mt4-positions td { padding: 8px 10px; line-height: 1.3; text-align: right; vertical-align: middle; }
+.mt4-positions tbody tr { border-top: 1px solid rgba(0, 0, 0, 0.08); }
+.mt4-positions p { margin: 8px 0 0; }
+.close-btn { padding: 6px 14px; font-size: 0.9rem; white-space: nowrap; }
+
+/* risk tab */
+.risk-panel { display: grid; gap: 14px; }
+.risk-panel .panel { padding: 16px 20px; }
+.risk-fields { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
+.risk-fields label, .tier-row label { display: grid; gap: 4px; font-size: 0.9rem; }
+.risk-fields label.inline { display: flex; gap: 8px; align-items: center; }
+.risk-panel input[type="text"], .risk-panel input:not([type]), .risk-panel input[inputmode] { padding: 7px 10px; border: 1px solid rgba(0,0,0,0.2); border-radius: 8px; min-width: 120px; }
+.risk-choice { display: grid; gap: 6px; margin: 10px 0; }
+.risk-choice label { display: flex; gap: 8px; align-items: center; }
+.risk-live, .risk-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 10px 0; }
+.risk-live div, .risk-status-grid div { display: grid; gap: 2px; }
+.risk-live span, .risk-status-grid span { font-size: 0.8rem; opacity: 0.7; }
+.tier-table { display: grid; gap: 8px; margin: 10px 0; }
+.tier-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.warn-text { color: #b7791f; }

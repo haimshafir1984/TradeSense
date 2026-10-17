@@ -228,6 +228,8 @@ bool PostStatus(string orderId, string status, string errorText, int ticket, dou
    return code >= 200 && code < 300;
   }
 
+#include "TradeSensePositions.mqh"
+#include "TradeSenseClose.mqh"
 void ReportHeartbeat()
   {
    if(StringLen(ExecutionToken) == 0 || StringLen(BrokerAccountId) == 0) return;
@@ -286,7 +288,7 @@ stopLoss = 0; takeProfit = 0;
       PostStatus(orderId, "unknown", "submitted_report_failed", ticket, 0);
       return;
      }
-   if(PostStatus(orderId, "filled", "", ticket, quantity)) MarkHandled(orderId, 1);
+      if(PostFilled(orderId, ticket, quantity)) MarkHandled(orderId, 1);
    else PostStatus(orderId, "unknown", "filled_report_failed", ticket, quantity);
   }
 
@@ -349,6 +351,7 @@ void OnDeinit(const int reason)
 void OnTimer()
   {
    ReportHeartbeat();
+   ReportPositions();
    if(!EnableExecution)
      {
       if(PollInDryRun) PollDryRun();
@@ -356,4 +359,5 @@ void OnTimer()
      }
    if(!DemoExecutionAllowed()) return;
    PullAndProcess();
+   PollCloseRequests();
   }

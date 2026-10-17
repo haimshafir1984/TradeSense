@@ -2,6 +2,10 @@ const express = require("express");
 const orders = require("../execution/orders");
 const users = require("../autopilot/users");
 const autonomy = require("../execution/autonomy");
+const positions = require("../execution/positions");
+const closeRequests = require("../execution/closeRequests");
+const riskProfile = require("../execution/riskProfile");
+const exitManager = require("../execution/exitManager");
 
 const router = express.Router();
 
@@ -25,11 +29,19 @@ router.get("/orders", users.requireUser, (req, res) => {
 // until the server is explicitly configured and a demo-only EA heartbeat is fresh.
 router.get("/control", users.requireUser, (_req, res) => {
   const current = autonomy.state();
-  res.json({ ...current, agentConnected: autonomy.agentConnected() });
+  res.json({
+    ...current,
+    agentConnected: autonomy.agentConnected(),
+    // Read-only facts so the dashboard can explain why starting autonomous trading is blocked.
+    autonomyEnabled: process.env.EXECUTION_AUTONOMY_ENABLED === "true",
+    queueEnabled: process.env.EXECUTION_QUEUE_ENABLED === "true",
+  });
 });
 
 router.post("/control", users.requireUser, (req, res) => {
   try {
+    // The first activation of a US trading day fixes the base for the daily loss limit.
+    if (req.body?.mode === "autonomous" && process.env.EXECUTION_AUTONOMY_ENABLED === "true") riskProfile.ensureDayBase();
     res.json(autonomy.setMode(req.body?.mode));
   } catch (error) {
     handleError(error, res);
@@ -44,6 +56,72 @@ router.get("/agent/orders", executorOnly, (req, res) => {
   // The queue exposes only unclaimed intents. Reconciliation of claimed/submitted
   // orders will use a separate status lookup so a second EA cannot execute them again.
   res.json({ orders: rows.filter((order) => order.status === "pending") });
+});
+
+// Read-only account/position snapshot reported by the EA and shown in the dashboard.
+router.post("/agent/positions", executorOnly, (req, res) => {
+  try {
+    positions.save(req.body || {});
+    res.json({ ok: true });
+    // Every fresh report drives the exit manager; its failure must never break the report itself.
+    exitManager.evaluate().catch((error) => console.warn(`[execution] exit manager: ${error.message}`));
+  } catch (error) {
+    handleError(error, res);
+  }
+});
+
+// Risk rules (limits, concurrency, stop loss, take-profit tiers, end of day) and the live state they produce.
+router.get("/risk-profile", users.requireUser, (_req, res) => {
+  const profile = riskProfile.read();
+  res.json({ profile, defaults: riskProfile.DEFAULTS, day: riskProfile.evaluateDay(Date.now(), profile), manager: exitManager.view() });
+});
+
+router.put("/risk-profile", users.requireUser, (req, res) => {
+  try {
+    const profile = riskProfile.save(req.body || {});
+    res.json({ profile, day: riskProfile.evaluateDay(Date.now(), profile) });
+  } catch (error) {
+    handleError(error, res);
+  }
+});
+
+router.get("/positions", users.requireUser, (_req, res) => {
+  res.json(positions.current());
+});
+
+// Manual close of one MT4 position. Needs an explicit confirm flag; the EA performs the close
+// (demo only, TradeSense-managed positions only) and reports back.
+router.post("/positions/:ticket/close", users.requireUser, (req, res) => {
+  try {
+    if (req.body?.confirm !== true) {
+      const error = new Error("נדרש אישור מפורש לסגירת הפוזיציה");
+      error.status = 400;
+      throw error;
+    }
+    const { request, duplicate } = closeRequests.create({ ticket: req.params.ticket, userId: req.userId });
+    res.status(duplicate ? 200 : 201).json({ request, duplicate });
+  } catch (error) {
+    handleError(error, res);
+  }
+});
+
+router.get("/close-requests", users.requireUser, (req, res) => {
+  closeRequests.sweep();
+  res.json({ requests: closeRequests.listForUser(req.userId) });
+});
+
+router.get("/agent/close-requests", executorOnly, (req, res) => {
+  const accountId = req.query.accountId || null;
+  if (!accountId) return res.status(400).json({ error: "accountId is required" });
+  res.json({ requests: closeRequests.pendingForAccount(String(accountId)) });
+});
+
+router.post("/agent/close-requests/:id/status", executorOnly, (req, res) => {
+  try {
+    res.json(closeRequests.transition(req.params.id, req.body?.status, req.body || {}));
+  } catch (error) {
+    handleError(error, res);
+  }
 });
 
 router.post("/agent/heartbeat", executorOnly, (req, res) => {

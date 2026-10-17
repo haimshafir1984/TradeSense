@@ -525,7 +525,8 @@ async function scan(now, calendar, today) {
           ) {
             try {
               const brokerSymbol = executionBridge.resolveBrokerSymbol(signal);
-              const mappedSignal = { ...signal, brokerSymbol };
+              // The user's fixed Stop Loss percentage (if set) replaces the signal stop for execution only.
+              const mappedSignal = executionRisk.applyStopPolicy({ ...signal, brokerSymbol });
               executionRisk.validateSignal({
                 userId: user.id,
                 signal: mappedSignal,
