@@ -6,6 +6,8 @@ const positions = require("../execution/positions");
 const closeRequests = require("../execution/closeRequests");
 const riskProfile = require("../execution/riskProfile");
 const exitManager = require("../execution/exitManager");
+const entryProfile = require("../execution/entryProfile");
+const entryDecision = require("../execution/entryDecision");
 
 const router = express.Router();
 
@@ -86,6 +88,19 @@ router.put("/risk-profile", users.requireUser, (req, res) => {
 });
 
 // Realized profit/loss by day, week (Mon-Fri), month, quarter and year, on New York trading dates.
+router.get("/entry", users.requireUser, (req, res) => {
+  res.json(entryDecision.view(req.userId));
+});
+
+router.put("/entry", users.requireUser, (req, res) => {
+  try {
+    entryProfile.save(req.body || {});
+    res.json(entryDecision.view(req.userId));
+  } catch (error) {
+    handleError(error, res);
+  }
+});
+
 router.get("/pnl", users.requireUser, (_req, res) => {
   res.json(require("../execution/pnlHistory").summary());
 });

@@ -14,7 +14,7 @@ const recommendations = require("./recommendations");
 const feedback = require("./feedback");
 const executionBridge = require("../execution/bridge");
 const executionAutonomy = require("../execution/autonomy");
-const executionRisk = require("../execution/risk");
+const executionEntry = require("../execution/entryDecision");
 const { logMemory, pressure } = require("../memoryDiagnostics");
 const SELECTION_INTRADAY_CACHE_LIMIT = 200;
 const INTRADAY_BATCH_SIZE = Math.min(
@@ -525,20 +525,9 @@ async function scan(now, calendar, today) {
           ) {
             try {
               const brokerSymbol = executionBridge.resolveBrokerSymbol(signal);
-              // The user's fixed Stop Loss percentage (if set) replaces the signal stop for execution only.
-              const mappedSignal = executionRisk.applyStopPolicy({ ...signal, brokerSymbol });
-              executionRisk.validateSignal({
-                userId: user.id,
-                signal: mappedSignal,
-                brokerAccountId: process.env.EXECUTION_BROKER_ACCOUNT_ID,
-                symbol: brokerSymbol,
-              });
-              executionBridge.queueSignal({
-                userId: user.id,
-                signal: mappedSignal,
-                brokerAccountId: process.env.EXECUTION_BROKER_ACCOUNT_ID,
-                symbol: brokerSymbol,
-              });
+              // The signal joins the symbol's box; the entry layer scores it and creates at most one order.
+              executionEntry.observe({ userId: user.id, signal, brokerSymbol });
+              executionEntry.flush({ userId: user.id, brokerAccountId: process.env.EXECUTION_BROKER_ACCOUNT_ID });
             } catch (error) {
               console.warn(`[execution] signal ${id} was not queued: ${error.code || "risk_check_failed"} ${error.message}`);
             }
@@ -757,6 +746,22 @@ async function tick() {
     });
     if (clock.is_open && streamKey) watch(streamKey.split(","));
     await monitor(now);
+    // Boxes waiting for their window to end are decided here, even when no new signal arrived.
+    for (const user of profiles) {
+      try {
+        executionEntry.flush({
+          userId: user.id,
+          brokerAccountId: process.env.EXECUTION_BROKER_ACCOUNT_ID,
+          enabled:
+            process.env.EXECUTION_QUEUE_ENABLED === "true" &&
+            Boolean(process.env.EXECUTION_BROKER_ACCOUNT_ID) &&
+            executionAutonomy.state().mode === "autonomous",
+          now,
+        });
+      } catch (error) {
+        console.warn(`[execution] entry flush failed: ${error.message}`);
+      }
+    }
     if (
       anyEnabled &&
       today &&

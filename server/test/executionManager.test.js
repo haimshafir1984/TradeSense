@@ -140,7 +140,11 @@ test("entry gate fails closed and enforces day base, loss limit, concurrency and
     assert.throws(() => ctx.risk.validateSignal({ ...args, signal: signal({ side: "sell", stop: 102, entry: 100, target: 96 }) }), /מכירה בחסר/);
     // concurrency: only TradeSense-managed positions and unconfirmed orders count
     setProfile(ctx, { maxConcurrent: 2 });
-    report(ctx, [pos("1"), pos("2", { managed: false }), pos("3", { managed: false })]);
+    report(ctx, [pos("1", { symbol: "Other1#" }), pos("2", { symbol: "Other2#", managed: false }), pos("3", { symbol: "Other3#", managed: false })]);
+    // one symbol, one position: the same symbol is blocked whatever the "#" suffix
+    report(ctx, [pos("9", { symbol: "Apple#" })]);
+    assert.throws(() => ctx.risk.validateSignal({ ...args, signal: signal() }), /כבר יש פוזיציה/);
+    report(ctx, [pos("1", { symbol: "Other1#" }), pos("2", { symbol: "Other2#", managed: false }), pos("3", { symbol: "Other3#", managed: false })]);
     assert.ok(ctx.risk.validateSignal({ ...args, signal: signal() }));
     ctx.store.putUser("u1", "executionOrder", "o1", { id: "o1", status: "submitted" });
     assert.throws(() => ctx.risk.validateSignal({ ...args, signal: signal() }), /במקביל/);

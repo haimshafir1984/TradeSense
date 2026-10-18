@@ -118,8 +118,6 @@ export default function RiskPanel({ executionApi, executionState, mt4Positions, 
           <span className={mt4 && fresh ? "badge live-badge" : "badge amber"}>{mt4 && fresh ? "מחובר ומדווח" : "אין דיווח עדכני"}</span>
         </div>
         <div className="risk-status-grid">
-          <div><span>חיבור MT4</span><b>{mt4 ? "מחובר, חשבון דמו" : "לא מחובר"}</b></div>
-          <div><span>דיווח פוזיציות</span><b>{fresh ? "עדכני" : "לא עדכני"}</b></div>
           <div><span>פוזיציות מנוהלות</span><b>{manager.positions?.length ?? 0}</b></div>
           <div><span>כניסות חדשות</span><b>{!fresh ? "חסומות: אין נתוני MT4" : day.breached ? "חסומות: הגעת למגבלת ההפסד" : !day.hasBase ? "חסומות עד הפעלת מסחר" : "מותרות לפי המגבלות"}</b></div>
         </div>
@@ -228,10 +226,6 @@ export default function RiskPanel({ executionApi, executionState, mt4Positions, 
         ) : <p className="muted">אין כרגע פוזיציות ש־TradeSense מנהלת.</p>}
       </section>
 
-      <section className="panel">
-        <div className="section-heading"><h2>אסטרטגיית כניסה והקצאת כמות</h2><span className="badge amber">טרם הוגדרה</span></div>
-        <p className="muted">נקבעת בשלב הבא, אחרי שיוגדרו סוגי האיתותים והנתונים שהם מספקים. ציון איכות עתידי יוכל להשפיע על גודל העסקה, אבל לא לעקוף את מגבלות הסיכון. לונג בלבד כרגע.</p>
-      </section>
     </div>
   );
 }

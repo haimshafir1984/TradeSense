@@ -44,6 +44,13 @@ function validateSignal({ userId, signal, brokerAccountId, symbol, now = Date.no
   if (!day.hasBase) reject("בסיס ההפסד היומי טרם נקבע; הפעלת המסחר קובעת אותו", "day_base_missing");
   if (day.breached || (day.limit != null && day.loss != null && day.loss >= day.limit)) reject("מגבלת ההפסד היומי הופעלה; אין כניסות חדשות עד יום המסחר הבא", "daily_loss_limit");
 
+  // One symbol, one position: no second entry while MT4 holds the symbol or an order for it is still active.
+  // MT4 reports Colmex symbols with a "#" suffix; the server uses the plain ticker.
+  const plain = (v) => String(v || "").replace(/#$/, "").toLowerCase();
+  const same = (a) => plain(a) === plain(symbol);
+  if (snapshot.positions.some((p) => same(p.symbol))) reject("כבר יש פוזיציה פתוחה במניה הזו", "symbol_busy");
+  if (store.listUser(userId, "executionOrder").some((order) => ACTIVE_ORDER.includes(order.status) && same(order.symbol))) reject("כבר יש פקודה פעילה במניה הזו", "symbol_busy");
+
   // Concurrency: only positions TradeSense manages count, plus orders that are not yet confirmed.
   if (profile.maxConcurrent != null) {
     const activeOrders = store.listUser(userId, "executionOrder").filter((order) => ACTIVE_ORDER.includes(order.status));
