@@ -128,3 +128,15 @@ test("profile validation rejects inconsistent values", () => {
   assert.throws(() => validate({ perTradeMaxPct: 60 }, DEFAULTS));
   assert.equal(validate({ windowMin: 5 }, DEFAULTS).windowMin, 5);
 });
+
+test("broker symbol: explicit mapping wins, otherwise the plain ticker, otherwise nothing", () => {
+  delete require.cache[require.resolve("../src/execution/bridge")];
+  const { resolveBrokerSymbol } = require("../src/execution/bridge");
+  delete process.env.EXECUTION_SYMBOL_MAP_JSON;
+  assert.equal(resolveBrokerSymbol({ ticker: "aapl" }), "AAPL");
+  assert.equal(resolveBrokerSymbol({ ticker: "BRK.B" }), "BRK.B");
+  assert.equal(resolveBrokerSymbol({ ticker: "bad symbol!" }), null);
+  process.env.EXECUTION_SYMBOL_MAP_JSON = JSON.stringify({ AAPL: "Apple" });
+  assert.equal(resolveBrokerSymbol({ ticker: "AAPL" }), "Apple");
+  delete process.env.EXECUTION_SYMBOL_MAP_JSON;
+});

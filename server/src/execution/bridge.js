@@ -2,13 +2,16 @@ const orders = require("./orders");
 
 function resolveBrokerSymbol(signal) {
   if (typeof signal?.brokerSymbol === "string" && signal.brokerSymbol.trim()) return signal.brokerSymbol.trim();
+  // An explicit mapping wins. Otherwise the plain ticker is used: the MT4 EA appends the broker suffix ("#" at Colmex).
+  let mapped = null;
   try {
-    const mapping = JSON.parse(process.env.EXECUTION_SYMBOL_MAP_JSON || "{}");
-    const mapped = mapping?.[signal?.ticker];
-    return typeof mapped === "string" && mapped.trim() ? mapped.trim() : null;
+    mapped = JSON.parse(process.env.EXECUTION_SYMBOL_MAP_JSON || "{}")?.[signal?.ticker];
   } catch {
-    return null;
+    mapped = null;
   }
+  if (typeof mapped === "string" && mapped.trim()) return mapped.trim();
+  const ticker = typeof signal?.ticker === "string" ? signal.ticker.trim().toUpperCase() : "";
+  return /^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker) ? ticker : null;
 }
 
 // This is the only planned boundary between v3 signals and future execution.
