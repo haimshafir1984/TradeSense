@@ -128,6 +128,14 @@ function closeBox(userId, box, patch, now) {
 function observe({ userId, signal, brokerSymbol, now = Date.now() }) {
   const id = boxId(userId, signal.ticker, now);
   const box = store.getUser(userId, BOX, id);
+  if (!brokerSymbol) {
+    // The broker does not trade this stock: say so once per day instead of queueing an order that can never run.
+    if (!box) {
+      logDecision(userId, { symbol: signal.ticker, outcome: "skipped", reason: "not_at_broker", reasonText: "המניה לא נסחרת אצל הברוקר (אין סימול ב-MT4)", strategies: [signal.strategy] }, now);
+      store.putUser(userId, BOX, id, { id, userId, symbol: signal.ticker, brokerSymbol: null, state: "skipped", reason: "not_at_broker", openedAt: new Date(now).toISOString(), closedAt: new Date(now).toISOString(), signals: [] });
+    }
+    return { state: "unmapped" };
+  }
   const entry = { id: signal.id, strategy: signal.strategy, at: new Date(now).toISOString(), signal: { ...signal, brokerSymbol } };
   if (box?.state === "entered") {
     logDecision(userId, { symbol: signal.ticker, outcome: "ignored", reason: "symbol_locked", reasonText: "כבר נכנסנו למניה הזו היום", strategies: [signal.strategy] }, now);

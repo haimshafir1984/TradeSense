@@ -127,16 +127,29 @@ test("profile validation rejects inconsistent values", () => {
   assert.equal(validate({ windowMin: 5 }, DEFAULTS).windowMin, 5);
 });
 
-test("broker symbol: explicit mapping wins, otherwise the plain ticker, otherwise nothing", () => {
+test("broker symbol: built-in Colmex names, env override, unknown stocks are null", () => {
   delete require.cache[require.resolve("../src/execution/bridge")];
   const { resolveBrokerSymbol } = require("../src/execution/bridge");
   delete process.env.EXECUTION_SYMBOL_MAP_JSON;
-  assert.equal(resolveBrokerSymbol({ ticker: "aapl" }), "AAPL");
+  assert.equal(resolveBrokerSymbol({ ticker: "aapl" }), "Apple");
   assert.equal(resolveBrokerSymbol({ ticker: "BRK.B" }), "BRK.B");
-  assert.equal(resolveBrokerSymbol({ ticker: "bad symbol!" }), null);
-  process.env.EXECUTION_SYMBOL_MAP_JSON = JSON.stringify({ AAPL: "Apple" });
-  assert.equal(resolveBrokerSymbol({ ticker: "AAPL" }), "Apple");
+  assert.equal(resolveBrokerSymbol({ ticker: "MAN" }), null);
+  assert.equal(resolveBrokerSymbol({ ticker: "DPC" }), null);
+  process.env.EXECUTION_SYMBOL_MAP_JSON = JSON.stringify({ MAN: "Manpower" });
+  assert.equal(resolveBrokerSymbol({ ticker: "MAN" }), "Manpower");
   delete process.env.EXECUTION_SYMBOL_MAP_JSON;
+});
+
+test("a stock the broker does not trade is skipped once with a clear reason", () => {
+  const ctx = load();
+  try {
+    const r = ctx.entry.observe({ userId: "u1", signal: ctx.signal("orb15", { ticker: "MAN" }), brokerSymbol: null, now: ctx.now });
+    assert.equal(r.state, "unmapped");
+    ctx.entry.observe({ userId: "u1", signal: ctx.signal("reversal5", { ticker: "MAN" }), brokerSymbol: null, now: ctx.now });
+    const log = ctx.entry.view("u1", ctx.now).decisions.filter((d) => d.reason === "not_at_broker");
+    assert.equal(log.length, 1);
+    assert.deepEqual(run(ctx), []);
+  } finally { cleanup(ctx); }
 });
 
 test("a lone signal is decided inside its life: default window leaves it valid, old saved 10 is clamped", () => {

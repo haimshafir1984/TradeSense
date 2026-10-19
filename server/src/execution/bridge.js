@@ -1,17 +1,28 @@
 const orders = require("./orders");
 
+// Colmex lists a limited set of US stocks, named by company ("Apple", not "AAPL"); the EA appends the "#" suffix.
+// Verified in the MT4 Symbols dialog (US Equities#). Johnson&J is omitted: "&" is not an allowed symbol character.
+const COLMEX_US = {
+  MMM: "3M", AMD: "AMD", MO: "Altria", AMZN: "Amazon", AXP: "AmericanEX", AAPL: "Apple", BAC: "BAC", "BRK.B": "BRK.B",
+  BA: "Boeing", AVGO: "Broadcom", CAT: "CAT", CVX: "Chevron", CSCO: "Cisco", C: "Citigroup", COST: "Costco",
+  LLY: "Eli.Lilly", XOM: "Exxon", GE: "GE", GS: "Goldman", GOOGL: "Google", GOOG: "Google", HD: "Home.Depot", IBM: "IBM",
+  INTC: "Intel", JPM: "JPMorgan", KO: "KO", LMT: "LMT", MA: "MA", META: "META", MCD: "McDonalds", MU: "Micron",
+  MSFT: "Microsoft", NFLX: "NFLX", NKE: "NIKE", NVDA: "NVDA", PFE: "PFE", QCOM: "QUALCOMM", SBUX: "Starbucks",
+  TSLA: "Tesla", UNH: "U.Health", V: "Visa", WFC: "WFC", WMT: "Walmart", DIS: "WaltDisney",
+};
+
+// Returns the broker symbol without suffix, or null when the broker does not trade this stock.
 function resolveBrokerSymbol(signal) {
   if (typeof signal?.brokerSymbol === "string" && signal.brokerSymbol.trim()) return signal.brokerSymbol.trim();
-  // An explicit mapping wins. Otherwise the plain ticker is used: the MT4 EA appends the broker suffix ("#" at Colmex).
-  let mapped = null;
-  try {
-    mapped = JSON.parse(process.env.EXECUTION_SYMBOL_MAP_JSON || "{}")?.[signal?.ticker];
-  } catch {
-    mapped = null;
-  }
-  if (typeof mapped === "string" && mapped.trim()) return mapped.trim();
   const ticker = typeof signal?.ticker === "string" ? signal.ticker.trim().toUpperCase() : "";
-  return /^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker) ? ticker : null;
+  let custom = {};
+  try {
+    custom = JSON.parse(process.env.EXECUTION_SYMBOL_MAP_JSON || "{}") || {};
+  } catch {
+    custom = {};
+  }
+  const mapped = custom[signal?.ticker] ?? custom[ticker] ?? COLMEX_US[ticker];
+  return typeof mapped === "string" && /^[A-Za-z0-9._-]{1,32}$/.test(mapped.trim()) ? mapped.trim() : null;
 }
 
 // This is the only planned boundary between v3 signals and future execution.
@@ -35,4 +46,4 @@ function queueSignal({ userId, signal, brokerAccountId = null, symbol = signal?.
   }, userId, now);
 }
 
-module.exports = { queueSignal, resolveBrokerSymbol };
+module.exports = { queueSignal, resolveBrokerSymbol, COLMEX_US };
