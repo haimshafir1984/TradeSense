@@ -1286,3 +1286,24 @@ footer {
   .command-bar { margin: 0 16px 12px; flex-wrap: wrap; }
   .command-actions { width: 100%; justify-content: flex-end; }
 }
+
+/* One merged sticky top dock: start/stop bar + live status strip */
+.top-dock { position: sticky; top: 0; z-index: 40; margin: 0 38px 14px; border: 1px solid var(--border); border-radius: 14px; background: #fff; box-shadow: 0 6px 20px rgba(23, 43, 57, 0.1); overflow: hidden; }
+.top-dock:has(.command-bar.on) { border-color: var(--green); }
+.top-dock:has(.command-bar.error) { border-color: #c0392b; }
+.top-dock .command-bar { position: static; margin: 0; padding: 8px 16px; gap: 12px; border: 0; border-radius: 0; box-shadow: none; }
+.top-dock .command-text strong { font-size: 15px; }
+.top-dock .command-text small { font-size: 12px; }
+.top-dock .command-start { font-size: 15px; padding: 7px 20px; }
+.top-dock .command-actions button { padding: 6px 14px; }
+.top-dock .status-ribbon { position: static; margin: 0; padding: 4px 8px; grid-template-columns: repeat(5, 1fr); gap: 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; background: #f6faf9; }
+.top-dock .status-ribbon-intro { display: none; }
+.top-dock .status-ribbon-item { flex-direction: row; display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 2px 8px; }
+.top-dock .status-ribbon-item small { display: none; }
+.top-dock .status-ribbon-item strong { font-size: 14px; }
+.top-dock .status-ribbon-item > span { font-size: 12px; }
+@media (max-width: 900px) {
+  .top-dock { margin: 0 16px 12px; }
+  .top-dock .status-ribbon { grid-template-columns: 1fr 1fr; }
+  .top-dock .status-ribbon-item:nth-child(n) { border-left: 0; }
+}

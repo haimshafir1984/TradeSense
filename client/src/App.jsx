@@ -302,6 +302,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <div className="top-dock">
       <CommandBar
         data={data}
         executionState={executionState}
@@ -313,6 +314,7 @@ export default function App() {
         onWhy={() => setTab("terminal")}
       />
       <StatusRibbon data={data} executionState={executionState} mt4Positions={mt4Positions} />
+      </div>
       <div className="workspace">
         <aside className="sidebar">
           <nav aria-label="ניווט ראשי">
