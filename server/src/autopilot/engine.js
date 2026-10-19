@@ -535,7 +535,7 @@ async function scan(now, calendar, today) {
           matches++;
           counters.newSignals++;
           if (!signal.sizing.feasible) counters.infeasibleSizing++;
-          if (signal.sizing.feasible && settings.setupComplete)
+          if (signal.sizing.feasible)
             notices.event(
               user.id,
               `signal:${id}`,

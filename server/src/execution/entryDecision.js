@@ -105,6 +105,17 @@ function exposureNow(userId, snapshot) {
 function logDecision(userId, entry, now) {
   const id = `${new Date(now).toISOString()}:${entry.symbol}`;
   store.putUser(userId, LOG, id, { id, at: new Date(now).toISOString(), ...entry });
+  try {
+    const notices = require("../autopilot/notifications");
+    const entered = entry.outcome === "entered";
+    notices.event(
+      userId,
+      `entry:${id}`,
+      `${entry.symbol} · ${entered ? "נכנסנו לעסקה" : "לא נכנסנו"}`,
+      entry.reasonText || entry.reason || "",
+      entered ? "signal" : "info",
+    );
+  } catch {}
   const ids = store.listUser(userId, LOG).map((e) => e.id).sort();
   for (const old of ids.slice(0, Math.max(0, ids.length - MAX_LOG))) store.removeUser(userId, LOG, old);
 }
