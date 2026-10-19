@@ -124,7 +124,7 @@ export default function EntryPanel({ executionApi, executionState, onNotice, onE
         <div className="risk-fields">
           {field("ציון מינימום לכניסה", "minScore", "מתחתיו המניה מדולגת בסוף החלון")}
           {field("ציון לכניסה מיידית", "immediateScore", "מעליו לא מחכים לסוף החלון")}
-          {field("חלון איסוף (דקות, עד 10)", "windowMin", "איתות חי 10 דקות")}
+          {field("חלון איסוף (דקות, עד 8)", "windowMin", "איתות חי 10 דקות, ההחלטה לפני שהוא פג")}
         </div>
       </section>
 

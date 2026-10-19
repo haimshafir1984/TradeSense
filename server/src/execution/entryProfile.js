@@ -5,8 +5,9 @@ const store = require("../autopilot/store");
 const KEY = "execution-entry-profile";
 
 const DEFAULTS = Object.freeze({
-  // Minutes to collect signals on one symbol before deciding (signals themselves live 10 minutes).
-  windowMin: 10,
+  // Minutes to collect signals on one symbol before deciding. A signal lives 10 minutes, so the window must end
+  // while the first signal is still valid (maximum 8): a window of 10 would expire every lone signal before the decision.
+  windowMin: 5,
   // Below this score a symbol is skipped when the window ends.
   minScore: 45,
   // At or above this score the bot enters immediately, without waiting for the window.
@@ -41,7 +42,7 @@ function num(value, label, { min, max, integer = false }) {
 
 function validate(input = {}, base = DEFAULTS) {
   const out = JSON.parse(JSON.stringify(base));
-  if (input.windowMin !== undefined) out.windowMin = num(input.windowMin, "חלון איסוף (דקות)", { min: 1, max: 10, integer: true });
+  if (input.windowMin !== undefined) out.windowMin = num(input.windowMin, "חלון איסוף (דקות, עד 8)", { min: 1, max: 8, integer: true });
   if (input.minScore !== undefined) out.minScore = num(input.minScore, "ציון מינימום", { min: 1, max: 99 });
   if (input.immediateScore !== undefined) out.immediateScore = num(input.immediateScore, "ציון כניסה מיידית", { min: 1, max: 100 });
   if (input.familyPoints !== undefined) {
@@ -66,6 +67,8 @@ function read() {
   const saved = store.get("runtime", KEY);
   if (!saved) return JSON.parse(JSON.stringify(DEFAULTS));
   try {
+    // Older saved profiles may carry the former default of 10 minutes.
+    if (Number(saved.windowMin) > 8) saved.windowMin = 8;
     return validate(saved, DEFAULTS);
   } catch {
     return JSON.parse(JSON.stringify(DEFAULTS));

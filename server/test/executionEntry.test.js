@@ -46,17 +46,15 @@ test("families are counted once: orb15 and orb15_retest agree as one", () => {
   assert.ok(two.score > one.score);
 });
 
-test("a single signal waits for the window, then enters when the score passes", () => {
+test("a single signal waits for the window (5 min by default)", () => {
   const ctx = load();
   try {
     ctx.account();
     ctx.entry.observe({ userId: "u1", signal: ctx.signal("orb15"), brokerSymbol: "AAPL", now: ctx.now });
     assert.deepEqual(run(ctx), []); // one family: below immediate score, window still open
-    const later = ctx.now + 9.9 * 60000;
-    ctx.account(); // keep MT4 data fresh for the later time
-    ctx.positions.save({ accountId: "102992", isDemo: true, balance: 100000, equity: 100000, profit: 0, positions: [], closedDeals: [] }, later - 1000);
-    const out = run(ctx, ctx.now + 10 * 60000 - 1000);
-    assert.equal(out.length, 0);
+    const at = ctx.now + 4 * 60000;
+    ctx.positions.save({ accountId: "102992", isDemo: true, balance: 100000, equity: 100000, profit: 0, positions: [], closedDeals: [] }, at);
+    assert.deepEqual(run(ctx, at), []); // still inside the window
   } finally { cleanup(ctx); }
 });
 
@@ -65,7 +63,7 @@ test("enters after the window with sizing from MT4 equity, and locks the symbol"
   try {
     ctx.account();
     ctx.entry.observe({ userId: "u1", signal: ctx.signal("orb15"), brokerSymbol: "AAPL", now: ctx.now });
-    const at = ctx.now + 10 * 60000;
+    const at = ctx.now + 5 * 60000;
     ctx.positions.save({ accountId: "102992", isDemo: true, balance: 100000, equity: 100000, profit: 0, positions: [], closedDeals: [] }, at);
     // the signal lives 10 minutes; extend it so the window decides, not expiry
     const box = ctx.store.listUser("u1", "entryBox").find((b) => b.symbol === "AAPL");
@@ -139,4 +137,22 @@ test("broker symbol: explicit mapping wins, otherwise the plain ticker, otherwis
   process.env.EXECUTION_SYMBOL_MAP_JSON = JSON.stringify({ AAPL: "Apple" });
   assert.equal(resolveBrokerSymbol({ ticker: "AAPL" }), "Apple");
   delete process.env.EXECUTION_SYMBOL_MAP_JSON;
+});
+
+test("a lone signal is decided inside its life: default window leaves it valid, old saved 10 is clamped", () => {
+  const ctx = load();
+  try {
+    const { DEFAULTS, validate } = require("../src/execution/entryProfile");
+    assert.ok(DEFAULTS.windowMin <= 8);
+    assert.throws(() => validate({ windowMin: 10 }, DEFAULTS));
+    ctx.store.put("runtime", "execution-entry-profile", { ...DEFAULTS, windowMin: 10, minScore: 40 });
+    const p = ctx.entryProfile.read();
+    assert.equal(p.windowMin, 8);
+    assert.equal(p.minScore, 40); // other saved values survive
+    ctx.account();
+    ctx.entry.observe({ userId: "u1", signal: ctx.signal("orb15"), brokerSymbol: "AAPL", now: ctx.now });
+    const at = ctx.now + 8 * 60000; // end of window; the signal (10 min) is still valid
+    ctx.positions.save({ accountId: "102992", isDemo: true, balance: 100000, equity: 100000, profit: 0, positions: [], closedDeals: [] }, at);
+    assert.equal(run(ctx, at)[0].outcome, "entered");
+  } finally { cleanup(ctx); }
 });
