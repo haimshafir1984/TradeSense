@@ -49,7 +49,18 @@ string ClosedDealsJson()
       if(OrderCloseTime() < since) continue;
       long utc = (long)OrderCloseTime() - offset;
       if(count > 0) items += ",";
-      items += "{\"t\":" + IntegerToString((int)utc) + ",\"p\":" + DoubleToString(OrderProfit() + OrderSwap() + OrderCommission(), 2) + "}";
+      string sym = OrderSymbol();
+      int digits = (int)MarketInfo(sym, MODE_DIGITS);
+      if(digits < 0 || digits > 8) digits = 2;
+      long openUtc = (long)OrderOpenTime() - offset;
+      items += "{\"t\":" + IntegerToString((int)utc) + ",\"p\":" + DoubleToString(OrderProfit() + OrderSwap() + OrderCommission(), 2);
+      items += ",\"ticket\":\"" + IntegerToString(OrderTicket()) + "\"";
+      items += ",\"symbol\":\"" + JsonEscape(sym) + "\"";
+      items += ",\"side\":\"" + (OrderType() == OP_BUY ? "buy" : "sell") + "\"";
+      items += ",\"lots\":" + DoubleToString(OrderLots(), 2);
+      items += ",\"openPrice\":" + DoubleToString(OrderOpenPrice(), digits);
+      items += ",\"closePrice\":" + DoubleToString(OrderClosePrice(), digits);
+      items += ",\"openT\":" + IntegerToString((int)openUtc) + "}";
       count++;
      }
    return "[" + items + "]";

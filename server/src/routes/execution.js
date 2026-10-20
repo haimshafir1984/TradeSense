@@ -72,6 +72,11 @@ router.post("/agent/positions", executorOnly, (req, res) => {
   }
 });
 
+// Results of closed trades grouped by strategy and entry score.
+router.get("/outcomes", users.requireUser, (req, res) => {
+  res.json(require("./../execution/outcomes").summary(req.userId));
+});
+
 // Risk rules (limits, concurrency, stop loss, take-profit tiers, end of day) and the live state they produce.
 router.get("/risk-profile", users.requireUser, (_req, res) => {
   const profile = riskProfile.read();

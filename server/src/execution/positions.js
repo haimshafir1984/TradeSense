@@ -36,7 +36,15 @@ function normalize(input = {}, now = Date.now()) {
   const deals = Array.isArray(input.closedDeals)
     ? input.closedDeals
         .slice(0, MAX_DEALS)
-        .map((d) => ({ t: Number(d?.t), p: Number(d?.p) }))
+        .map((d) => {
+          const row = { t: Number(d?.t), p: Number(d?.p) };
+          // Optional detail from newer EA versions; older EAs send only t and p.
+          if (d?.ticket != null) row.ticket = text(String(d.ticket), 24);
+          if (d?.symbol) row.symbol = text(d.symbol, 32);
+          if (d?.side) row.side = d.side === "sell" ? "sell" : "buy";
+          for (const k of ["lots", "openPrice", "closePrice", "openT"]) if (Number.isFinite(Number(d?.[k])) && d[k] !== null) row[k] = Number(d[k]);
+          return row;
+        })
         .filter((d) => Number.isFinite(d.t) && d.t > 0 && Number.isFinite(d.p))
     : null;
   return {
@@ -70,6 +78,7 @@ function save(input, now = Date.now()) {
   const snapshot = normalize(input, now);
   store.put("runtime", KEY, snapshot);
   pnlHistory.record(snapshot.closedDeals, now);
+  try { require("./outcomes").record(snapshot.closedDeals, now); } catch (e) { console.warn(`[execution] outcomes: ${e.message}`); }
   return snapshot;
 }
 
