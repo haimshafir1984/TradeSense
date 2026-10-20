@@ -150,6 +150,7 @@ function observe({ userId, signal, brokerSymbol, now = Date.now() }) {
   }
   // A new box starts if none exists, or the previous one ended without an entry.
   store.putUser(userId, BOX, id, { id, userId, symbol: signal.ticker, brokerSymbol, state: "open", openedAt: new Date(now).toISOString(), signals: [entry] });
+  try { if (process.env.SENTIMENT_COLLECT !== "false") require("../autopilot/sentimentLog").collect(signal.ticker, { now }).catch(() => {}); } catch {}
   try { require("./catalystCache").prefetch(signal.ticker, now).catch(() => {}); } catch {}
   return { state: "open" };
 }

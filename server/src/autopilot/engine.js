@@ -14,6 +14,7 @@ const recommendations = require("./recommendations");
 const feedback = require("./feedback");
 const executionBridge = require("../execution/bridge");
 const premarketLog = require("./premarketLog");
+const sentimentLog = require("./sentimentLog");
 const executionAutonomy = require("../execution/autonomy");
 const executionEntry = require("../execution/entryDecision");
 const { logMemory, pressure } = require("../memoryDiagnostics");
@@ -780,6 +781,10 @@ async function tick() {
       snapshots(names)
         .then((snap) => premarketLog.save(premarketLog.sample(snap, names, now)))
         .catch((e) => state({ premarketLogError: e.message }));
+    }
+    // Measurement only: crowd sentiment of the broker-tradable stocks every 20 minutes during the session.
+    if (process.env.SENTIMENT_COLLECT !== "false" && anyEnabled && clock.is_open && today && now >= today.open && now < today.close && sentimentLog.due(now)) {
+      sentimentLog.sweep(Object.keys(executionBridge.COLMEX_US)).catch((e) => state({ sentimentLogError: e.message }));
     }
     if (
       anyEnabled &&
