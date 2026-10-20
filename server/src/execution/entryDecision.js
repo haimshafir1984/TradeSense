@@ -95,11 +95,11 @@ function boxId(userId, symbol, now) {
   return `${nyDate(now)}:${symbol}`;
 }
 
-function exposureNow(userId, snapshot) {
+function exposureNow(brokerAccountId, snapshot) {
   let total = 0;
   for (const p of snapshot.positions || []) total += Math.abs(p.lots) * (Number.isFinite(p.currentPrice) ? p.currentPrice : p.openPrice);
-  for (const o of store.listUser(userId, "executionOrder"))
-    if (["pending", "claimed", "submitted", "partially_filled", "unknown"].includes(o.status))
+  for (const o of store.list("executionOrder"))
+    if ((!brokerAccountId || o.brokerAccountId === brokerAccountId) && ["pending", "claimed", "submitted", "partially_filled", "unknown"].includes(o.status))
       total += Math.abs(o.quantity) * (Number(o.limitPrice) || 0);
   return total;
 }
@@ -188,7 +188,7 @@ function flush({ userId, brokerAccountId, enabled = true, now = Date.now() }) {
     }
     const price = Number(lead.entry);
     const stopped = risk.applyStopPolicy({ ...lead });
-    const sizing = size({ score: sc.score, price, stop: Number(stopped.stop), equity: snapshot.equity, exposure: exposureNow(userId, snapshot), profile });
+    const sizing = size({ score: sc.score, price, stop: Number(stopped.stop), equity: snapshot.equity, exposure: exposureNow(brokerAccountId, snapshot), profile });
     const base = { score: sc.score, families: sc.families, scoreNotes: sc.notes, sizing, price };
     if (sizing.shares < profile.minShares) {
       skip("size_too_small", `הכמות שיצאה (${sizing.shares}) נמוכה מהמינימום ${profile.minShares} (מוגבל לפי ${sizing.limitedBy === "exposure" ? "חשיפה כוללת" : sizing.limitedBy === "risk" ? "סיכון לעסקה" : "תקציב"})`, base);

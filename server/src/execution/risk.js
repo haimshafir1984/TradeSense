@@ -9,6 +9,7 @@ function reject(message, code) {
   throw error;
 }
 
+const RECENT_FILL_MS = 3 * 60000;
 const ACTIVE_ORDER = ["pending", "claimed", "submitted", "partially_filled", "unknown"];
 
 // Applies the user's fixed Stop Loss percentage (when configured) to a signal before it becomes an order.
@@ -49,11 +50,15 @@ function validateSignal({ userId, signal, brokerAccountId, symbol, now = Date.no
   const plain = (v) => String(v || "").replace(/#$/, "").toLowerCase();
   const same = (a) => plain(a) === plain(symbol);
   if (snapshot.positions.some((p) => same(p.symbol))) reject("כבר יש פוזיציה פתוחה במניה הזו", "symbol_busy");
-  if (store.listUser(userId, "executionOrder").some((order) => ACTIVE_ORDER.includes(order.status) && same(order.symbol))) reject("כבר יש פקודה פעילה במניה הזו", "symbol_busy");
+  // Orders live in one shared collection and every user of this server trades the same MT4 account, so the
+  // check covers all users' orders on this account. A just-filled order may not appear in the MT4 report yet.
+  const accountOrders = store.list("executionOrder").filter((order) => !brokerAccountId || order.brokerAccountId === brokerAccountId);
+  const justFilled = (order) => order.status === "filled" && now - Date.parse(order.completedAt || 0) < RECENT_FILL_MS;
+  if (accountOrders.some((order) => (ACTIVE_ORDER.includes(order.status) || justFilled(order)) && same(order.symbol))) reject("כבר יש פקודה פעילה במניה הזו", "symbol_busy");
 
   // Concurrency: only positions TradeSense manages count, plus orders that are not yet confirmed.
   if (profile.maxConcurrent != null) {
-    const activeOrders = store.listUser(userId, "executionOrder").filter((order) => ACTIVE_ORDER.includes(order.status));
+    const activeOrders = accountOrders.filter((order) => ACTIVE_ORDER.includes(order.status));
     const open = snapshot.positions.filter((p) => p.managed);
     if (open.length + activeOrders.length >= profile.maxConcurrent) reject("הגעת למספר העסקאות המרבי במקביל", "max_positions");
   }

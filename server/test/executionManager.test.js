@@ -146,7 +146,7 @@ test("entry gate fails closed and enforces day base, loss limit, concurrency and
     assert.throws(() => ctx.risk.validateSignal({ ...args, signal: signal() }), /כבר יש פוזיציה/);
     report(ctx, [pos("1", { symbol: "Other1#" }), pos("2", { symbol: "Other2#", managed: false }), pos("3", { symbol: "Other3#", managed: false })]);
     assert.ok(ctx.risk.validateSignal({ ...args, signal: signal() }));
-    ctx.store.putUser("u1", "executionOrder", "o1", { id: "o1", status: "submitted" });
+    ctx.store.put("executionOrder", "o1", { id: "o1", status: "submitted", symbol: "Other9", brokerAccountId: args.brokerAccountId });
     assert.throws(() => ctx.risk.validateSignal({ ...args, signal: signal() }), /במקביל/);
     // lowering the limit below the open count closes nothing, it only blocks entries
     setProfile(ctx, { maxConcurrent: 1 });

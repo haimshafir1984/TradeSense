@@ -45,9 +45,23 @@ test("risk gate fails closed without fresh MT4 data and blocks entries at the co
     assert.throws(() => ctx.risk.validateSignal({ userId: "user-1", brokerAccountId: "demo", symbol: "COLMEX.AAPL", signal: signal() }), /עדכני/);
     freshAccount(ctx);
     ctx.profile.save({ maxConcurrent: 3 });
-    ctx.store.putUser("user-1", "executionOrder", "existing", { id: "existing", status: "pending" });
-    ctx.store.putUser("user-1", "executionOrder", "existing-2", { id: "existing-2", status: "claimed" });
-    ctx.store.putUser("user-1", "executionOrder", "existing-3", { id: "existing-3", status: "submitted" });
+    ctx.store.put("executionOrder", "existing", { id: "existing", status: "pending", symbol: "OTHER0", brokerAccountId: "demo" });
+    ctx.store.put("executionOrder", "existing-2", { id: "existing-2", status: "claimed", symbol: "OTHER1", brokerAccountId: "demo" });
+    ctx.store.put("executionOrder", "existing-3", { id: "existing-3", status: "submitted", symbol: "OTHER2", brokerAccountId: "demo" });
     assert.throws(() => ctx.risk.validateSignal({ userId: "user-1", brokerAccountId: "demo", symbol: "COLMEX.AAPL", signal: signal() }), /במקביל/);
+  } finally { close(ctx); }
+});
+
+test("one symbol, one position holds across users and for orders just filled", () => {
+  const ctx = load();
+  try {
+    freshAccount(ctx);
+    const base = { userId: "user-2", brokerAccountId: "demo", symbol: "COLMEX.AAPL", signal: signal() };
+    ctx.store.put("executionOrder", "o1", { id: "o1", userId: "user-1", status: "pending", symbol: "COLMEX.AAPL", brokerAccountId: "demo" });
+    assert.throws(() => ctx.risk.validateSignal(base), /פקודה פעילה/);
+    ctx.store.put("executionOrder", "o1", { id: "o1", userId: "user-1", status: "filled", symbol: "COLMEX.AAPL", brokerAccountId: "demo", completedAt: new Date().toISOString() });
+    assert.throws(() => ctx.risk.validateSignal(base), /פקודה פעילה/);
+    ctx.store.put("executionOrder", "o1", { id: "o1", userId: "user-1", status: "filled", symbol: "COLMEX.AAPL", brokerAccountId: "demo", completedAt: new Date(Date.now() - 600000).toISOString() });
+    assert.equal(ctx.risk.validateSignal(base).quantity, 2);
   } finally { close(ctx); }
 });
