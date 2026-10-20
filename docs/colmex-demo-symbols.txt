@@ -1,0 +1,171 @@
+3M#|CFD 3M Co Lot=1
+AIRPORT.C#|CFD Airport City Ltd  Lot=1 share [min: 24; step: 2]
+ALONI.HEZ#|CFD Alony Hetz Ltd  Lot=1 share [min: 58; step: 2]
+AMD#|CFD Advanced Micro Devices Lot=1
+AMOT#|CFD AMOT Lot=1 share [min: 88; step: 2]
+ASHTROM.G#|CFD ASHTROM GROUP Lot=1 share [min: 28; step: 2]
+AUDCAD#|Australian Dollar vs Canadian Dollar
+AUDCHF#|Australian Dollar vs Swiss Franc
+AUDIOCODES#|CFD AUDIOCODES Lot=1 share
+AUDJPY#|Australian Dollar vs Japanese Yen
+AUDNZD#|Australian Dollar vs New Zealand Dollar
+AUDUSD|Australian Dollar vs US Dollar
+AUDUSD#|Australian Dollar vs US Dollar
+AZRIELI.G#|CFD Azrieli Group Ltd  Lot=1 share [min: 6; step: 2]
+Altria#|CFD Altria Group Inc. Lot=1
+Amazon#|CFD Amazon.com Inc Lot=1
+AmericanEX#|CFD American Express Co Lot=1
+Apple#|CFD Apple  Lot=1
+BAC#|CFD Bank of America Corp Lot=1
+BET.SHEM#|CFD BET SHEMESH Lot=1 share
+BEZEQ#|CFD Bezeq  Lot=1 share [min: 330; step: 2]
+BIG#|CFD BIG Lot=1 share [min: 4; step: 2]
+BRK.B#|CFD Berkshire Hathaway Inc Lot=1
+Boeing#|CFD Boeing Co Lot=1
+Broadcom#|CFD Broadcom Lot=1
+CADCHF#|Canadian Dollar vs Swiss Franc
+CADJPY#|Canadian Dollar vs Japanese Yen
+CAT#|CFD Caterpillar Lot=1
+CHFJPY#|Swiss Frank vs Japanese Yen
+COCOA#|COCOA Lot=10 contracts
+COFFEE#|Price of 100 pounds of coffee Lot=375 contracts
+COTTON#|Price of 100 pounds of cotton Lot=500 contracts
+Chevron#|CFD Chevron Corp Lot=1
+Cisco#|CFD Cisco Systems Inc Lot=1
+Citigroup#|CFD Citigroup Inc Lot=1
+Costco#|CFD Costco Wholesale Corporation Lot=1
+DELEKG#|CFD Delek Group Ltd  Lot=1 share [min: 4; step: 2]
+DELTA#|CFD DELTA Lot=1 share
+DISCOUNT.B#|CFD Israel Discount Bank Ltd  Lot=1 share [min: 78; step: 2]
+ELAL#|CFD ELAL Lot=1 share
+ELBIT#|CFD Elbit Systems Ltd  Lot=1 share [min: 4; step: 2]
+ELCO#|CFD ELCO Lot=1 share
+ELECTRA#|CFD ELECTRA Lot=1 share
+ELECTRA.C#|CFD ELECTRA CO  PR Lot=1 share
+ENERGIX#|CFD ENERGIX Lot=1 share
+ENLIGHT#|CFD ENLIGHT ENERGY Lot=1 share [min: 24; step: 2]
+ENOG#|CFD ENERGEAN Lot=1 share [min: 30; step: 2]
+EURAUD#|Euro vs Australian Dollar
+EURCAD#|Euro vs Canadian Dollar
+EURCHF|Euro vs Swiss Franc
+EURCHF#|Euro vs Swiss Franc
+EURGBP|Euro vs Great Britain Pound 
+EURGBP#|Euro vs Great Britain Pound 
+EURILS|Euro vs Shekel
+EURILS#|EURO vs Shekel
+EURJPY|Euro vs Japanese Yen
+EURJPY#|Euro vs Japanese Yen
+EURNOK#|Euro vs Norwegian Krone
+EURNZD#|Euro vs New Zealand Dollar
+EUROBUND#|Euro-Bund (German Bund-future) Lot=100
+EURSEK#|Euro vs Swedish kron
+EURUSD|Euro vs US Dollar
+EURUSD#|Euro vs US Dollar
+EUSTX50#|Euro Stoxx 50 index of European listed shares Lot=1
+Eli.Lilly#|CFD Eli Lilly & Co Lot=1
+Exxon#|CFD Exxon Mobil Corp Lot=1
+FATAL#|CFD FATTAL HOLDINGS  Lot=1 share [min: 4; step: 2]
+FIBI#|CFD First International Bank  Lot=1 share [min: 10; step: 2]
+GBPAUD#|Great Britan Pound vs Australian Dollar
+GBPCAD#|Great Britain Pound vs Canadian Dollar
+GBPCHF#|Great Britain Pound vs Swiss Franc
+GBPJPY#|Great Britain Pound vs Japanese Yen
+GBPNZD#|Great Britain Pound vs New Zealand Dollar
+GBPUSD|Great Britain Pound vs US Dollar
+GBPUSD#|Great Britain Pound vs US Dollar
+GE#|CFD General Electric Co Lot=1
+GER40#|DAX index of German listed shares Lot=1 
+Goldman#|CFD Goldman Sachs Group Inc Lot=1
+Google#|CFD Google Lot=1
+HAREL#|CFD Harel Insurance Lot=1 share [min: 42; step: 2]
+HILAN#|CFD HILAN Lot=1 share
+Home.Depot#|CFD Home Depot Lot=1
+IBM#|CFD IBM Lot=1
+ILCO#|CFD Israel Corp Ltd  Lot=1 share [min: 4; step: 2]
+INDUS#|CFD INDUS BUILDING Lot=1 share [min: 166; step: 2]
+ISRA.CHEM#|CFD Israel Chemicals Ltd  Lot=1 share [min: 78; step: 2]
+ISRAEL.CAN#|CFD ISRAEL CANADA Lot=1 share
+ISRAMCO#|CFD Isramco Negev 2 LP  Lot=1 share [min: 840; step: 2]
+Intel#|CFD Intel Lot=1
+JPMorgan#|CFD JPMorgan Chase Lot=1
+Johnson&J#|CFD Johnson & Johnson Lot=1
+KENON#|CFD KENON Lot=1 share
+KO#|CFD Coca Cola  Lot=1
+LAPIDOTH#|CFD  LAPIDOTH CAPITAL LTD Lot=1
+LEUMI#|CFD Bank Leumi Le-Israel BM  Lot=1 share [min: 48; step: 2]
+LMT#|CFD Lockheed Martin Lot=1
+MA#|CFD Mastercard  Lot=1
+MAYTRONICS#|CFD MAYTRONICS  Lot=1 share [min: 42; step: 2]
+MEITAV#|CFD MEITAV DS Lot=1 share
+MELISRON#|CFD Melisron Ltd  Lot=1 share [min: 6; step: 2]
+META#|CFD Meta Lot=1
+MIZRAHI#|CFD Mizrahi Tefahot Bank Ltd  Lot=1 share [min: 12; step: 2]
+McDonalds#|CFD McDonald's Corp Lot=1
+Micron#|CFD Micron Technology Lot=1
+Microsoft#|CFD Microsoft Corp Lot=1
+NA.GAS#|Natural Gas 1 lot=10000 Btumm
+NAS100#|NASDAQ 100 index of US listed shares Lot=1 
+NEWMED#|CFD New Med Energy  Lot=1 share [min: 160; step: 2]
+NFLX#|CFD Netflix Lot=1
+NICE#|CFD Nice Ltd  Lot=1 share [min: 4; step: 2]
+NIKE#|CFD NIKE Lot=1
+NOFAR#|CFD NOFAR ENERGY Lot=1 [min: 18; step: 2]
+NOVA#|CFD NOVA Lot=1 share [min: 4; step: 2]
+NVDA#|CFD NVIDIA Corporation Lot=1
+NZDCAD#|New Zealand Dollar vs Canadian Dollar
+NZDCHF#|New Zealand Dollar vs Swiss Franc
+NZDJPY#|New Zealand Dollar vs Japanese Yen
+NZDUSD|New Zealand Dollar vs US Dollar
+NZDUSD#|New Zealand Dollar vs US Dollar
+OPC.ENERGY#|CFD OPC ENERGY Lot=1 share [min: 58; step: 2]
+OPKO#|CFD OPKO  Lot=1 share [min: 330; step: 2]
+ORMAT#|CFD Ormat Technologies Inc  Lot=1 share [min: 6; step: 2]
+PAZ.OIL#|CFD Paz Oil Co Ltd  Lot=1 share [min: 4; step: 2]
+PERION#|CFD PERION NETWORK Lot=1 [min: 18; step: 2]
+PFE#|CFD Pfizer Lot=1
+PHOENIX#|CFD PHOENIX Lot=1 share [min: 40; step: 2]
+POALIM#|CFD Bank Hapoalim BM Lot=1 share [min: 42; step: 2]
+QUALCOMM#|CFD QUALCOMM Inc Lot=1
+RAMI.LEVI#|CFD RAMI LEVI Lot=1 share
+REIT.1#|CFD REIT 1  Lot=1 share [min: 88; step: 2]
+SAPIENS#|CFD SAPIENS Lot=1 share [min: 12; step: 2]
+SHUFERSAL#|CFD Shufersal Ltd Lot=1 share [min: 60; step: 2]
+SKBN#|CFD SHIKUN & BINUI Lot=1 share
+SPEN#|CFD SHAPIR ENGINEERING Lot=1 share [min: 72; step: 2]
+SPX500#|S&P 500 index of US listed shares 1 Lot=10 Contracts
+STRAUSS#|CFD Strauss Group Ltd  Lot=1 share [min: 22; step: 2]
+SUGAR#|Price of 100 pounds of sugar-cane Lot=1120 contracts
+SUI30#|Swiss Market Index of Swiss Lot=1 
+Starbucks#|CFD Starbucks Corp Lot=1
+TADIRAN#|CFD TADIRAN HOLDING  Lot=1 share
+TEVA#|CFD Teva Ltd  Lot=1 share [min: 30; step: 2]
+TOWER#|CFD Tower Semiconductor Ltd  Lot=1 share [min: 12; step: 2]
+Tesla#|CFD Tesla Lot=1
+U.Health#|CFD UnitedHealth Group Lot=1
+UK100#|FTSE 100 index of UK listed shares Lot=1 
+UKOIL#|Crude Oil (WTI) Lot=100
+US30#|DOW JONES INDUSTRIAL Index of top 30 shares Lot=1
+USDCAD|US Dollar vs Canadian Dollar
+USDCAD#|US Dollar vs Canadian Dollar
+USDCHF|US Dollar vs Swiss Franc
+USDCHF#|US Dollar vs Swiss Franc
+USDDKK#|US Dollar vs Danish Krone
+USDHKD#|US Dollar vs Hong Kong Dollar
+USDILS|US Dollar vs Shekel
+USDILS#|US Dollar vs Shekel
+USDINDEX#|US Dollar Index lot=100
+USDJPY|US Dollar vs Japanese Yen
+USDJPY#|US Dollar vs Japanese Yen
+USDMXN#|US Dollar vs Mexican Peso
+USDNOK#|US Dollar vs Norwegian Krone
+USDSEK#|US Dollar vs Swedish Kronor
+USDSGD#|US Dollar vs Singapore Dollar
+USDZAR#|US Dollar vs South African Rand
+USOIL#|Crude Oil (WTI) 1 Lot=100
+Visa#|CFD Visa INC Lot=1
+WFC#|CFD Wells Fargo & Co Lot=1
+Walmart#|CFD Walmart Lot=1
+WaltDisney#|CFD Walt Disney Co Lot=1
+XAGUSD#|SILVER Lot=1 Min Trade=50 Steps=50
+XAUUSD#|Gold Lot=1
+XPTUSD#|Platnium Ounce  Lot=1

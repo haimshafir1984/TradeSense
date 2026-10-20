@@ -16,6 +16,8 @@ const DEFAULTS = Object.freeze({
   familyPoints: [40, 65, 80, 90],
   // Cap on points added or removed for signal quality (volume, liquidity, stop distance).
   qualityMax: 10,
+  // Cap on points added or removed for news and earnings catalysts (earnings surprise, news spike, pending report, unexplained gap).
+  catalystMax: 8,
   // Share of account equity allotted to one trade: from the lowest passing score up to a perfect score.
   perTradeMinPct: 3,
   perTradeMaxPct: 10,
@@ -52,6 +54,7 @@ function validate(input = {}, base = DEFAULTS) {
     out.familyPoints = pts;
   }
   if (input.qualityMax !== undefined) out.qualityMax = num(input.qualityMax, "תקרת בונוס איכות", { min: 0, max: 30 });
+  if (input.catalystMax !== undefined) out.catalystMax = num(input.catalystMax, "תקרת בונוס קטליזטור", { min: 0, max: 20 });
   if (input.perTradeMinPct !== undefined) out.perTradeMinPct = num(input.perTradeMinPct, "אחוז מההון בציון הנמוך", { min: 0.1, max: 100 });
   if (input.perTradeMaxPct !== undefined) out.perTradeMaxPct = num(input.perTradeMaxPct, "אחוז מההון בציון הגבוה", { min: 0.1, max: 100 });
   if (input.totalExposurePct !== undefined) out.totalExposurePct = num(input.totalExposurePct, "חשיפה כוללת", { min: 1, max: 100 });

@@ -60,7 +60,7 @@ function quality(signal) {
   return { pts, notes };
 }
 
-function score(signals, profile) {
+function score(signals, profile, catalyst = null) {
   const families = [...new Set(signals.map((s) => familyOf(s.strategy)))];
   const base = profile.familyPoints[clamp(families.length, 1, 4) - 1];
   let best = { pts: -Infinity, notes: [] };
@@ -69,7 +69,9 @@ function score(signals, profile) {
     if (q.pts > best.pts) best = q;
   }
   const bonus = clamp(best.pts === -Infinity ? 0 : best.pts, -profile.qualityMax, profile.qualityMax);
-  return { score: clamp(Math.round(base + bonus), 0, 100), families, base, bonus, notes: best.notes };
+  const cat = require("./catalystCache").points(catalyst, profile.catalystMax ?? 8);
+  const notes = cat.note ? [...best.notes, cat.note] : best.notes;
+  return { score: clamp(Math.round(base + bonus + cat.pts), 0, 100), families, base, bonus, catalyst: cat.pts, notes };
 }
 
 // Shares from budget: a share of equity that grows with the score, capped by the risk at the stop and
@@ -148,6 +150,7 @@ function observe({ userId, signal, brokerSymbol, now = Date.now() }) {
   }
   // A new box starts if none exists, or the previous one ended without an entry.
   store.putUser(userId, BOX, id, { id, userId, symbol: signal.ticker, brokerSymbol, state: "open", openedAt: new Date(now).toISOString(), signals: [entry] });
+  try { require("./catalystCache").prefetch(signal.ticker, now).catch(() => {}); } catch {}
   return { state: "open" };
 }
 
@@ -171,7 +174,7 @@ function flush({ userId, brokerAccountId, enabled = true, now = Date.now() }) {
     };
     if (!enabled) { skip("autonomy_off", "המסחר העצמאי כבוי"); continue; }
     if (!live.length) { skip("signals_expired", "כל האיתותים פגו לפני החלטה"); continue; }
-    const sc = score(live.map((s) => s.signal), profile);
+    const sc = score(live.map((s) => s.signal), profile, require("./catalystCache").get(box.symbol, now));
     const ready = sc.score >= profile.immediateScore || windowOver;
     if (!ready) continue;
     if (sc.score < profile.minScore) { skip("score_low", `ציון ${sc.score} נמוך מהמינימום ${profile.minScore}`, { score: sc.score, families: sc.families }); continue; }
@@ -212,7 +215,7 @@ function view(userId, now = Date.now()) {
   const today = nyDate(now);
   const boxes = store.listUser(userId, BOX).filter((b) => b.id.startsWith(`${today}:`)).map((b) => {
     const live = b.state === "open" ? activeSignals(b, now) : b.signals;
-    const sc = live.length ? score(live.map((s) => s.signal), profile) : null;
+    const sc = live.length ? score(live.map((s) => s.signal), profile, require("./catalystCache").get(b.symbol, now)) : null;
     return { symbol: b.symbol, state: b.state, openedAt: b.openedAt, closedAt: b.closedAt || null, strategies: [...new Set(b.signals.map((s) => s.strategy))], score: sc?.score ?? null, families: sc?.families ?? [] };
   });
   const decisions = store.listUser(userId, LOG).sort((a, b) => (a.id < b.id ? 1 : -1)).slice(0, 50);
