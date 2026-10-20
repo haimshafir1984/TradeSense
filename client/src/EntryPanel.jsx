@@ -86,6 +86,8 @@ export default function EntryPanel({ executionApi, executionState, onNotice, onE
   }), [form]);
 
   if (!form || !server) return <div className="panel muted">טוען את כללי הכניסה מהשרת…</div>;
+  // Only symbols still waiting for a decision; decided ones live in the decision log.
+  const waiting = server.boxes.filter((b) => b.state === "open");
 
   const equity = mt4?.fresh && Number.isFinite(mt4.equity) ? mt4.equity : null;
   const simEquity = equity ?? 100000;
@@ -160,19 +162,19 @@ export default function EntryPanel({ executionApi, executionState, onNotice, onE
       </section>
 
       <section className="panel">
-        <div className="section-heading"><h2>קופסאות היום</h2><span className="badge">{server.boxes.length}</span></div>
-        {server.boxes.length ? (
-          <table><thead><tr><th>מניה</th><th>מצב</th><th>אסטרטגיות</th><th>משפחות</th><th>ציון</th></tr></thead><tbody>
-            {server.boxes.map((b) => <tr key={b.symbol + b.openedAt}><td dir="ltr">{b.symbol}</td><td>{STATE[b.state] || b.state}</td><td dir="ltr">{b.strategies.join(", ")}</td><td>{b.families.length || "—"}</td><td>{b.score ?? "—"}</td></tr>)}
+        <div className="section-heading"><h2>ממתינות להחלטה</h2><span className="badge">{waiting.length}</span></div>
+        {waiting.length ? (
+          <table><thead><tr><th>מניה</th><th>נפתחה</th><th>אסטרטגיות</th><th>משפחות</th><th>ציון</th></tr></thead><tbody>
+            {waiting.map((b) => <tr key={b.symbol + b.openedAt}><td dir="ltr">{b.symbol}</td><td>{new Date(b.openedAt).toLocaleTimeString("he-IL")}</td><td dir="ltr">{b.strategies.join(", ")}</td><td>{b.families.length || "—"}</td><td>{b.score ?? "—"}</td></tr>)}
           </tbody></table>
-        ) : <p className="muted">אין עדיין קופסאות היום. קופסה נפתחת כשמגיע איתות בזמן שהמסחר האוטומטי פועל.</p>}
+        ) : <p className="muted">אין כרגע מניות שממתינות להחלטה. קופסה נפתחת כשמגיע איתות בזמן שהמסחר האוטומטי פועל, וברגע שהתקבלה החלטה היא עוברת ליומן ההחלטות.</p>}
       </section>
 
       <section className="panel">
         <div className="section-heading"><h2>יומן החלטות</h2><span className="badge">{server.decisions.length}</span></div>
         {server.decisions.length ? (
-          <table><thead><tr><th>שעה</th><th>מניה</th><th>החלטה</th><th>ציון</th><th>כמות</th><th>למה</th></tr></thead><tbody>
-            {server.decisions.map((d) => <tr key={d.id}><td>{new Date(d.at).toLocaleTimeString("he-IL")}</td><td dir="ltr">{d.symbol}</td><td className={d.outcome === "entered" ? "pl-up" : ""}>{OUTCOME[d.outcome] || d.outcome}</td><td>{d.score ?? "—"}</td><td>{d.sizing?.shares ?? "—"}</td><td>{d.reasonText}</td></tr>)}
+          <table><thead><tr><th>תאריך ושעה</th><th>מניה</th><th>החלטה</th><th>ציון</th><th>כמות</th><th>למה</th></tr></thead><tbody>
+            {server.decisions.map((d) => <tr key={d.id}><td>{new Date(d.at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td><td dir="ltr">{d.symbol}</td><td className={d.outcome === "entered" ? "pl-up" : ""}>{OUTCOME[d.outcome] || d.outcome}</td><td>{d.score ?? "—"}</td><td>{d.sizing?.shares ?? "—"}</td><td>{d.reasonText}</td></tr>)}
           </tbody></table>
         ) : <p className="muted">עדיין לא התקבלו החלטות. כל כניסה ודילוג יירשמו כאן עם הסיבה.</p>}
       </section>
