@@ -23,6 +23,9 @@ const INTRADAY_BATCH_SIZE = Math.min(
   10,
   Math.max(5, Number(process.env.AUTOPILOT_INTRADAY_BATCH_SIZE || 10) || 10),
 );
+// How often a full scan may start (ms). Default 5 minutes; with the smaller broker-only universe 2 minutes is realistic.
+// Never below 1 minute, and a scan that is still running always blocks the next one.
+const SCAN_INTERVAL_MS = Math.max(60000, Number(process.env.AUTOPILOT_SCAN_INTERVAL_MS) || 300000);
 let running = false,
   timer,
   reviewTimer,
@@ -793,7 +796,7 @@ async function tick() {
       now >= today.open + 900000 &&
       now < today.close - 900000 &&
       !scanRunning &&
-      store.lease("scan", 300000, now)
+      store.lease("scan", SCAN_INTERVAL_MS, now)
     ) {
       scan(now, calendar, today).catch((e) => state({ error: e.message }));
     }
