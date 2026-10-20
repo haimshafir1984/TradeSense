@@ -179,6 +179,9 @@ async function scan(now, calendar, today) {
         .map((s) => s.ticker),
     );
     let rows = await prepare(now);
+    // Optional: scan only what the broker can trade (symbols with a mapping), so no time is spent on the rest.
+    if (process.env.AUTOPILOT_BROKER_ONLY === "true")
+      rows = rows.filter((row) => executionBridge.resolveBrokerSymbol({ ticker: row.symbol }));
     logMemory("scan:universe-ready");
     const universeStatus = universe.status(now);
     if (!rows.length) {
