@@ -13,6 +13,7 @@ const selection = require("./selection");
 const recommendations = require("./recommendations");
 const feedback = require("./feedback");
 const executionBridge = require("../execution/bridge");
+const premarketLog = require("./premarketLog");
 const executionAutonomy = require("../execution/autonomy");
 const executionEntry = require("../execution/entryDecision");
 const { logMemory, pressure } = require("../memoryDiagnostics");
@@ -773,6 +774,13 @@ async function tick() {
       !scanRunning
     )
       prepare(now).catch((e) => state({ error: e.message }));
+    // Measurement only: sample pre-market prices of the broker-tradable stocks to judge the free data.
+    if (anyEnabled && premarketLog.due(now, today)) {
+      const names = Object.keys(executionBridge.COLMEX_US);
+      snapshots(names)
+        .then((snap) => premarketLog.save(premarketLog.sample(snap, names, now)))
+        .catch((e) => state({ premarketLogError: e.message }));
+    }
     if (
       anyEnabled &&
       clock.is_open &&

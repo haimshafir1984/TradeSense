@@ -101,6 +101,11 @@ router.put("/entry", users.requireUser, (req, res) => {
   }
 });
 
+router.get("/premarket-log", users.requireUser, (req, res) => {
+  const date = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : null;
+  res.json({ samples: require("../autopilot/premarketLog").list(date) });
+});
+
 router.get("/pnl", users.requireUser, (_req, res) => {
   res.json(require("../execution/pnlHistory").summary());
 });
