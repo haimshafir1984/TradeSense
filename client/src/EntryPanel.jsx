@@ -34,7 +34,6 @@ function sizeOf({ score, price, stop, equity, exposure, p }) {
   return { pct, byBudget, byRisk, byRoom, shares, limit };
 }
 
-const OUTCOME = { entered: "נכנסנו", skipped: "דולגה", ignored: "התעלמות" };
 const STATE = { open: "אוספת איתותים", entered: "נכנסנו", skipped: "דולגה" };
 
 export default function EntryPanel({ executionApi, executionState, onNotice, onError }) {
@@ -170,14 +169,6 @@ export default function EntryPanel({ executionApi, executionState, onNotice, onE
         ) : <p className="muted">אין כרגע מניות שממתינות להחלטה. קופסה נפתחת כשמגיע איתות בזמן שהמסחר האוטומטי פועל, וברגע שהתקבלה החלטה היא עוברת ליומן ההחלטות.</p>}
       </section>
 
-      <section className="panel">
-        <div className="section-heading"><h2>יומן החלטות</h2><span className="badge">{server.decisions.length}</span></div>
-        {server.decisions.length ? (
-          <table><thead><tr><th>תאריך ושעה</th><th>מניה</th><th>החלטה</th><th>ציון</th><th>כמות</th><th>למה</th></tr></thead><tbody>
-            {server.decisions.map((d) => <tr key={d.id}><td>{new Date(d.at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td><td dir="ltr">{d.symbol}</td><td className={d.outcome === "entered" ? "pl-up" : ""}>{OUTCOME[d.outcome] || d.outcome}</td><td>{d.score ?? "—"}</td><td>{d.sizing?.shares ?? "—"}</td><td>{d.reasonText}</td></tr>)}
-          </tbody></table>
-        ) : <p className="muted">עדיין לא התקבלו החלטות. כל כניסה ודילוג יירשמו כאן עם הסיבה.</p>}
-      </section>
     </div>
   );
 }

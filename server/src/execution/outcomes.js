@@ -44,6 +44,9 @@ function record(deals, now = Date.now()) {
       recordedAt: new Date(now).toISOString(),
     });
     saved++;
+    try {
+      require("./exitLog").record({ outcome: "closed", symbol: String(order.symbol).replace(/#$/, ""), profit: round2(d.p), reasonText: `העסקה נסגרה ב־MT4 (סטופ, יעד או סגירה ידנית): ${round2(d.p) >= 0 ? "רווח" : "הפסד"} ${Math.abs(round2(d.p))}` }, d.t * 1000);
+    } catch {}
   }
   return saved;
 }

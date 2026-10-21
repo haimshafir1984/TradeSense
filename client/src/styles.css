@@ -1307,3 +1307,8 @@ footer {
   .top-dock .status-ribbon { grid-template-columns: 1fr 1fr; }
   .top-dock .status-ribbon-item:nth-child(n) { border-left: 0; }
 }
+
+/* Decision log: a compact window that shows about six rows and scrolls for older decisions. */
+.decision-scroll { max-height: 300px; overflow-y: auto; border-radius: 8px; }
+.decision-scroll table { width: 100%; }
+.decision-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--surface, #fff); }

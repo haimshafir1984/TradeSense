@@ -72,6 +72,11 @@ router.post("/agent/positions", executorOnly, (req, res) => {
   }
 });
 
+// Entry and exit decisions in one feed (newest first).
+router.get("/decisions", users.requireUser, (req, res) => {
+  res.json({ decisions: require("../execution/decisionFeed").feed(req.userId, req.query.limit) });
+});
+
 // Measurement only: StockTwits crowd sentiment samples for a New York date (default today).
 router.get("/sentiment", users.requireUser, (req, res) => {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? req.query.date : require("../autopilot/market").nyDate(Date.now());

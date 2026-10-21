@@ -200,9 +200,10 @@ async function evaluate({ now = Date.now(), getSession = defaultSession } = {}) 
   if (running) return null;
   running = true;
   const status = { at: iso(now), enabled: false, actions: [], warnings: [], eod: null };
+  let snapshot = null;
   try {
     const profile = riskProfile.read();
-    const snapshot = positions.current(now);
+    snapshot = positions.current(now);
     status.enabled = profile.autoManage;
     if (!snapshot.fresh || snapshot.isDemo !== true) {
       status.warnings.push("אין דיווח עדכני מ־MT4; הניהול האוטומטי ממתין");
@@ -277,6 +278,9 @@ async function evaluate({ now = Date.now(), getSession = defaultSession } = {}) 
     }
     return status;
   } finally {
+    if (status.actions.length) {
+      try { require("./exitLog").recordActions(status.actions, snapshot?.positions, now); } catch {}
+    }
     store.put("runtime", STATUS_KEY, status);
     running = false;
   }

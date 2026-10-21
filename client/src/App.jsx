@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import RiskPanel from "./RiskPanel.jsx";
 import EntryPanel from "./EntryPanel.jsx";
 import PnlPanel from "./PnlPanel.jsx";
+import DecisionLog from "./DecisionLog.jsx";
 // Production builds default to same-origin (the API serves this site); dev talks to :4000.
 const BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? "" : "http://localhost:4000");
 const money = (n) =>
@@ -776,6 +777,7 @@ export default function App() {
                       </p>
                     )}
                   </div>
+                  <DecisionLog executionApi={executionApi} />
                   {closeRequests.length > 0 && (
                     <div className="panel close-requests">
                       <div className="section-heading"><h2>בקשות סגירה אחרונות</h2></div>
@@ -1124,6 +1126,12 @@ function StatusRibbon({ data, executionState, mt4Positions }) {
       <StatusRibbonItem label="סורק" value={scanner} tone={scannerTone} />
       <StatusRibbonItem label="בוט" value={bot} tone={botTone} />
       <StatusRibbonItem label="חיבור MT4" value={mt4} tone={mt4Tone} />
+      <StatusRibbonItem
+        label="מצב חשבון"
+        value={mt4Fresh && Number.isFinite(mt4Positions.equity) ? `${mt4Positions.equity.toLocaleString("he-IL", { maximumFractionDigits: 2 })} ${mt4Positions.currency || ""}` : "לא זמין"}
+        note={mt4Fresh ? "שווי נוכחי כולל רווח/הפסד פתוח" : "אין דיווח עדכני מ-MT4"}
+        tone={mt4Fresh ? "ok" : "muted"}
+      />
       <StatusRibbonItem
         label="יתרת חשבון"
         value={mt4Fresh && Number.isFinite(mt4Positions.balance) ? `${mt4Positions.balance.toLocaleString("he-IL", { maximumFractionDigits: 2 })} ${mt4Positions.currency || ""}` : "לא זמין"}
