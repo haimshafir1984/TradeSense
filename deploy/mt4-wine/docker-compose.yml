@@ -1,0 +1,19 @@
+services:
+  mt4:
+    build: .
+    container_name: tradesense-mt4
+    restart: unless-stopped
+    environment:
+      MT4_INSTALLER_URL: ${MT4_INSTALLER_URL:-}
+    # Isolation: the trading terminal can never take more than this from the other apps on the server.
+    cpus: 2
+    mem_limit: 2g
+    memswap_limit: 2g
+    shm_size: 512m
+    ports:
+      - "127.0.0.1:6080:6080"   # noVNC, reachable only from the server itself (use an SSH tunnel)
+    volumes:
+      - mt4data:/data
+      - ./ea:/ea:ro
+volumes:
+  mt4data:
