@@ -43,6 +43,8 @@ const names = {
 export default function App() {
   const [data, setData] = useState(null),
     [tab, setTab] = useState("terminal"),
+    [rulesSub, setRulesSub] = useState("entry"),
+    [resultsSub, setResultsSub] = useState("pnl"),
     [filter, setFilter] = useState("all"),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -56,7 +58,7 @@ export default function App() {
     [mt4Positions, setMt4Positions] = useState(null),
     [closeRequests, setCloseRequests] = useState([]);
   useEffect(() => {
-    if (tab === "trades")
+    if (tab === "terminal")
       api("/legacy")
         .then(setLegacy)
         .catch(() => {});
@@ -320,15 +322,10 @@ export default function App() {
         <aside className="sidebar">
           <nav aria-label="ניווט ראשי">
             {[
-              ["terminal", "⌂", "מרכז שליטה"],
-              ["trades", "↗", "עסקאות פתוחות"],
-              ["entry", "◈", "כניסה לעסקאות"],
-              ["risk", "⚖", "ניהול סיכונים"],
-              ["pnl", "₪", "רווח והפסד"],
-              ["today", "◎", "הזדמנויות היום"],
-              ["results", "▤", "היסטוריית עסקאות"],
-              ["settings", "⚙", "הגדרות"],
-              ["activity", "≋", "יומן פעילות"],
+              ["terminal", "⌂", "מסחר חי"],
+              ["today", "◎", "איתותים"],
+              ["results", "▤", "תוצאות"],
+              ["rules", "⚙", "כללים והגדרות"],
             ].map(([key, icon, label]) => (
               <button
                 key={key}
@@ -337,8 +334,8 @@ export default function App() {
               >
                 <span>{icon}</span>
                 {label}
-                {key === "trades" && open.length > 0 ? (
-                  <b className="count">{open.length}</b>
+                {key === "terminal" && mt4Positions?.fresh && mt4Positions.positions?.length > 0 ? (
+                  <b className="count">{mt4Positions.positions.length}</b>
                 ) : null}
               </button>
             ))}
@@ -422,16 +419,30 @@ export default function App() {
                       "מנוע האיתותים הושהה",
                     )
                   }
-                  onRisk={() => setTab("risk")}
-                  onEntry={() => setTab("entry")}
-                  onSettings={() => setTab("settings")}
+                  onRisk={() => { setRulesSub("risk"); setTab("rules"); }}
+                  onEntry={() => { setRulesSub("entry"); setTab("rules"); }}
+                  onSettings={() => { setRulesSub("settings"); setTab("rules"); }}
                 />
               )}
-              {tab === "entry" && (
+              {tab === "rules" && (
+                <SubTabs
+                  value={rulesSub}
+                  onChange={setRulesSub}
+                  items={[["entry", "כניסה לעסקאות"], ["risk", "ניהול סיכונים ויציאות"], ["settings", "סורק ואסטרטגיות"], ["activity", "יומן פעילות"]]}
+                />
+              )}
+              {tab === "results" && (
+                <SubTabs
+                  value={resultsSub}
+                  onChange={setResultsSub}
+                  items={[["pnl", "רווח והפסד"], ["history", "היסטוריה ומעקב"]]}
+                />
+              )}
+              {tab === "rules" && rulesSub === "entry" && (
                 <EntryPanel executionApi={executionApi} executionState={executionState} onNotice={setNotice} onError={setError} />
               )}
-              {tab === "pnl" && <PnlPanel executionApi={executionApi} mt4Positions={mt4Positions} />}
-              {tab === "risk" && (
+              {tab === "results" && resultsSub === "pnl" && <PnlPanel executionApi={executionApi} mt4Positions={mt4Positions} />}
+              {tab === "rules" && rulesSub === "risk" && (
                 <RiskPanel
                   executionApi={executionApi}
                   executionState={executionState}
@@ -696,18 +707,9 @@ export default function App() {
                   </div>
                 </>
               )}
-              {tab === "trades" && (
+              {tab === "terminal" && (
                 <>
-                  <div className="page-heading">
-                    <div>
-                      <span className="eyebrow">חשיפה נוכחית</span>
-                      <h1>עסקאות פתוחות</h1>
-                      <p>
-                        הפוזיציות האמיתיות של חשבון הדמו מגיעות מ־MT4 ומתעדכנות
-                        כל כמה שניות. סגירה, סגירה חלקית וסטופ מתבצעים דרך המערכת.
-                      </p>
-                    </div>
-                  </div>
+                  {open.length > 0 && (
                   <div className="panel open-summary">
                     <div>
                       <span>עסקאות פתוחות במעקב ידני</span>
@@ -724,6 +726,7 @@ export default function App() {
                       })()}
                     </div>
                   </div>
+                  )}
                   <div className="panel mt4-positions">
                     <div className="section-heading">
                       <h2>פוזיציות פתוחות ב-MT4 (דמו)</h2>
@@ -842,16 +845,9 @@ export default function App() {
                         </button>
                       </div>
                     ))
-                  ) : (
-                    <div className="panel empty">
-                      <span className="empty-icon">↗</span>
-                      <h2>אין עסקאות במעקב ידני</h2>
-                      <p>
-                        עסקאות שהמערכת פותחת בדמו מופיעות בטבלת MT4 למעלה. כאן
-                        מופיעות רק עסקאות שדיווחת עליהן ידנית.
-                      </p>
-                    </div>
-                  )}
+                  ) : null}
+                  <details className="diagnostics legacy-archive">
+                    <summary>ארכיון ורישום ידני (מהגרסה הישנה)</summary>
                   <details className="diagnostics">
                     <summary>
                       החזקות מהמערכת הקודמת ({legacy?.holdings?.length || 0})
@@ -906,9 +902,10 @@ export default function App() {
                         </div>
                       ))}
                   </details>
+                  </details>
                 </>
               )}
-              {tab === "results" && (
+              {tab === "results" && resultsSub === "history" && (
                 <>
                   <div className="page-heading">
                     <div>
@@ -1048,7 +1045,7 @@ export default function App() {
                   </p>
                 </>
               )}
-              {tab === "settings" && (
+              {tab === "rules" && rulesSub === "settings" && (
                 <Settings
                   key={settings.setupComplete ? "saved" : "new"}
                   settings={settings}
@@ -1070,7 +1067,7 @@ export default function App() {
                   onPush={() => act(enablePush, "ההתראות חוברו ונשלחה בדיקה")}
                 />
               )}
-              {tab === "activity" && <ActivityLog events={data.events || []} />}
+              {tab === "rules" && rulesSub === "activity" && <ActivityLog events={data.events || []} />}
               <footer>
                 TradeSense · סביבת דמו בלבד · לא תחליף לייעוץ השקעות · נתוני שוק בכיסוי חלקי
               </footer>
@@ -1105,6 +1102,18 @@ export default function App() {
   );
 }
 
+function SubTabs({ value, onChange, items }) {
+  return (
+    <div className="subtabs" role="tablist">
+      {items.map(([key, label]) => (
+        <button key={key} role="tab" aria-selected={value === key} className={value === key ? "subtab selected" : "subtab"} onClick={() => onChange(key)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function StatusRibbon({ data, executionState, mt4Positions }) {
   if (!data) return null;
   const runtime = data.runtime || {};
@@ -1116,6 +1125,8 @@ function StatusRibbon({ data, executionState, mt4Positions }) {
   const mt4 = executionState?.agentConnected ? "מחובר" : executionState ? "ממתין" : "לא ידוע";
   const mt4Tone = executionState?.agentConnected ? "ok" : "warn";
   const mt4Fresh = Boolean(mt4Positions?.fresh);
+  const dailyKnown = mt4Fresh && Number.isFinite(mt4Positions.profit);
+  const dailyPl = dailyKnown ? (Number(mt4Positions.closedToday) || 0) + mt4Positions.profit : 0;
   return (
     <section className="status-ribbon" aria-label="תמונת מצב של המערכת">
       <div className="status-ribbon-intro">
@@ -1137,6 +1148,12 @@ function StatusRibbon({ data, executionState, mt4Positions }) {
         value={mt4Fresh && Number.isFinite(mt4Positions.balance) ? `${mt4Positions.balance.toLocaleString("he-IL", { maximumFractionDigits: 2 })} ${mt4Positions.currency || ""}` : "לא זמין"}
         note={mt4Fresh ? "MT4 דמו, בזמן אמת" : "אין דיווח עדכני מ-MT4"}
         tone={mt4Fresh ? "ok" : "muted"}
+      />
+      <StatusRibbonItem
+        label="רווח/הפסד היום"
+        value={dailyKnown ? `${dailyPl >= 0 ? "+" : ""}${dailyPl.toLocaleString("he-IL", { maximumFractionDigits: 2 })} ${mt4Positions.currency || ""}` : "לא זמין"}
+        note={dailyKnown ? "סגור היום + פתוח עכשיו" : "אין דיווח עדכני מ-MT4"}
+        tone={dailyKnown ? (dailyPl >= 0 ? "ok" : "error") : "muted"}
       />
       <StatusRibbonItem
         label="רווח/הפסד פתוח"
@@ -1246,10 +1263,11 @@ function CommandBar({ data, executionState, mt4Positions, busy, onStart, onStop,
   );
 }
 
-function ControlTerminal({ data, executionOrders, executionState, mt4Positions, busy, onStart, onStop, onRisk, onEntry, onSettings }) {
+function ControlTerminal({ data, executionOrders: allOrders, executionState, mt4Positions, busy, onStart, onStop, onRisk, onEntry, onSettings }) {
   const runtime = data?.runtime || {};
   const executionMode = executionState?.mode || "off";
   const mt4Fresh = Boolean(mt4Positions?.fresh);
+  const executionOrders = allOrders ? allOrders.filter((o) => ["queued", "pending", "sent", "claimed", "submitted"].includes(String(o.status || "").toLowerCase())) : allOrders;
   const dayResult = mt4Fresh && Number.isFinite(mt4Positions.closedToday) ? mt4Positions.closedToday + (Number.isFinite(mt4Positions.profit) ? mt4Positions.profit : 0) : null;
   const mt4Open = mt4Fresh ? mt4Positions.positions.length : null;
   const { items: readiness } = readinessOf({ data, executionState, mt4Positions });
