@@ -401,6 +401,7 @@ export default function App() {
           ) : (
             <>
               {tab === "terminal" && (
+                <>
                 <ControlTerminal
                   data={data}
                   executionOrders={executionOrders}
@@ -423,6 +424,8 @@ export default function App() {
                   onEntry={() => { setRulesSub("entry"); setTab("rules"); }}
                   onSettings={() => { setRulesSub("settings"); setTab("rules"); }}
                 />
+                  <DecisionLog executionApi={executionApi} />
+                </>
               )}
               {tab === "rules" && (
                 <SubTabs
@@ -780,7 +783,6 @@ export default function App() {
                       </p>
                     )}
                   </div>
-                  <DecisionLog executionApi={executionApi} />
                   {closeRequests.length > 0 && (
                     <div className="panel close-requests">
                       <div className="section-heading"><h2>בקשות סגירה אחרונות</h2></div>

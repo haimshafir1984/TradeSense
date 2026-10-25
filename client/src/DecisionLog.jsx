@@ -9,22 +9,42 @@ const GOOD = new Set(["entered"]);
 
 export default function DecisionLog({ executionApi }) {
   const [rows, setRows] = useState(null);
+  const [waiting, setWaiting] = useState([]);
+  const [filter, setFilter] = useState("all");
   useEffect(() => {
     let alive = true;
-    const load = () => executionApi("/decisions?limit=150").then((r) => alive && setRows(r.decisions || [])).catch(() => {});
+    const load = () => {
+      executionApi("/decisions?limit=150").then((r) => alive && setRows(r.decisions || [])).catch(() => {});
+      executionApi("/entry").then((r) => alive && setWaiting((r.boxes || []).filter((b) => b.state === "open"))).catch(() => {});
+    };
     load();
     const t = setInterval(load, 10000);
     return () => { alive = false; clearInterval(t); };
   }, []);
+  const shown = (rows || []).filter((d) => filter === "all" || (filter === "entered" && d.outcome === "entered") || (filter === "skipped" && (d.outcome === "skipped" || d.outcome === "ignored")) || (filter === "exit" && d.kind === "exit"));
   return (
     <section className="panel decision-log">
-      <div className="section-heading"><h2>יומן החלטות</h2><span className="badge">{rows ? rows.length : "…"}</span></div>
-      {rows && rows.length ? (
+      <div className="section-heading"><h2>איתותים והחלטות</h2><span className="badge">{rows ? rows.length : "…"}</span></div>
+      <h3 className="subtle">ממתינות להחלטה ({waiting.length})</h3>
+      {waiting.length ? (
+        <div className="decision-scroll" style={{ maxHeight: 140 }}>
+          <table>
+            <thead><tr><th>מניה</th><th>מאז</th><th>אסטרטגיות</th><th>ציון</th></tr></thead>
+            <tbody>{waiting.map((b) => <tr key={b.symbol + b.openedAt}><td dir="ltr">{b.symbol}</td><td>{new Date(b.openedAt).toLocaleTimeString("he-IL")}</td><td dir="ltr">{(b.strategies || []).join(", ")}</td><td>{b.score ?? "—"}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : <p className="muted">אין כרגע איתותים שממתינים להחלטה.</p>}
+      <div className="subtabs">
+        {[["all", "הכול"], ["entered", "נכנסו"], ["skipped", "לא נכנסו"], ["exit", "יציאות"]].map(([k, l]) => (
+          <button key={k} className={filter === k ? "subtab selected" : "subtab"} onClick={() => setFilter(k)}>{l}</button>
+        ))}
+      </div>
+      {rows && shown.length ? (
         <div className="decision-scroll">
           <table>
             <thead><tr><th>תאריך ושעה</th><th>מניה</th><th>סוג</th><th>החלטה</th><th>ציון</th><th>כמות</th><th>למה</th></tr></thead>
             <tbody>
-              {rows.map((d) => (
+              {shown.map((d) => (
                 <tr key={d.id}>
                   <td>{new Date(d.at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
                   <td dir="ltr">{d.symbol}</td>
