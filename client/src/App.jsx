@@ -70,7 +70,7 @@ export default function App() {
   );
   const userId = useRef(localStorage.getItem("tradesense.user") || "");
   async function api(path, options = {}) {
-    const response = await fetch(`${BASE}/api/autopilot${path}`, {
+    const doFetch = () => fetch(`${BASE}/api/autopilot${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -80,11 +80,11 @@ export default function App() {
       },
       signal: AbortSignal.timeout(20000),
     });
+    const { response, result } = await readJson(doFetch, (options.method || "GET").toUpperCase());
     if (response.status === 401) {
       setAuth(true);
       throw new Error("יש להזין את קוד הגישה למערכת");
     }
-    const result = await response.json();
     if (!response.ok) throw new Error(result.error || "הבקשה לא הושלמה");
     if (result.userId && result.userId !== userId.current) {
       userId.current = result.userId;
@@ -93,7 +93,7 @@ export default function App() {
     return result;
   }
   async function executionApi(path, options = {}) {
-    const response = await fetch(`${BASE}/api/execution${path}`, {
+    const doFetch = () => fetch(`${BASE}/api/execution${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -103,7 +103,7 @@ export default function App() {
       },
       signal: AbortSignal.timeout(10000),
     });
-    const result = await response.json();
+    const { response, result } = await readJson(doFetch, (options.method || "GET").toUpperCase());
     if (!response.ok) throw new Error(result.error || "פקודות הביצוע אינן זמינות");
     return result;
   }
@@ -1102,6 +1102,23 @@ export default function App() {
       )}
     </div>
   );
+}
+
+// Gateway hiccups (502/503/504) return HTML/plain text, not JSON: retry GETs once and show a readable message instead of a parse error.
+async function readJson(doFetch, method = "GET") {
+  let response = await doFetch();
+  if ([502, 503, 504].includes(response.status) && method === "GET") {
+    await new Promise((r) => setTimeout(r, 1500));
+    response = await doFetch();
+  }
+  let result = null;
+  try { result = await response.json(); } catch { /* non-JSON body */ }
+  if (!result) {
+    const error = new Error("השרת לא זמין לרגע (שער חסום זמנית). נסה שוב בעוד כמה שניות.");
+    error.transient = true;
+    throw error;
+  }
+  return { response, result };
 }
 
 function SubTabs({ value, onChange, items }) {
