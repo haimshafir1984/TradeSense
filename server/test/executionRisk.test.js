@@ -65,3 +65,18 @@ test("one symbol, one position holds across users and for orders just filled", (
     assert.equal(ctx.risk.validateSignal(base).quantity, 2);
   } finally { close(ctx); }
 });
+
+test("autonomous mode left running fixes a missing day base on the first fresh report", () => {
+  const ctx = load();
+  try {
+    const now = Date.now();
+    ctx.positions.save({ accountId: "demo", isDemo: true, balance: 10000, equity: 10000, profit: 0, positions: [] }, now);
+    // Not autonomous and no base: still rejected.
+    assert.throws(() => ctx.risk.validateSignal({ userId: "user-1", brokerAccountId: "demo", symbol: "COLMEX.AAPL", signal: signal(), now }), /בסיס/);
+    ctx.store.put("runtime", "execution-control", { mode: "autonomous", changedAt: new Date(now).toISOString() });
+    ctx.store.put("runtime", "execution-agent", { agentId: "t", accountId: "demo", isDemo: true, lastSeenAt: new Date(now).toISOString() });
+    const result = ctx.risk.validateSignal({ userId: "user-1", brokerAccountId: "demo", symbol: "COLMEX.AAPL", signal: signal(), now });
+    assert.equal(result.quantity, 2);
+    assert.equal(ctx.profile.evaluateDay(now).hasBase, true);
+  } finally { close(ctx); }
+});

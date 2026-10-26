@@ -41,7 +41,11 @@ function validateSignal({ userId, signal, brokerAccountId, symbol, now = Date.no
   if (!snapshot.fresh || snapshot.isDemo !== true) reject("אין דיווח עדכני מחשבון הדמו ב־MT4; כניסות חדשות נחסמות עד לבירור המצב", "mt4_unknown");
 
   // Daily loss: measured against the equity captured at the first activation of the US trading day.
-  const day = riskProfile.evaluateDay(now, profile);
+  let day = riskProfile.evaluateDay(now, profile);
+  // Autonomous mode left running across days: fix the new day's base on the first fresh report instead of blocking every entry.
+  if (!day.hasBase && require("./autonomy").state().mode === "autonomous") {
+    try { riskProfile.ensureDayBase(now); day = riskProfile.evaluateDay(now, profile); } catch { /* falls through to the rejection below */ }
+  }
   if (!day.hasBase) reject("בסיס ההפסד היומי טרם נקבע; הפעלת המסחר קובעת אותו", "day_base_missing");
   if (day.breached || (day.limit != null && day.loss != null && day.loss >= day.limit)) reject("מגבלת ההפסד היומי הופעלה; אין כניסות חדשות עד יום המסחר הבא", "daily_loss_limit");
 
