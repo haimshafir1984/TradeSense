@@ -16,6 +16,7 @@ const DEFAULTS = {
   strategies: ["orb15", "orb15_retest", "gap_pullback", "vwap_reclaim", "vwap_pullback", "momentum_bull_flag", "reversal5"],
   excludedSymbols: [],
   setupComplete: false,
+  pushOnlyBought: false,
 };
 const ALLOWED_STRATEGIES = ALL_STRATEGY_KEYS;
 function read(userId) {
@@ -56,7 +57,7 @@ function validate(input) {
       if (!allowed.includes(input[key])) throw new Error(`ערך לא תקין: ${key}`);
       out[key] = input[key];
     }
-  for (const key of ["enabled", "fractional", "setupComplete"])
+  for (const key of ["enabled", "fractional", "setupComplete", "pushOnlyBought"])
     if (key in input) {
       if (typeof input[key] !== "boolean")
         throw new Error(`ערך לא תקין: ${key}`);

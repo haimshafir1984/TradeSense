@@ -1756,6 +1756,14 @@ function Settings({ settings, strategies, busy, onSave, onPush }) {
             איתות חדש, הגעה לתנאי יציאה וסיכום יום. אין צורך להשאיר את הדף פתוח
             לאחר חיבור המכשיר.
           </p>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={Boolean(form.pushOnlyBought)}
+              onChange={(e) => set("pushOnlyBought", e.target.checked)}
+            />
+            התראות רק על מניות שהמערכת החליטה לקנות (בלי איתותים, דילוגים ועדכוני מעקב)
+          </label>
           <button
             type="button"
             className="secondary"

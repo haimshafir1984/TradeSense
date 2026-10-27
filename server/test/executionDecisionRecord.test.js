@@ -99,3 +99,25 @@ test("a failing log write after the order is queued still ends as entered, not s
     assert.ok(!ctx.entry.view(ctx.a, ctx.now).decisions.some((d) => d.outcome === "skipped"));
   } finally { cleanup(ctx); }
 });
+
+test("pushOnlyBought keeps the activity log but pushes only entries", () => {
+  const ctx = load();
+  try {
+    // web-push is not needed to test the filter and may not be installed in the dev environment
+    const Module = require("node:module");
+    const load = Module._load;
+    Module._load = function (request, ...rest) { return request === "web-push" ? {} : load.call(this, request, ...rest); };
+    const notices = require("../src/autopilot/notifications");
+    Module._load = load;
+    const settings = require("../src/autopilot/settings");
+    const ids = (kind) => ctx.store.listUser(ctx.a, kind).map((x) => x.id);
+    notices.event(ctx.a, "n1", "signal", "x");
+    assert.deepEqual(ids("outbox"), ["n1"]); // default: everything is pushed
+    settings.save({ pushOnlyBought: true }, ctx.a);
+    notices.event(ctx.a, "n2", "signal", "x");
+    notices.event(ctx.a, "n3", "bought", "x", "signal", { bought: true });
+    assert.deepEqual(ids("outbox").sort(), ["n1", "n3"]);
+    assert.deepEqual(ids("event").sort(), ["n1", "n2", "n3"]);
+    assert.throws(() => settings.save({ pushOnlyBought: "yes" }, ctx.a));
+  } finally { cleanup(ctx); }
+});

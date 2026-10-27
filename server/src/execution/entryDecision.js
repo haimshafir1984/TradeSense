@@ -116,6 +116,7 @@ function logDecision(userId, entry, now) {
       `${entry.symbol} · ${entered ? "נכנסנו לעסקה" : "לא נכנסנו"}`,
       entry.reasonText || entry.reason || "",
       entered ? "signal" : "info",
+      { bought: entered },
     );
   } catch {}
   const ids = store.listUser(userId, LOG).map((e) => e.id).sort();

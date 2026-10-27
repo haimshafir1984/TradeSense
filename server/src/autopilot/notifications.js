@@ -56,7 +56,9 @@ function subscribe(userId, subscription) {
     keys: subscription.keys,
   });
 }
-function event(userId, id, title, body, type = "info") {
+// bought: true marks "the system decided to buy this stock". With the pushOnlyBought setting on, every
+// other event is still kept in the activity log but is not pushed to the devices.
+function event(userId, id, title, body, type = "info", { bought = false } = {}) {
   if (store.getUser(userId, "event", id)) return;
   store.putUser(userId, "event", id, {
     id,
@@ -65,6 +67,7 @@ function event(userId, id, title, body, type = "info") {
     type,
     createdAt: new Date().toISOString(),
   });
+  if (!bought && require("./settings").read(userId).pushOnlyBought) return;
   store.putUser(userId, "outbox", id, {
     id,
     title,
