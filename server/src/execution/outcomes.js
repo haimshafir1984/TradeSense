@@ -4,7 +4,7 @@ const orders = require("./orders");
 // Outcome ledger: links each closed MT4 deal (by ticket) to the order the EA filled with that ticket
 // and to the entry decision that produced the order, so results can be grouped by strategy and score.
 const KIND = "executionOutcome";
-const LOG = "entryLog";
+const LOG = "entryDecision"; // the kind entryDecision.js writes (must stay in sync)
 const round2 = (v) => Math.round(v * 100) / 100;
 
 function findDecision(order) {
@@ -82,4 +82,4 @@ function summary(userId) {
   };
 }
 
-module.exports = { KIND, record, summary };
+module.exports = { KIND, record, summary, findDecision };

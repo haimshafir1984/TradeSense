@@ -197,7 +197,9 @@ function flush({ userId, brokerAccountId, enabled = true, now = Date.now() }) {
     try {
       const mapped = { ...stopped, brokerSymbol: box.brokerSymbol, sizing: { ...(lead.sizing || {}), shares: sizing.shares, feasible: true, source: "entry_profile", score: sc.score } };
       risk.validateSignal({ userId, signal: mapped, brokerAccountId, symbol: box.brokerSymbol, now });
-      const order = bridge.queueSignal({ userId, signal: mapped, brokerAccountId, symbol: box.brokerSymbol, now });
+      // queueSignal returns { order, duplicate }; the decision row must carry the order id (outcomes link by it).
+      const queued = bridge.queueSignal({ userId, signal: mapped, brokerAccountId, symbol: box.brokerSymbol, now });
+      const order = queued?.order || null;
       logDecision(userId, { symbol: box.symbol, outcome: "entered", reason: "entered", reasonText: `${sc.families.length} משפחות מסכימות, ציון ${sc.score}, ${sizing.shares} מניות`, strategies: names, orderId: order?.id || null, ...base }, now);
       closeBox(userId, box, { state: "entered", orderId: order?.id || null }, now);
       results.push({ symbol: box.symbol, outcome: "entered", shares: sizing.shares, score: sc.score });
@@ -211,6 +213,18 @@ function flush({ userId, brokerAccountId, enabled = true, now = Date.now() }) {
   return results;
 }
 
+// The decision log of one profile, plus the entries other profiles made. Orders belong to the broker account
+// (shared by every profile), so a profile whose own attempt was blocked ("symbol_busy") must still see who got in.
+function recentDecisions(userId, limit = 50) {
+  const own = store.listUser(userId, LOG);
+  const others = [];
+  for (const u of store.list("user")) {
+    if (!u?.id || u.id === userId) continue;
+    for (const e of store.listUser(u.id, LOG)) if (e.outcome === "entered") others.push({ ...e, otherProfile: true });
+  }
+  return [...own, ...others].sort((a, b) => (a.id < b.id ? 1 : -1)).slice(0, limit);
+}
+
 function view(userId, now = Date.now()) {
   const profile = entryProfile.read();
   const today = nyDate(now);
@@ -219,8 +233,8 @@ function view(userId, now = Date.now()) {
     const sc = live.length ? score(live.map((s) => s.signal), profile, require("./catalystCache").get(b.symbol, now)) : null;
     return { symbol: b.symbol, state: b.state, openedAt: b.openedAt, closedAt: b.closedAt || null, strategies: [...new Set(b.signals.map((s) => s.strategy))], score: sc?.score ?? null, families: sc?.families ?? [] };
   });
-  const decisions = store.listUser(userId, LOG).sort((a, b) => (a.id < b.id ? 1 : -1)).slice(0, 50);
+  const decisions = recentDecisions(userId, 50);
   return { profile, defaults: entryProfile.DEFAULTS, boxes, decisions };
 }
 
-module.exports = { FAMILIES, familyOf, quality, score, size, observe, flush, view };
+module.exports = { LOG, FAMILIES, familyOf, quality, score, size, observe, flush, view, recentDecisions };

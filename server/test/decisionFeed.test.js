@@ -7,7 +7,7 @@ const { feed } = require("../src/execution/decisionFeed");
 test("feed merges entry and exit decisions newest first", () => {
   const u = `u-feed-${Date.now()}`;
   const t = Date.now();
-  store.putUser(u, "entryLog", "e1", { id: "e1", at: new Date(t - 5000).toISOString(), symbol: "Apple", outcome: "entered", reasonText: "x" });
+  store.putUser(u, "entryDecision", "e1", { id: "e1", at: new Date(t - 5000).toISOString(), symbol: "Apple", outcome: "entered", reasonText: "x" });
   exitLog.recordActions([
     { type: "partial_close", ticket: "5", lots: 10, tiers: [1], commandId: "c" },
     { type: "close", ticket: "5", reason: "eod", commandId: "c2" },
