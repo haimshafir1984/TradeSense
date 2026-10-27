@@ -79,3 +79,23 @@ test("outcome ledger finds the entry decision of an order", () => {
     assert.equal(require("../src/execution/outcomes").findDecision(order)?.orderId, order.id);
   } finally { cleanup(ctx); }
 });
+
+test("a failing log write after the order is queued still ends as entered, not skipped", () => {
+  const ctx = load();
+  try {
+    const real = ctx.store.putUser;
+    let failed = 0;
+    ctx.store.putUser = (u, kind, id, body) => {
+      if (kind === ctx.entry.LOG && body.outcome === "entered") { failed++; throw new Error("disk busy"); }
+      return real(u, kind, id, body);
+    };
+    const out = ctx.enter(ctx.a);
+    ctx.store.putUser = real;
+    assert.equal(failed, 1);
+    assert.equal(out[0].outcome, "entered");
+    assert.equal(ctx.orders.listAll().filter((o) => o.symbol === "AAPL").length, 1);
+    assert.equal(ctx.store.listUser(ctx.a, "entryBox")[0].state, "entered");
+    assert.equal(ctx.entry.observe({ userId: ctx.a, signal: ctx.signal("reversal5"), brokerSymbol: "AAPL", now: ctx.now }).state, "locked");
+    assert.ok(!ctx.entry.view(ctx.a, ctx.now).decisions.some((d) => d.outcome === "skipped"));
+  } finally { cleanup(ctx); }
+});

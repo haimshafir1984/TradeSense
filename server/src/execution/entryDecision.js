@@ -200,9 +200,16 @@ function flush({ userId, brokerAccountId, enabled = true, now = Date.now() }) {
       // queueSignal returns { order, duplicate }; the decision row must carry the order id (outcomes link by it).
       const queued = bridge.queueSignal({ userId, signal: mapped, brokerAccountId, symbol: box.brokerSymbol, now });
       const order = queued?.order || null;
-      logDecision(userId, { symbol: box.symbol, outcome: "entered", reason: "entered", reasonText: `${sc.families.length} משפחות מסכימות, ציון ${sc.score}, ${sizing.shares} מניות`, strategies: names, orderId: order?.id || null, ...base }, now);
+      // The order exists from here on. Lock the box first, and never let a logging failure turn a real
+      // entry into a "skipped" row (the next signal would then open a new box and hit symbol_busy).
       closeBox(userId, box, { state: "entered", orderId: order?.id || null }, now);
       results.push({ symbol: box.symbol, outcome: "entered", shares: sizing.shares, score: sc.score });
+      try {
+        logDecision(userId, { symbol: box.symbol, outcome: "entered", reason: "entered", reasonText: `${sc.families.length} משפחות מסכימות, ציון ${sc.score}, ${sizing.shares} מניות`, strategies: names, orderId: order?.id || null, ...base }, now);
+      } catch (logError) {
+        console.warn(`[execution] entry of ${box.symbol} was queued but its log row failed: ${logError.message}`);
+      }
+      continue;
     } catch (error) {
       // Gate rejections that can clear within the window are retried; otherwise the box ends.
       const transient = ["mt4_unknown", "day_base_missing"].includes(error.code);
