@@ -1,65 +1,77 @@
-> **עדכון v3 — 8 בספטמבר 2026:** המוצר הפעיל נבנה מחדש לאיתותים ומעקב אוטומטיים עבור Blink. נקודת הכניסה העדכנית היא [SPEC_V3_AUTOPILOT.md](docs/SPEC_V3_AUTOPILOT.md). התוכן למטה נשמר כתיעוד המערכת הקודמת; הוראות v2, תוצאות backfill ודרישת כניסה ידנית במשך 20 יום אינן מתארות את v3.
-
 # CLAUDE.md
 
-מסמך התמצאות קצר לתחילת שיחה חדשה של Claude Code בפרויקט הזה.
+מסמך התמצאות לתחילת שיחה חדשה של Claude Code בפרויקט הזה. עודכן ב-27.10.2026. המסמך המלא והמפורט: [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — לקרוא אותו לפני כל שינוי בלוגיקת ביצוע או סיכון.
 
-## TradeSense v2 — בנייה מחדש הושלמה (2026-08-31)
+## כללי ברזל (הוראות המשתמש, מחייבות)
 
-TradeSense עברה **בנייה מחדש מלאה**, לא שדרוג. ההוראה המחייבת היא **[docs/SPEC_V2_ARCHITECTURE.md](docs/SPEC_V2_ARCHITECTURE.md)** — לקרוא לפני כל שינוי קוד. כל 10 הפאזות ב-§10 הושלמו; המסמך הזה מתעד את המצב הנוכחי + כמה ממצאים חשובים מבדיקה חיה שלא היו ידועים בזמן כתיבת הספק.
+- **אסור** לבצע מסחר בחשבון אמיתי, לפרוס את המערכת מרחוק, או לפגוע באפליקציה הקיימת של האח.
+- **אין לשנות הגדרות מסחר** (ערכי כניסה, סיכון, גודל פוזיציה, מצב ביצוע) **ולא להפעיל ביצוע פקודות** בלי אישור מפורש של המשתמש באותה שיחה.
+- המערכת רצה **בדמו בלבד**: חשבון Colmex MT4 דמו `102992`. הקוד דוחה כל חשבון שאינו מזוהה כדמו.
+- לא לבצע `git push` ולא לפרוס: המשתמש עושה בעצמו `Sync Changes` ב-VS Code, ו-Dokploy עושה deploy אוטומטי מ-`main`. מותר commit מקומי.
+- לא לחשוף ערכי `.env` / מפתחות / `EXECUTION_AGENT_TOKEN` בצ'אט או בלוגים.
 
-**עקרון מנחה** (§0 בספק): המערכת לא מייצרת *דירוג* — היא מייצרת *עסקה שלמה*: כניסה/סטופ/יעד/time-stop/גודל. מועמד בלי תוכנית יציאה תקינה נפסל, לא מוצג.
+## העדפות תקשורת עם המשתמש (חיים)
 
-## מבנה הקוד
+- עברית. כל מונח, פקודה או הגדרה באנגלית — **בשורה נפרדת משלה** (ה-RTL מבלבל אחרת), במיוחד בהוראות צעד-אחר-צעד.
+- שאלה מהצורה "אתה יכול X?" — קודם תשובה כן/לא, ולחכות ל"תעשה". לא להתחיל לבצע לבד.
+- תשובות קצרות ומעשיות. אחרי שינוי קוד: לומר מה עשה, ומה המשתמש צריך לעשות (`Sync Changes`, לחכות ל-`Done` ב-Dokploy, `Ctrl+F5`).
+
+## מה המערכת
+
+TradeSense מייצרת איתותי מניות ארה"ב (סורק + 4 אסטרטגיות), ומריצה אותם **אוטומטית** כפקודות דרך MT4 של Colmex בחשבון דמו. אתר React בעברית RTL מציג מצב, החלטות ותוצאות. מאוחדת עם מנוע האיתותים של האח (אסור לפגוע בו).
+
+- אתר חי: https://trade.flowsbiz.com (Dokploy, container יחיד, replica אחד, SQLite ב-`/data`).
+- ריפו: https://github.com/haimshafir1984/TradeSense (ענף `main`).
+- סביבות עבודה אצל המשתמש: `C:\Users\moshe\Projects\m.s.trader\_TradeSense_remote` (הריפו העיקרי) ו-`...\TradeSense-main\TradeSense-main` (עותק משוקף; לשמור סנכרון).
+
+## זרימה מקצה לקצה
+
+1. `server/src/autopilot/engine.js` — tick כל 30 שניות; סריקה כל `AUTOPILOT_SCAN_INTERVAL_MS` (ברירת מחדל 5 דקות, מינימום 60 שניות). האסטרטגיות (`strategies.js`) עובדות על נרות 5 דקות **סגורים**.
+2. איתות נרשם ← `execution/entryDecision.js`: "קופסה" לכל `יום:מניה` למשתמש. חלון איסוף (`windowMin`, כרגע 3 דקות), ציון משפחות + איכות + קטליסט (`catalystCache.js`). החלטה: `entered` / `skipped` (עם `reason`) ביומן `entryLog`.
+3. גודל פוזיציה לפי תקציב/סיכון/חשיפה; **מינימום 10 מניות** (מגבלת Colmex). מתחת ← `size_too_small`.
+4. `execution/risk.js` `validateSignal`: דמו בלבד, נתוני MT4 עדכניים, בסיס הפסד יומי, מגבלות, **מניה לא תפוסה** (`symbol_busy`) — נבדק על כל הפקודות של חשבון הברוקר (קולקציה גלובלית `executionOrder`), לא רק של המשתמש.
+5. `execution/bridge.js` ממפה ticker לסימול Colmex (מילון `COLMEX_US` + `EXECUTION_SYMBOL_MAP_JSON`; סיומת ברוקר `#`) ומכניס פקודה לתור (`orders.js`).
+6. ה-EA ב-MT4 (`mt4/TradeSenseExecutionEA.mq4`) עושה polling לשרת (HTTPS, בלי פורט בכתובת), מבצע, ומדווח `heartbeat` + פוזיציות + עסקאות סגורות (`TradeSensePositions.mqh`).
+7. `execution/exitManager.js` מנהל יציאות (הפסד יומי, סטופ, מימוש רווח במדרגות, סגירת סוף יום) ורושם ל-`exitLog`. `execution/outcomes.js` — ספר תוצאות לפי ticket.
+8. `execution/decisionFeed.js` ממזג כניסות ויציאות ← `GET /api/execution/decisions`.
+
+## מבנה קוד
 
 ```
 server/src/
-  providers/     alpacaService, nasdaqService, finnhubService — שכבת ה-API היחידה שמותר להסתמך עליה
-  services/      universeStore, universeBuilderService, mathUtils, portfolioService, vibeTradingService, research/**
-  pipeline/      liquidityGate, catalystService, selectionService, regimeGate, runScan, candidatesService
-  playbooks/     peadDrift, shortTermReversal, gapContinuation, openingRangeBreakout, features, index
-  risk/          exitEngine, riskTiers, positionSizing
-  ledger/        ledgerStore, outcomeResolver, playbookStats, backfill
-  routes/        candidates, playbooks, ledger, portfolio, backtest, anomalyMatch
-client/src/
-  App.jsx        מסך "סריקת מועמדים" (v2) + טאב "התיק שלי" (ללא שינוי)
+  autopilot/   engine, strategies, store (SQLite, kind + putUser/listUser), market, notifications,
+               premarketLog, sentimentLog, users, settings
+  execution/   autonomy, bridge, entryDecision, entryProfile, risk, riskProfile, positions, orders,
+               exitManager, exitLog, outcomes, decisionFeed, catalystCache, closeRequests, pnlHistory
+  routes/      autopilot.js, execution.js (+ ישנים: candidates, ledger, playbooks, portfolio, backtest)
+  pipeline/ playbooks/ ledger/ providers/ services/ risk/   ← שרידי v2, לא במסלול הפעיל
+client/src/    App.jsx (ענק; מצב `tab`), ControlTerminal (בתוך App.jsx), EntryPanel, RiskPanel, PnlPanel,
+               DecisionLog, styles.css
+mt4/           EA + mqh + כלי אבחון WebRequest + tools/ (MfeCheck, port80-forwarder)
+deploy/        dokploy, vps, mt4-wine (Docker+Wine, לא נבדק)
 ```
 
-**נמחק לחלוטין** (§2 בספק): `strategies.js`, `scannerService.js`, `analysisService.js`, `expertSupportService.js`, `indiOverlayService.js`, `opportunityScoringService.js`, `explanationService.js`, `marketRegimeService.js`, כל משפחת `watchlist*`, `funnelScanService.js`, `smallCapUniverseService.js`, `scanHistory*.js`, `marketDataService.js` (FMP), `barsStockBuilder.js`, `riskFramingService.js`, `regimeHistoryStore.js`, `shadowScanService.js`, `shareCountService.js`, `watchlistRerankService.js`, `wideScanUniverseService.js`, `config/scoringConfig.js`. כל הטסטים שלהם הוסרו איתם.
+## אתר: ארבע לשוניות
 
-**נשאר ולא משולב במסלול v2** (§2): `services/vibeTradingService.js` + `routes/backtest.js` (בדיקה מול Vibe-Trading, on-demand מקומי), `services/research/**` + `routes/anomalyMatch.js` (כריית אנומליות, on-demand), `services/portfolioService.js`/`portfolioStore.js` (טאב "התיק שלי", ללא שינוי).
+`מסחר חי` (ControlTerminal + איתותים והחלטות + פוזיציות MT4 + בקשות סגירה + ארכיון ידני מתקפל), `איתותים` (הזדמנויות היום), `תוצאות` (תת-לשוניות: רווח והפסד | היסטוריה ומעקב), `כללים והגדרות` (תת-לשוניות: כניסה | סיכונים ויציאות | סורק ואסטרטגיות | יומן פעילות). הסרגל העליון (`StatusRibbon`) מציג סורק, בוט, חיבור MT4, מצב חשבון, יתרה, רווח/הפסד היום ורווח פתוח.
 
-## ארבעת הפלייבוקים
+## משתני סביבה חשובים (שרת)
 
-| מפתח | עוצמת ראיות | רמות סיכון | מצב |
-|---|---|---|---|
-| `pead_drift` | חזקה | שמרני, מאוזן | פעיל |
-| `short_term_reversal` | בינונית-חזקה | שמרני, מאוזן | פעיל |
-| `gap_continuation` | חלשה (לא שפיט) | מאוזן, אגרסיבי | פעיל, **לא נתמך ב-`ledger:backfill`** (שחזור קטליזטור היסטורי יקר מדי) |
-| `opening_range_breakout` | בינונית-חזקה | אגרסיבי בלבד | **כבוי** (`ORB_ENABLED`, נבדק בזמן קריאה לא בטעינת מודול). דורש `openingRangeHigh/Low/Direction` שהצנרת לא מזינה עדיין (אין נתונים תוך-יומיים ב-v1) |
+`EXECUTION_AUTONOMY_ENABLED`, `EXECUTION_QUEUE_ENABLED`, `EXECUTION_AGENT_TOKEN`, `EXECUTION_BROKER_ACCOUNT_ID`, `EXECUTION_SYMBOL_MAP_JSON`, `AUTOPILOT_BROKER_ONLY` (מגביל ל-43 מניות ממופות), `AUTOPILOT_SCAN_INTERVAL_MS`, `AUTOPILOT_DB_PATH`, `FINNHUB_API_KEY` (קטליסט), `ALPACA_*`, `SENTIMENT_COLLECT`, `CLIENT_ORIGIN`, `AUTOPILOT_DISABLED`.
 
-כל פלייבוק מתחיל בדרגה `hypothesis` בסולם ארבע הדרגות (§5.8: `hypothesis → backtested → provisional → active`, אין קיצור דרך, backfill מקדם עד `backtested` בלבד). `docs/BACKFILL_FINDINGS.md` מעודכן מריצות אמיתיות (NASDAQ+NYSE, 800 מניות, 24 חודשים; 2,320 עסקאות ב-ledger) — **`pead_drift` עלה בפועל ל-`backtested`** (holdout: 1,484 עסקאות, hit-rate 63.8%, avgR 0.92, profit factor 4.0 — אומת חי דרך `GET /api/playbooks`). `short_term_reversal` נשאר `hypothesis` (holdout: 47 בלבד, מתחת לסף ה-100 — נדיר בכוונה, הרחבה נוספת (universe/בורסה) תעזור, לא עוד חודשים אחורה כי החלון קבוע). הרצה: `npm run ledger:backfill --workspace server -- --limit=800 --exchange=NASDAQ|NYSE`.
+## מוסכמות והכרת מלכודות
 
-## שלושה ממצאים חיים חשובים
-
-1. **מגבלת feed `iex` חמורה בהרבה בפועל מהצפוי — טופל 2026-08-31.** נמדד: נפח MSFT דרך `iex` ≈ 1M מניות/יום, לעומת ~20-30M אמיתי (~4%, תואם למה שהספק כבר חזה). שער הנזילות הישן (סף 1,000,000$, מקורו במחקר ORB עם נתוני SIP מלאים) פסל כמעט את כל השוק — כולל מניות ענק כמו MSFT/GOOGL/META/TSLA (מריצה חיה על 1000 מניות: רק 19 עברו). **הוחלט להוריד את סף `minAvgVolume20d` פי ~25 ל-`40,000`** (`pipeline/liquidityGate.js`) — תיקון פרופורציונלי ל-feed, לא כיול מחדש של המחקר. שווי שוק/מחיר/ATR14 לא שונו (לא תלויים ב-feed). אומת חי: מ-19/1000 עלה ל-531/1000. לשדרג בעתיד ל-SIP: לבטל את הכיול הזה בחזרה ל-1,000,000 (§12.2).
-2. **`catalystService`'s concurrency (5) גרם ל-`HTTP 429` מ-Finnhub** בסריקה על 400+ מניות. Fail-soft כמתוכנן (`catalyst: null`, לא קורס), אבל מפחית דיוק בסריקות גדולות — מועמד לטיפול עתידי (concurrency נמוך יותר / backoff). **החמיר אחרי ממצא 1** — פי ~28 יותר מניות מגיעות עכשיו לשלב הקטליזטור.
-3. **מחיר הכניסה שהכרטיס מציג הוא מחיר הסגירה של אתמול, לא מחיר חי — נמצא 2026-09-01, טרם תוקן.** כל עוד השוק פתוח, `alpacaService.getDailyBars` נועל `end` ליום המסחר הקודם (§7.1) - כל הפיצ'רים (מחיר, ATR, ממוצעים, נפח) קפואים על סגירת אתמול, ללא תלות בשעה שנלחץ "סרוק שוק". רק `premarketGapPct` (מ-`getSnapshots`) באמת חי. אומת ישירות מול Alpaca (2026-09-01): נר אחרון = סגירת 08-31 (317.14$), `latestTrade` באותו רגע = 316.15$. פירוט מלא + אפשרות תיקון ב-`docs/SPEC_V2_ARCHITECTURE.md` §14. עד שיוחלט: תג אזהרה נוסף ב-`docs/DAILY_RUNBOOK.md` (״וודא מול מסך הברוקר לפני הזנת פקודה״).
-
-## מוסכמות עבודה בריפו הזה
-
-- טסטים: `node:test` + `node:assert/strict` תחת `server/test/` (`npm test --workspace server`, 285 טסטים). דפוס נפוץ: `delete require.cache[...]` לטעינה מחדש + ניקוי env vars ב-setup. **חשוב:** מודול שצריך שיהיה ניתן ל-mock (למשל נדרש ע"י `candidatesService`) חייב להיות `require`-ed כאובייקט namespace (`const foo = require('./foo')` + `foo.bar()`), **לא** דה-סטרוקטורינג (`const { bar } = require('./foo')`) — דה-סטרוקטורינג לוכד את הפונקציה בזמן ה-require ומונע מ-mock בטסט להגיע לקורא. נתקלנו בזה בפועל בפאזה 8.
-- שינויי UI: להריץ dev server (Claude Browser preview tools) ולבדוק בפועל מול API אמיתי, לא רק unit tests — נתפסו כך גם באג CORS מקומי וגם ממצא ה-feed שלמעלה.
-- `.env` בשורש: `ALPACA_API_KEY_ID`/`ALPACA_API_SECRET_KEY`, `FINNHUB_API_KEY`, `CLIENT_ORIGIN` (**חייב לתאום לפורט שהלקוח באמת רץ עליו** — אחרת CORS חוסם כל קריאת API מהדפדפן בשקט), ואופציונלית `ORB_ENABLED`, `VIBE_TRADING_ENABLED`+`VIBE_TRADING_LAB_PATH`. לעולם לא לחשוף את תוכנו (גם לא ב-`cat`) — Read tool בלבד, ולא לצטט ערכי מפתחות בהודעות.
-- build: `npm run build` (root) בונה את הלקוח ל-`client/dist`; לנקות אחרי בדיקה מקומית.
-- Deploy: push ל-`main` → auto-deploy ב-Render (שני שירותים: server כ-Web Service, client כ-Static Site — ראו `docs/DEPLOYMENT.md`).
+- טסטים: `node:test` ב-`server/test/` (`node --test test/*.test.js` מתוך `server/`). **ידוע:** כ-6 טסטים נכשלים בסביבת הפיתוח (autopilot, decisionFeed — נתונים נשארים בין הרצות, v3flex, שירות הקליינט, system pause) ללא קשר לשינויים אחרונים; כתבו טסטים חדשים עם `AUTOPILOT_DB_PATH` זמני ומזהים ייחודיים.
+- הלקוח לא נבנה מקומית: לבדיקת תחביר `npx esbuild client/src/App.jsx --loader:.jsx=jsx`.
+- סטייט משתמש: `store.putUser/listUser` (kind `user:<id>:<kind>`); פקודות ביצוע וגם יומני יציאה/תוצאות — **גלובליים**.
+- `git` על תיקיית ה-Windows המחוברת משאיר קבצי `.lock` ו-`tmp_obj` (אי אפשר למחוק): להזיז ל-`.git/stale-*`. commit דורש `-c user.name=... -c user.email=...`.
+- בסיס הפסד יומי נקבע ב-`riskProfile.ensureDayBase`; מ-27.10 גם אוטומטית בניסיון כניסה ראשון של יום כשהמסחר העצמאי פעיל.
+- ה-EA: ללא `ExecutionToken` ו-`BrokerAccountId` ב-Inputs הוא כותב "execution disabled". `EnableExecution=false` כברירת מחדל. WebRequest דורש כתובת ב-`Tools > Options > Expert Advisors`.
+- שרת מחזיר לפעמים `502` (Traefik); הלקוח מנסה שוב GET אחד ומציג הודעה קריאה.
 
 ## מסמכים
 
-- [README.md](README.md) — סקירה טכנית מלאה של v2.
-- [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) — הסבר לא-טכני.
-- [docs/DAILY_RUNBOOK.md](docs/DAILY_RUNBOOK.md) — נוהל הפעלה יומי (גרסה מודפסת של §13 בספק).
-- [docs/EXPLAINER.html](docs/EXPLAINER.html) — מסמך אינטראקטיבי (לפתוח בדפדפן).
-- [docs/BACKFILL_FINDINGS.md](docs/BACKFILL_FINDINGS.md) — תוצאות מילוי היסטורי, נדרס בכל ריצת `ledger:backfill`.
-- כלים עצמאיים ששרדו: `docs/SPEC_VIBE_TRADING_LAB.md`+`BACKTEST_FINDINGS.md` (Vibe-Trading), `SPEC_ANOMALY_MINING.md`+`ANOMALY_FINDINGS.md` (כריית אנומליות), `SPEC_GITHUB_SURVEY.md`+`GITHUB_SURVEY.md`.
-- מסמכי v1 היסטוריים בלבד (מתארים קוד שנמחק, שימושיים רק להבנת §0 "למה בונים מחדש"): `SPEC_DATA_FUNNEL.md`, `SPEC_SMALL_CAP_STRATEGY.md`, `SPEC_UI_REDESIGN.md`, `SPEC_SHORT_TERM_UPGRADE.md`, `SPEC_NEW_STRATEGIES.md`, `LOGIC_IMPROVEMENTS.md`.
+- [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — תמונה מלאה של המצב, החלטות, בעיות פתוחות ורעיונות.
+- [docs/SPEC_V3_AUTOPILOT.md](docs/SPEC_V3_AUTOPILOT.md), [docs/SPEC_V3_FLEXIBLE_FILLS_AND_STRATEGIES.md](docs/SPEC_V3_FLEXIBLE_FILLS_AND_STRATEGIES.md), [docs/SPEC_V3_SCAN_COVERAGE.md](docs/SPEC_V3_SCAN_COVERAGE.md) — אסטרטגיות וסריקה.
+- [docs/DOKPLOY_DEPLOYMENT.md](docs/DOKPLOY_DEPLOYMENT.md), [deploy/mt4-wine/](deploy/mt4-wine/) — פריסה והרצת MT4 על שרת.
+- v2 (`SPEC_V2_ARCHITECTURE.md`, `BACKFILL_FINDINGS.md` וכו') — היסטוריה בלבד; הקוד ב-`pipeline/ playbooks/ ledger/` אינו במסלול הפעיל.
