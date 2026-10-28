@@ -74,8 +74,29 @@ function normalize(input = {}, now = Date.now()) {
   };
 }
 
+// Account equity at the start of the New York trading day = the last equity reported before the date changed
+// (so an open position carried over from yesterday starts today at zero, even if the EA was offline overnight).
+// A day that begins without a previous report from an earlier date has no baseline (null) and the client
+// falls back to closed-today + open.
+const DAY_OPEN = "dayOpen";
+function trackDayOpen(previous, snapshot, now) {
+  const today = nyDate(now);
+  const saved = store.get("runtime", DAY_OPEN);
+  if (saved?.date === today) return;
+  const prevDate = previous?.updatedAt ? nyDate(Date.parse(previous.updatedAt)) : null;
+  const usable = previous && prevDate && prevDate < today && Number.isFinite(previous.equity) && previous.accountId === snapshot.accountId;
+  store.put("runtime", DAY_OPEN, { date: today, equity: usable ? previous.equity : null });
+}
+
+function dayPnl(snapshot, now) {
+  const base = store.get("runtime", DAY_OPEN);
+  if (!base || base.date !== nyDate(now) || !Number.isFinite(base.equity) || !Number.isFinite(snapshot.equity)) return null;
+  return Math.round((snapshot.equity - base.equity) * 100) / 100;
+}
+
 function save(input, now = Date.now()) {
   const snapshot = normalize(input, now);
+  trackDayOpen(store.get("runtime", KEY), snapshot, now);
   store.put("runtime", KEY, snapshot);
   pnlHistory.record(snapshot.closedDeals, now);
   try { require("./outcomes").record(snapshot.closedDeals, now); } catch (e) { console.warn(`[execution] outcomes: ${e.message}`); }
@@ -95,7 +116,7 @@ function current(now = Date.now()) {
   if (!snapshot) return { available: false, fresh: false, positions: [] };
   const fresh = Date.parse(snapshot.updatedAt || 0) >= now - FRESH_MS;
   const { closedDeals, closedToday: _legacy, ...rest } = snapshot;
-  return { available: true, fresh, ...rest, closedToday: closedToday(closedDeals, now), closedTodayDate: nyDate(now) };
+  return { available: true, fresh, ...rest, closedToday: closedToday(closedDeals, now), dayPnl: dayPnl(snapshot, now), closedTodayDate: nyDate(now) };
 }
 
 module.exports = { FRESH_MS, normalize, save, current };

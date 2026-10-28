@@ -424,6 +424,74 @@ export default function App() {
                   onEntry={() => { setRulesSub("entry"); setTab("rules"); }}
                   onSettings={() => { setRulesSub("settings"); setTab("rules"); }}
                 />
+                  <div className="panel mt4-positions">
+                    <div className="section-heading">
+                      <h2>פוזיציות פתוחות ב-MT4 (דמו)</h2>
+                      <span className="badge">
+                        {mt4Positions?.fresh ? "מתעדכן" : "אין דיווח עדכני"}
+                      </span>
+                    </div>
+                    {mt4Positions?.fresh && mt4Positions.positions?.length ? (
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>סימול</th>
+                            <th>כיוון</th>
+                            <th>כמות</th>
+                            <th>כניסה</th>
+                            <th>מחיר נוכחי</th>
+                            <th>סטופ / יעד</th>
+                            <th>רווח/הפסד</th>
+                            <th>פעולה</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mt4Positions.positions.map((p) => (
+                            <tr key={p.ticket}>
+                              <td dir="ltr">{p.symbol}</td>
+                              <td>{p.side === "buy" ? "קנייה" : "מכירה"}</td>
+                              <td>{p.lots}</td>
+                              <td dir="ltr">{p.openPrice}</td>
+                              <td dir="ltr">{p.currentPrice ?? "לא זמין"}</td>
+                              <td dir="ltr">{`${p.stopLoss ?? "—"} / ${p.takeProfit ?? "—"}`}</td>
+                              <td dir="ltr" className={p.profit >= 0 ? "pl-up" : "pl-down"}>{p.profit ?? "לא זמין"}</td>
+                              <td>
+                                <button
+                                  className="danger close-btn"
+                                  disabled={busy || closeRequests.some((r) => r.ticket === p.ticket && ["pending", "claimed", "unknown"].includes(r.status))}
+                                  onClick={() => closePosition(p)}
+                                >
+                                  {closeRequests.some((r) => r.ticket === p.ticket && ["pending", "claimed"].includes(r.status)) ? "נסגרת…" : "סגור פוזיציה"}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : mt4Positions?.fresh ? (
+                      <p>אין פוזיציות פתוחות ב-MT4 כרגע.</p>
+                    ) : (
+                      <p>
+                        אין דיווח עדכני מ-MT4. הפוזיציות מוצגות רק כשה-EA מחובר
+                        ושולח נתונים. סגירת עסקה מהדשבורד עדיין אינה זמינה.
+                      </p>
+                    )}
+                  </div>
+                  {closeRequests.length > 0 && (
+                    <div className="panel close-requests">
+                      <div className="section-heading"><h2>בקשות סגירה אחרונות</h2></div>
+                      {closeRequests.slice(0, 5).map((r) => (
+                        <div className="order-row" key={r.id}>
+                          <b dir="ltr">{r.symbol}</b>
+                          <span>
+                            {{ pending: "ממתינה ל־EA", claimed: "ה־EA מטפל", closed: "נסגרה", rejected: "נדחתה", expired: "פג תוקף", unknown: "מצב לא ברור, בדוק ב־MT4" }[r.status] || r.status}
+                            {r.closePrice != null ? ` · מחיר סגירה ${r.closePrice}` : ""}
+                          </span>
+                          <small dir="ltr">{r.error || time(r.updatedAt)}</small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <DecisionLog executionApi={executionApi} />
                 </>
               )}
@@ -729,74 +797,6 @@ export default function App() {
                       })()}
                     </div>
                   </div>
-                  )}
-                  <div className="panel mt4-positions">
-                    <div className="section-heading">
-                      <h2>פוזיציות פתוחות ב-MT4 (דמו)</h2>
-                      <span className="badge">
-                        {mt4Positions?.fresh ? "מתעדכן" : "אין דיווח עדכני"}
-                      </span>
-                    </div>
-                    {mt4Positions?.fresh && mt4Positions.positions?.length ? (
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>סימול</th>
-                            <th>כיוון</th>
-                            <th>כמות</th>
-                            <th>כניסה</th>
-                            <th>מחיר נוכחי</th>
-                            <th>סטופ / יעד</th>
-                            <th>רווח/הפסד</th>
-                            <th>פעולה</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {mt4Positions.positions.map((p) => (
-                            <tr key={p.ticket}>
-                              <td dir="ltr">{p.symbol}</td>
-                              <td>{p.side === "buy" ? "קנייה" : "מכירה"}</td>
-                              <td>{p.lots}</td>
-                              <td dir="ltr">{p.openPrice}</td>
-                              <td dir="ltr">{p.currentPrice ?? "לא זמין"}</td>
-                              <td dir="ltr">{`${p.stopLoss ?? "—"} / ${p.takeProfit ?? "—"}`}</td>
-                              <td dir="ltr" className={p.profit >= 0 ? "pl-up" : "pl-down"}>{p.profit ?? "לא זמין"}</td>
-                              <td>
-                                <button
-                                  className="danger close-btn"
-                                  disabled={busy || closeRequests.some((r) => r.ticket === p.ticket && ["pending", "claimed", "unknown"].includes(r.status))}
-                                  onClick={() => closePosition(p)}
-                                >
-                                  {closeRequests.some((r) => r.ticket === p.ticket && ["pending", "claimed"].includes(r.status)) ? "נסגרת…" : "סגור פוזיציה"}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : mt4Positions?.fresh ? (
-                      <p>אין פוזיציות פתוחות ב-MT4 כרגע.</p>
-                    ) : (
-                      <p>
-                        אין דיווח עדכני מ-MT4. הפוזיציות מוצגות רק כשה-EA מחובר
-                        ושולח נתונים. סגירת עסקה מהדשבורד עדיין אינה זמינה.
-                      </p>
-                    )}
-                  </div>
-                  {closeRequests.length > 0 && (
-                    <div className="panel close-requests">
-                      <div className="section-heading"><h2>בקשות סגירה אחרונות</h2></div>
-                      {closeRequests.slice(0, 5).map((r) => (
-                        <div className="order-row" key={r.id}>
-                          <b dir="ltr">{r.symbol}</b>
-                          <span>
-                            {{ pending: "ממתינה ל־EA", claimed: "ה־EA מטפל", closed: "נסגרה", rejected: "נדחתה", expired: "פג תוקף", unknown: "מצב לא ברור, בדוק ב־MT4" }[r.status] || r.status}
-                            {r.closePrice != null ? ` · מחיר סגירה ${r.closePrice}` : ""}
-                          </span>
-                          <small dir="ltr">{r.error || time(r.updatedAt)}</small>
-                        </div>
-                      ))}
-                    </div>
                   )}
                   {open.length ? (
                     open.map((t) => (
@@ -1145,7 +1145,8 @@ function StatusRibbon({ data, executionState, mt4Positions }) {
   const mt4Tone = executionState?.agentConnected ? "ok" : "warn";
   const mt4Fresh = Boolean(mt4Positions?.fresh);
   const dailyKnown = mt4Fresh && Number.isFinite(mt4Positions.profit);
-  const dailyPl = dailyKnown ? (Number(mt4Positions.closedToday) || 0) + mt4Positions.profit : 0;
+  // dayPnl = equity now minus equity at the start of the NY day (server); the old sum is only a fallback.
+  const dailyPl = dailyKnown ? (Number.isFinite(mt4Positions.dayPnl) ? mt4Positions.dayPnl : (Number(mt4Positions.closedToday) || 0) + mt4Positions.profit) : 0;
   return (
     <section className="status-ribbon" aria-label="תמונת מצב של המערכת">
       <div className="status-ribbon-intro">
@@ -1171,7 +1172,7 @@ function StatusRibbon({ data, executionState, mt4Positions }) {
       <StatusRibbonItem
         label="רווח/הפסד היום"
         value={dailyKnown ? `${dailyPl >= 0 ? "+" : ""}${dailyPl.toLocaleString("he-IL", { maximumFractionDigits: 2 })} ${mt4Positions.currency || ""}` : "לא זמין"}
-        note={dailyKnown ? "סגור היום + פתוח עכשיו" : "אין דיווח עדכני מ-MT4"}
+        note={dailyKnown ? "שינוי בשווי החשבון מאז פתיחת היום (ניו יורק)" : "אין דיווח עדכני מ-MT4"}
         tone={dailyKnown ? (dailyPl >= 0 ? "ok" : "error") : "muted"}
       />
       <StatusRibbonItem
@@ -1287,7 +1288,7 @@ function ControlTerminal({ data, executionOrders: allOrders, executionState, mt4
   const executionMode = executionState?.mode || "off";
   const mt4Fresh = Boolean(mt4Positions?.fresh);
   const executionOrders = allOrders ? allOrders.filter((o) => ["queued", "pending", "sent", "claimed", "submitted"].includes(String(o.status || "").toLowerCase())) : allOrders;
-  const dayResult = mt4Fresh && Number.isFinite(mt4Positions.closedToday) ? mt4Positions.closedToday + (Number.isFinite(mt4Positions.profit) ? mt4Positions.profit : 0) : null;
+  const dayResult = mt4Fresh && Number.isFinite(mt4Positions.dayPnl) ? mt4Positions.dayPnl : mt4Fresh && Number.isFinite(mt4Positions.closedToday) ? mt4Positions.closedToday + (Number.isFinite(mt4Positions.profit) ? mt4Positions.profit : 0) : null;
   const mt4Open = mt4Fresh ? mt4Positions.positions.length : null;
   const { items: readiness } = readinessOf({ data, executionState, mt4Positions });
   const money2 = (v) => (Number.isFinite(v) ? v.toLocaleString("he-IL", { maximumFractionDigits: 2 }) : "—");
@@ -1303,7 +1304,7 @@ function ControlTerminal({ data, executionOrders: allOrders, executionState, mt4
         <span className="demo-badge">חשבון דמו בלבד</span>
       </div>
       <div className="terminal-metrics">
-        <section className="terminal-metric"><span>רווח / הפסד היום</span><strong dir="ltr" className={dayResult != null ? (dayResult >= 0 ? "pl-up" : "pl-down") : ""}>{dayResult != null ? money2(dayResult) : "—"}</strong><small>{dayResult != null ? "סגורות היום + פתוחות" : "אין נתון מ־MT4"}</small></section>
+        <section className="terminal-metric"><span>רווח / הפסד היום</span><strong dir="ltr" className={dayResult != null ? (dayResult >= 0 ? "pl-up" : "pl-down") : ""}>{dayResult != null ? money2(dayResult) : "—"}</strong><small>{dayResult != null ? "שינוי בשווי החשבון מאז פתיחת היום" : "אין נתון מ־MT4"}</small></section>
         <section className="terminal-metric"><span>פוזיציות פתוחות</span><strong>{mt4Open != null ? mt4Open : "—"}</strong><small>{mt4Open != null ? "לפי MT4" : "אין דיווח עדכני"}</small></section>
         <section className="terminal-metric"><span>פקודות ממתינות</span><strong>{executionOrders ? executionOrders.length : "—"}</strong><small>בתור הביצוע</small></section>
       </div>

@@ -8,7 +8,7 @@ const MODULES = [
   "../src/autopilot/store", "../src/autopilot/market", "../src/execution/positions", "../src/execution/orders",
   "../src/execution/riskProfile", "../src/execution/risk", "../src/execution/bridge", "../src/execution/entryProfile",
   "../src/execution/entryDecision", "../src/execution/pnlHistory", "../src/execution/decisionFeed",
-  "../src/execution/exitLog", "../src/execution/outcomes",
+  "../src/execution/exitLog", "../src/execution/outcomes", "../src/execution/positions",
 ];
 
 // Temporary database and unique profile ids, so earlier runs cannot leak into the assertions.
@@ -119,5 +119,21 @@ test("pushOnlyBought keeps the activity log but pushes only entries", () => {
     assert.deepEqual(ids("outbox").sort(), ["n1", "n3"]);
     assert.deepEqual(ids("event").sort(), ["n1", "n2", "n3"]);
     assert.throws(() => settings.save({ pushOnlyBought: "yes" }, ctx.a));
+  } finally { cleanup(ctx); }
+});
+
+test("daily P/L starts at zero on a new New York day even with a position carried over", () => {
+  const ctx = load();
+  try {
+    const positions = require("../src/execution/positions");
+    const report = (equity, at) => positions.save({ accountId: "102992", isDemo: true, currency: "USD", balance: 10000, equity, profit: equity - 10000, positions: [], closedDeals: [] }, at);
+    const evening = Date.UTC(2026, 9, 27, 20, 0); // 16:00 in New York
+    const morning = Date.UTC(2026, 9, 28, 14, 0); // 10:00 in New York
+    report(10000, evening - 3600000);
+    report(10150, evening); // +150 during 27.10 with a position still open
+    report(10150, morning);
+    assert.equal(positions.current(morning).dayPnl, 0);
+    report(10180, morning + 60000);
+    assert.equal(positions.current(morning + 60000).dayPnl, 30);
   } finally { cleanup(ctx); }
 });
