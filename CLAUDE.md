@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-מסמך התמצאות לתחילת שיחה חדשה של Claude Code בפרויקט הזה. עודכן ב-27.10.2026. המסמך המלא והמפורט: [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — לקרוא אותו לפני כל שינוי בלוגיקת ביצוע או סיכון.
+מסמך התמצאות לתחילת שיחה חדשה של Claude Code בפרויקט הזה. עודכן ב-28.10.2026. המסמך המלא והמפורט: [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — לקרוא אותו לפני כל שינוי בלוגיקת ביצוע או סיכון.
 
 ## כללי ברזל (הוראות המשתמש, מחייבות)
 
@@ -34,6 +34,7 @@ TradeSense מייצרת איתותי מניות ארה"ב (סורק + 4 אסטר
 6. ה-EA ב-MT4 (`mt4/TradeSenseExecutionEA.mq4`) עושה polling לשרת (HTTPS, בלי פורט בכתובת), מבצע, ומדווח `heartbeat` + פוזיציות + עסקאות סגורות (`TradeSensePositions.mqh`).
 7. `execution/exitManager.js` מנהל יציאות (הפסד יומי, סטופ, מימוש רווח במדרגות, סגירת סוף יום) ורושם ל-`exitLog`. `execution/outcomes.js` — ספר תוצאות לפי ticket.
 8. `execution/decisionFeed.js` ממזג כניסות ויציאות ← `GET /api/execution/decisions`.
+9. רווח/הפסד יומי: `positions.current()` מחזיר `dayPnl` (שווי חשבון פחות שווי בפתיחת יום ניו יורק). התראות push: הגדרה `pushOnlyBought` (רק כניסות).
 
 ## מבנה קוד
 
@@ -61,6 +62,7 @@ deploy/        dokploy, vps, mt4-wine (Docker+Wine, לא נבדק)
 
 ## מוסכמות והכרת מלכודות
 
+- טסטים דורשים Node 24 (`node:sqlite`); `node` ברירת המחדל במחשב של המשתמש הוא 20. סוג הרשומה של יומן הכניסות הוא `entryDecision` (ב-`decisionFeed.js` וב-`outcomes.js` חייבים להתאים).
 - טסטים: `node:test` ב-`server/test/` (`node --test test/*.test.js` מתוך `server/`). **ידוע:** כ-6 טסטים נכשלים בסביבת הפיתוח (autopilot, decisionFeed — נתונים נשארים בין הרצות, v3flex, שירות הקליינט, system pause) ללא קשר לשינויים אחרונים; כתבו טסטים חדשים עם `AUTOPILOT_DB_PATH` זמני ומזהים ייחודיים.
 - הלקוח לא נבנה מקומית: לבדיקת תחביר `npx esbuild client/src/App.jsx --loader:.jsx=jsx`.
 - סטייט משתמש: `store.putUser/listUser` (kind `user:<id>:<kind>`); פקודות ביצוע וגם יומני יציאה/תוצאות — **גלובליים**.
