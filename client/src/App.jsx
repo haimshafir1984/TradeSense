@@ -402,28 +402,6 @@ export default function App() {
             <>
               {tab === "terminal" && (
                 <>
-                <ControlTerminal
-                  data={data}
-                  executionOrders={executionOrders}
-                  executionState={executionState}
-                  mt4Positions={mt4Positions}
-                  busy={busy}
-                  onStart={() =>
-                    act(
-                      () => api("/system", { method: "POST", body: JSON.stringify({ paused: false }) }),
-                      "מנוע האיתותים הופעל",
-                    )
-                  }
-                  onStop={() =>
-                    act(
-                      () => api("/system", { method: "POST", body: JSON.stringify({ paused: true }) }),
-                      "מנוע האיתותים הושהה",
-                    )
-                  }
-                  onRisk={() => { setRulesSub("risk"); setTab("rules"); }}
-                  onEntry={() => { setRulesSub("entry"); setTab("rules"); }}
-                  onSettings={() => { setRulesSub("settings"); setTab("rules"); }}
-                />
                   <div className="panel mt4-positions">
                     <div className="section-heading">
                       <h2>פוזיציות פתוחות ב-MT4 (דמו)</h2>
@@ -492,6 +470,28 @@ export default function App() {
                       ))}
                     </div>
                   )}
+                <ControlTerminal
+                  data={data}
+                  executionOrders={executionOrders}
+                  executionState={executionState}
+                  mt4Positions={mt4Positions}
+                  busy={busy}
+                  onStart={() =>
+                    act(
+                      () => api("/system", { method: "POST", body: JSON.stringify({ paused: false }) }),
+                      "מנוע האיתותים הופעל",
+                    )
+                  }
+                  onStop={() =>
+                    act(
+                      () => api("/system", { method: "POST", body: JSON.stringify({ paused: true }) }),
+                      "מנוע האיתותים הושהה",
+                    )
+                  }
+                  onRisk={() => { setRulesSub("risk"); setTab("rules"); }}
+                  onEntry={() => { setRulesSub("entry"); setTab("rules"); }}
+                  onSettings={() => { setRulesSub("settings"); setTab("rules"); }}
+                />
                   <DecisionLog executionApi={executionApi} />
                 </>
               )}
