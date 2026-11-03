@@ -1,0 +1,101 @@
+// One scan cycle for the Alpaca arm: build/refresh the universe, fetch daily + intraday bars (the
+// same shared, symbol-keyed caches the Colmex side uses - autopilot/history.js - read-only reuse,
+// no shared decision state), evaluate every active strategy per symbol, and feed matches into entry.js.
+//
+// Known v1 simplification: relative volume is a simple same-session proxy (today's cumulative volume
+// vs. the 20-day average volume, scaled by elapsed time), not the SIP-calendar-exact version the main
+// engine uses. Also no exchange holiday calendar: a non-trading day just yields a closed market and
+// an empty scan, not a crash.
+const { nyDate, nyTimestamp } = require("../autopilot/market");
+const history = require("../autopilot/history");
+const strategies = require("../autopilot/strategies");
+const universe = require("./universe");
+const entry = require("./entry");
+
+const INTRADAY_BATCH = 50;
+
+function isMarketHours(now) {
+  const date = nyDate(now);
+  const day = new Date(now).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short" });
+  if (day === "Sat" || day === "Sun") return false;
+  const open = Date.parse(nyTimestamp(date, "09:30"));
+  const close = Date.parse(nyTimestamp(date, "16:00"));
+  return now >= open && now < close;
+}
+
+function sessionBounds(now) {
+  const date = nyDate(now);
+  return { open: Date.parse(nyTimestamp(date, "09:30")), close: Date.parse(nyTimestamp(date, "16:00")) };
+}
+
+function simpleRvol(bars, session, now, avgVolume20d) {
+  if (!Number.isFinite(avgVolume20d) || avgVolume20d <= 0) return null;
+  const closedBars = (bars || []).filter((bar) => Date.parse(bar.t) >= session.open && Date.parse(bar.t) + 300000 <= now);
+  if (!closedBars.length) return null;
+  const elapsedMs = Math.min(now - session.open, session.close - session.open);
+  if (elapsedMs < 900000) return null;
+  const soFar = closedBars.reduce((sum, bar) => sum + Number(bar.v || 0), 0);
+  const expected = avgVolume20d * (elapsedMs / (session.close - session.open));
+  return expected > 0 ? soFar / expected : null;
+}
+
+async function run(profile, now = Date.now()) {
+  const diagnostics = { marketOpen: isMarketHours(now), universeSize: 0, evaluated: 0, matched: 0, errors: [] };
+  if (!diagnostics.marketOpen) return diagnostics;
+
+  let rows = universe.getRows(now);
+  if (!rows.length) {
+    try {
+      rows = await universe.build(now, profile);
+    } catch (error) {
+      diagnostics.errors.push({ stage: "universe", message: error.message });
+      return diagnostics;
+    }
+  }
+  diagnostics.universeSize = rows.length;
+  if (!rows.length) return diagnostics;
+
+  const symbols = rows.map((r) => r.symbol);
+  const dailyResult = await history.ensureDailyFeatures(symbols, now);
+  const session = sessionBounds(now);
+
+  for (let offset = 0; offset < symbols.length; offset += INTRADAY_BATCH) {
+    const batch = symbols.slice(offset, offset + INTRADAY_BATCH);
+    const intraday = await history.ensureIntradayBars(batch, { now, feed: "iex", evict: offset + INTRADAY_BATCH >= symbols.length });
+    diagnostics.errors.push(...(intraday.errors || []));
+    for (const symbol of batch) {
+      const daily = dailyResult.features.get(symbol)?.features;
+      const bars = intraday.bars.get(symbol) || [];
+      if (!daily || !bars.length) continue;
+      diagnostics.evaluated += 1;
+      const rvol = simpleRvol(bars, session, now, daily.avgVolume20d);
+      const { plans } = strategies.evaluateDetailed({
+        bars, asOf: now, sessionOpen: session.open, sessionClose: session.close,
+        daily, rvol, gapPct: daily.gapPct, hasNews: null,
+      });
+      for (const plan of plans) {
+        if (!profile.strategies.includes(plan.strategy)) continue;
+        diagnostics.matched += 1;
+        entry.observe({
+          now,
+          signal: {
+            id: `${symbol}:${plan.strategy}:${plan.barAt}`,
+            ticker: symbol,
+            strategy: plan.strategy,
+            entry: plan.entry,
+            maxEntry: plan.maxEntry,
+            stop: plan.stop,
+            target: plan.target,
+            rvol,
+            daily,
+            expiresAt: new Date(now + 10 * 60000).toISOString(),
+          },
+        });
+      }
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  return diagnostics;
+}
+
+module.exports = { run, isMarketHours, sessionBounds, simpleRvol };

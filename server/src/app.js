@@ -44,6 +44,9 @@ app.use("/api", (req, res, next) => {
 });
 app.use("/api/autopilot", require("./routes/autopilot"));
 app.use("/api/execution", require("./routes/execution"));
+// Independent paper-trading arm (Alpaca), separate from the Colmex/MT4 execution path above: own
+// account, own universe, own risk settings. Added 2026-11-03; see docs/ALPACA_TRADER.md.
+app.use("/api/alpaca-trader", require("./routes/alpacaTrader"));
 app.use("/api/candidates", candidatesRouter);
 app.use("/api/playbooks", playbooksRouter);
 app.use("/api/ledger", ledgerRouter);

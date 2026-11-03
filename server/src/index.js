@@ -42,13 +42,26 @@ function startAutopilotSafely() {
   }
 }
 
+// Independent of the autopilot/execution (Colmex/MT4) scheduler above: its own engine, own timer,
+// off unless ALPACA_TRADER_ENABLED=true. A failure here never touches startAutopilotSafely.
+function startAlpacaTraderSafely() {
+  try {
+    require("./alpaca-trader/engine").start();
+    console.log("[startup] Alpaca trader scheduler started" + (process.env.ALPACA_TRADER_ENABLED === "true" ? "" : " (ALPACA_TRADER_ENABLED is not \"true\": idle)"));
+  } catch (error) {
+    console.error(`[startup] Alpaca trader scheduler failed to start: ${error.stack || error.message}`);
+  }
+}
+
 // The server owns the persistent v3 scheduler; browser visits never trigger monitoring.
 app.listen(port, () => {
   console.log(`TradeSense API listening on port ${port}`);
   startAutopilotSafely();
+  startAlpacaTraderSafely();
 });
 process.on("SIGTERM", () => {
   if (autopilotRetryTimer) clearTimeout(autopilotRetryTimer);
   require("./autopilot/engine").stop();
+  require("./alpaca-trader/engine").stop();
   process.exit(0);
 });

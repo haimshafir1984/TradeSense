@@ -625,6 +625,13 @@ summary {
   background: #fff5df;
   color: #90661e;
 }
+/* Generic profit/loss coloring, usable anywhere (not scoped to .open-summary like the strong-only rule below). */
+.pl-up {
+  color: var(--green);
+}
+.pl-down {
+  color: #b34a44;
+}
 .signal-title {
   margin-bottom: 10px;
 }

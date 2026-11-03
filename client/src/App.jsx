@@ -3,6 +3,7 @@ import RiskPanel from "./RiskPanel.jsx";
 import EntryPanel from "./EntryPanel.jsx";
 import PnlPanel from "./PnlPanel.jsx";
 import DecisionLog from "./DecisionLog.jsx";
+import AlpacaTraderPanel from "./AlpacaTraderPanel.jsx";
 // Production builds default to same-origin (the API serves this site); dev talks to :4000.
 const BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? "" : "http://localhost:4000");
 const money = (n) =>
@@ -105,6 +106,23 @@ export default function App() {
     });
     const { response, result } = await readJson(doFetch, (options.method || "GET").toUpperCase());
     if (!response.ok) throw new Error(result.error || "פקודות הביצוע אינן זמינות");
+    return result;
+  }
+  // Independent of executionApi above: a separate backend engine and account (Alpaca paper, not
+  // Colmex/MT4). Same login/session, different API prefix.
+  async function alpacaApi(path, options = {}) {
+    const doFetch = () => fetch(`${BASE}/api/alpaca-trader${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token.current ? { Authorization: `Bearer ${token.current}` } : {}),
+        ...(userId.current ? { "X-TradeSense-User": userId.current } : {}),
+        ...options.headers,
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    const { response, result } = await readJson(doFetch, (options.method || "GET").toUpperCase());
+    if (!response.ok) throw new Error(result.error || "חשבון Alpaca אינו זמין");
     return result;
   }
   async function login(event) {
@@ -326,6 +344,7 @@ export default function App() {
               ["today", "◎", "איתותים"],
               ["results", "▤", "תוצאות"],
               ["rules", "⚙", "כללים והגדרות"],
+              ["alpaca", "◇", "חשבון דמו Alpaca"],
             ].map(([key, icon, label]) => (
               <button
                 key={key}
@@ -1070,6 +1089,14 @@ export default function App() {
                 />
               )}
               {tab === "rules" && rulesSub === "activity" && <ActivityLog events={data.events || []} />}
+              {tab === "alpaca" && (
+                <AlpacaTraderPanel
+                  alpacaApi={alpacaApi}
+                  busy={busy}
+                  onNotice={setNotice}
+                  onError={setError}
+                />
+              )}
               <footer>
                 TradeSense · סביבת דמו בלבד · לא תחליף לייעוץ השקעות · נתוני שוק בכיסוי חלקי
               </footer>
