@@ -24,6 +24,9 @@ COPY --from=build /app/client/dist client/dist
 RUN mkdir -p /data && chown -R node:node /data
 USER node
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+# Lenient on purpose: the single Node thread does heavy synchronous SQLite work during market hours and can
+# stall /api/health for several seconds. With timeout=5s/retries=3 Swarm killed healthy-but-busy containers
+# (exit 137, OOMKilled=false) in a restart loop on 2026-11-03. Restarting is worse than being slow.
+HEALTHCHECK --interval=30s --timeout=30s --start-period=180s --retries=10 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "server/src/index.js"]
