@@ -7,21 +7,25 @@ const os = require("node:os");
 function setup() {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "tradesense-alpaca-"));
   process.env.AUTOPILOT_DB_PATH = path.join(scratch, "test.sqlite");
-  for (const m of ["store", "settings", "risk", "broker", "entry", "exit"]) {
+  for (const m of ["store", "settings", "risk", "broker", "entry", "exit", "universe"]) {
     const file = m === "store" ? "../src/autopilot/store" : `../src/alpaca-trader/${m}`;
     delete require.cache[require.resolve(file)];
   }
+  delete require.cache[require.resolve("../src/providers/alpacaService")];
   const store = require("../src/autopilot/store");
   const settings = require("../src/alpaca-trader/settings");
   const risk = require("../src/alpaca-trader/risk");
   const broker = require("../src/alpaca-trader/broker");
   const entry = require("../src/alpaca-trader/entry");
   const exitManager = require("../src/alpaca-trader/exit");
+  const universe = require("../src/alpaca-trader/universe");
+  const alpacaService = require("../src/providers/alpacaService");
   return {
-    store, settings, risk, broker, entry, exitManager,
+    store, settings, risk, broker, entry, exitManager, universe, alpacaService,
     cleanup() {
       store.close();
       delete process.env.AUTOPILOT_DB_PATH;
+      delete process.env.ALPACA_TRADER_MEMORY_GUARD_MB;
       fs.rmSync(scratch, { recursive: true, force: true });
     },
   };
@@ -145,6 +149,26 @@ test("exit: closes a position that crossed its stop, and leaves others alone", a
     const results = await exitManager.manage({ dailyBreached: false, now: Date.parse("2026-11-03T15:00:00Z") });
     assert.deepEqual(closed, ["AAPL"]);
     assert.equal(results[0].reason, "stop");
+  } finally {
+    cleanup();
+  }
+});
+
+test("universe: the memory guard stops the build early instead of ballooning (the 2026-11-03 OOM bug)", async () => {
+  process.env.ALPACA_TRADER_MEMORY_GUARD_MB = "1"; // process RSS always exceeds 1MB: guard fires on batch 1
+  const { universe, alpacaService, cleanup } = setup();
+  try {
+    assert.equal(universe.overMemoryGuard(), true);
+    let barsCalls = 0;
+    alpacaService.getActiveAssets = async () => [
+      { symbol: "AAAA", name: "A Corp common stock" },
+      { symbol: "BBBB", name: "B Corp common stock" },
+    ];
+    alpacaService.getBarsDetailed = async () => { barsCalls += 1; return { bars: new Map() }; };
+    const rows = await universe.build(Date.now(), { minPrice: 3, minAdv20: 3_000_000 });
+    assert.deepEqual(rows, []);
+    assert.equal(barsCalls, 0, "stops before the first batch fetch, not after ballooning");
+    assert.equal(universe.status().diagnostics.memoryGuardStopped, true);
   } finally {
     cleanup();
   }

@@ -9,8 +9,13 @@ const exitManager = require("./exit");
 const KIND = "alpacaTrader";
 const STATE_KEY = "state";
 const TICK_MS = Number(process.env.ALPACA_TRADER_SCAN_INTERVAL_MS || 300000); // 5 min, matches the intraday strategies' own bar size
+// Delay the first tick after a (re)deploy so this engine's startup universe-build burst does not land
+// on top of the main autopilot engine's own startup burst - that collision caused a production OOM
+// crash loop (exit 137) on 2026-11-03.
+const STARTUP_DELAY_MS = Number(process.env.ALPACA_TRADER_STARTUP_DELAY_MS || 180000);
 
 let timer = null;
+let startupTimer = null;
 let running = false;
 
 function state(patch) {
@@ -73,16 +78,22 @@ async function tick(now = Date.now()) {
 }
 
 function start() {
-  if (timer || process.env.ALPACA_TRADER_ENABLED !== "true") return;
+  if (timer || startupTimer || process.env.ALPACA_TRADER_ENABLED !== "true") return;
   state({ startedAt: new Date().toISOString() });
-  tick();
-  timer = setInterval(tick, TICK_MS);
-  timer.unref();
+  startupTimer = setTimeout(() => {
+    startupTimer = null;
+    tick();
+    timer = setInterval(tick, TICK_MS);
+    timer.unref();
+  }, STARTUP_DELAY_MS);
+  startupTimer.unref();
 }
 
 function stop() {
   if (timer) clearInterval(timer);
+  if (startupTimer) clearTimeout(startupTimer);
   timer = null;
+  startupTimer = null;
 }
 
 async function view(now = Date.now()) {

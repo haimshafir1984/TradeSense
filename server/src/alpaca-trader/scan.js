@@ -60,6 +60,10 @@ async function run(profile, now = Date.now()) {
   const session = sessionBounds(now);
 
   for (let offset = 0; offset < symbols.length; offset += INTRADAY_BATCH) {
+    if (universe.overMemoryGuard()) {
+      diagnostics.errors.push({ stage: "intraday", message: `stopped at ${offset}/${symbols.length}: memory guard` });
+      break;
+    }
     const batch = symbols.slice(offset, offset + INTRADAY_BATCH);
     const intraday = await history.ensureIntradayBars(batch, { now, feed: "iex", evict: offset + INTRADAY_BATCH >= symbols.length });
     diagnostics.errors.push(...(intraday.errors || []));

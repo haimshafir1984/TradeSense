@@ -6,8 +6,19 @@ const market = require("../autopilot/market");
 const alpaca = require("../providers/alpacaService");
 
 const KIND = "alpacaTrader";
-const MAX_UNIVERSE = Number(process.env.ALPACA_TRADER_UNIVERSE_MAX || 400);
+// Lowered from 400 after a production OOM crash loop (2026-11-03): this engine's universe build runs
+// concurrently with the main autopilot engine's own daily rebuild, inside the same 1.5GB container
+// limit, and together they exceeded it (exit 137 / SIGKILL). A smaller universe means a smaller burst.
+const MAX_UNIVERSE = Number(process.env.ALPACA_TRADER_UNIVERSE_MAX || 150);
 const BATCH_SIZE = 50;
+// Self-contained guard, independent of autopilot/memoryDiagnostics.js (whose 350MB "optional" threshold
+// is calibrated for an old 512MB host and only pauses optional work, not the core build - too low to be
+// useful here, and changing it would affect the Colmex/MT4 side too). Aborts the build early rather
+// than letting Docker's hard 1.5GB cgroup limit kill the whole container.
+const MEMORY_GUARD_MB = Number(process.env.ALPACA_TRADER_MEMORY_GUARD_MB || 900);
+function overMemoryGuard() {
+  return process.memoryUsage().rss / (1024 * 1024) >= MEMORY_GUARD_MB;
+}
 
 function validSymbol(symbol) {
   return typeof symbol === "string" && /^[A-Z]{1,5}$/.test(symbol);
@@ -34,8 +45,13 @@ async function build(now = Date.now(), profile) {
   const date = market.nyDate(now);
   const assets = await activeAssets();
   const rows = [];
-  const diagnostics = { date, sourceAssets: assets.length, belowPrice: 0, belowLiquidity: 0, missing: 0 };
+  const diagnostics = { date, sourceAssets: assets.length, belowPrice: 0, belowLiquidity: 0, missing: 0, memoryGuardStopped: false };
   for (let offset = 0; offset < assets.length; offset += BATCH_SIZE) {
+    if (overMemoryGuard()) {
+      diagnostics.memoryGuardStopped = true;
+      console.warn(`[alpaca-trader] universe build stopped early at ${offset}/${assets.length}: RSS over ${MEMORY_GUARD_MB}MB guard`);
+      break;
+    }
     const batch = assets.slice(offset, offset + BATCH_SIZE);
     const detail = await alpaca.getBarsDetailed({ symbols: batch.map((a) => a.symbol), timeframe: "1Day", days: 30, feed: "sip", adjustment: "split", now });
     for (const asset of batch) {
@@ -48,12 +64,15 @@ async function build(now = Date.now(), profile) {
       if (!Number.isFinite(adv20) || adv20 < profile.minAdv20) { diagnostics.belowLiquidity += 1; continue; }
       rows.push({ symbol: asset.symbol, close, avgDollarVolume20d: adv20 });
     }
+    detail.bars.clear();
     await new Promise((resolve) => setImmediate(resolve));
   }
   rows.sort((a, b) => b.avgDollarVolume20d - a.avgDollarVolume20d);
   const capped = rows.slice(0, MAX_UNIVERSE);
   diagnostics.eligible = rows.length;
   diagnostics.capped = Math.max(0, rows.length - capped.length);
+  // Even a guard-stopped (partial) universe is cached and used: it's a real, if incomplete, result -
+  // better than an empty scan, and never worse than what a crash loop gave (nothing).
   store.put(KIND, "universe", { date, rows: capped, diagnostics, fetchedAt: new Date(now).toISOString() });
   return capped;
 }
@@ -68,4 +87,4 @@ function status(now = Date.now()) {
   return { ready: Boolean(cache?.rows?.length), date: cache?.date || null, stale: cache?.date !== market.nyDate(now), size: cache?.rows?.length || 0, diagnostics: cache?.diagnostics || null };
 }
 
-module.exports = { build, getRows, status };
+module.exports = { build, getRows, status, overMemoryGuard };
