@@ -18,7 +18,7 @@ function logExit(entry, now = Date.now()) {
 }
 
 function isPastClose(now) {
-  return now >= Date.parse(nyTimestamp(nyDate(now), "15:55"));
+  return now >= nyTimestamp(nyDate(now), "15:55");
 }
 
 // One pass over every open Alpaca position: close it if the stop, the target, the daily-loss breach,

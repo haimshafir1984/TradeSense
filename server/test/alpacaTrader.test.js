@@ -174,6 +174,45 @@ test("universe: the memory guard stops the build early instead of ballooning (th
   }
 });
 
+test("scan: intraday bars are requested for today's session only, never the 26-day default (the OOM root cause)", async () => {
+  const { universe, cleanup } = setup();
+  try {
+    delete require.cache[require.resolve("../src/alpaca-trader/scan")];
+    delete require.cache[require.resolve("../src/autopilot/history")];
+    const history = require("../src/autopilot/history");
+    const scan = require("../src/alpaca-trader/scan");
+    const now = Date.parse("2026-11-03T15:00:00Z"); // Tuesday 10:00 New York, inside the session
+    universe.getRows = () => [{ symbol: "AAAA" }, { symbol: "BBBB" }];
+    history.ensureDailyFeatures = async () => ({ features: new Map(), complete: true });
+    const calls = [];
+    history.ensureIntradayBars = async (symbols, options) => { calls.push({ symbols, options }); return { bars: new Map(), errors: [] }; };
+    const diagnostics = await scan.run({ strategies: [], minPrice: 3, minAdv20: 3e6 }, now);
+    assert.equal(diagnostics.marketOpen, true);
+    assert.equal(calls.length, 1);
+    const { open } = scan.sessionBounds(now);
+    assert.equal(calls[0].options.start, new Date(open).toISOString(), "start is today's session open, not 26 days back");
+    assert.ok(Date.parse(calls[0].options.start) > now - 24 * 3600 * 1000, "within the last day");
+  } finally {
+    cleanup();
+  }
+});
+
+test("exit: end of day closes positions at 15:55 New York and not before (was dead code: NaN from Date.parse(number))", async () => {
+  const { exitManager, broker, cleanup } = setup();
+  try {
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-03T20:50:00Z")), false); // 15:50 NY
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-03T20:56:00Z")), true); // 15:56 NY
+    const closed = [];
+    broker.getPositions = async () => [{ symbol: "AAPL", qty: "10", current_price: "200" }];
+    broker.closePosition = async (symbol) => { closed.push(symbol); return {}; };
+    const results = await exitManager.manage({ dailyBreached: false, now: Date.parse("2026-11-03T20:56:00Z") });
+    assert.deepEqual(closed, ["AAPL"]);
+    assert.equal(results[0].reason, "end_of_day");
+  } finally {
+    cleanup();
+  }
+});
+
 test("exit: a daily-loss breach closes every position regardless of price", async () => {
   const { exitManager, broker, cleanup } = setup();
   try {

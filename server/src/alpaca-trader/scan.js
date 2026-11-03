@@ -12,20 +12,20 @@ const strategies = require("../autopilot/strategies");
 const universe = require("./universe");
 const entry = require("./entry");
 
-const INTRADAY_BATCH = 50;
+const INTRADAY_BATCH = 20;
 
 function isMarketHours(now) {
   const date = nyDate(now);
   const day = new Date(now).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short" });
   if (day === "Sat" || day === "Sun") return false;
-  const open = Date.parse(nyTimestamp(date, "09:30"));
-  const close = Date.parse(nyTimestamp(date, "16:00"));
+  const open = nyTimestamp(date, "09:30");
+  const close = nyTimestamp(date, "16:00");
   return now >= open && now < close;
 }
 
 function sessionBounds(now) {
   const date = nyDate(now);
-  return { open: Date.parse(nyTimestamp(date, "09:30")), close: Date.parse(nyTimestamp(date, "16:00")) };
+  return { open: nyTimestamp(date, "09:30"), close: nyTimestamp(date, "16:00") };
 }
 
 function simpleRvol(bars, session, now, avgVolume20d) {
@@ -65,7 +65,16 @@ async function run(profile, now = Date.now()) {
       break;
     }
     const batch = symbols.slice(offset, offset + INTRADAY_BATCH);
-    const intraday = await history.ensureIntradayBars(batch, { now, feed: "iex", evict: offset + INTRADAY_BATCH >= symbols.length });
+    // Only today's session is needed (evaluateDetailed ignores earlier candles), so ask for just that.
+    // Without an explicit start, a symbol never cached before triggers a full 26-day backfill
+    // (history.js INTRADAY_WINDOW_MS) - harmless for the main engine's warm cache, but this engine's
+    // brand-new universe hit it all at once and was OOM-killed mid-scan (exit 137, 2026-11-03).
+    const intraday = await history.ensureIntradayBars(batch, {
+      now,
+      feed: "iex",
+      start: new Date(session.open).toISOString(),
+      evict: offset + INTRADAY_BATCH >= symbols.length,
+    });
     diagnostics.errors.push(...(intraday.errors || []));
     for (const symbol of batch) {
       const daily = dailyResult.features.get(symbol)?.features;
