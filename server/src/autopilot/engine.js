@@ -45,6 +45,13 @@ const feedbackRebuildMinMs = () => {
   const value = Number(process.env.FEEDBACK_REBUILD_MIN_MS);
   return Number.isFinite(value) && value >= 0 ? value : 30 * 60000;
 };
+// The rebuild is deferred while the US regular session is open (weekdays 09:30-16:00 New York), so a multi-second
+// stall can never hit the EA heartbeats or the live site during trading. It simply runs after the close.
+function isRegularSessionNow(now) {
+  const date = market.nyDate(now);
+  const weekday = new Date(date + "T12:00:00Z").getUTCDay();
+  return weekday >= 1 && weekday <= 5 && now >= market.nyTimestamp(date, "09:30") && now < market.nyTimestamp(date, "16:00");
+}
 function state(patch) {
   return store.put("runtime", "engine", {
     ...store.get("runtime", "engine"),
@@ -859,7 +866,7 @@ async function reviewTick() {
     if (store.lease("recommendation-review:background", 120000, now)) {
       const result = await recommendations.runDue({ now, limit: 50, owner: `review:${process.pid}` });
       feedback.ensureShadowPolicy();
-      if ((result.counts.complete || result.counts.retryable || result.counts.failed) && now - lastFeedbackRebuildAt >= feedbackRebuildMinMs()) {
+      if ((result.counts.complete || result.counts.retryable || result.counts.failed) && now - lastFeedbackRebuildAt >= feedbackRebuildMinMs() && !isRegularSessionNow(now)) {
         lastFeedbackRebuildAt = now;
         const dataset = feedback.buildDataset({ asOf: new Date(now).toISOString(), horizon: "d5" });
         feedback.evaluateGates({ datasetVersion: dataset.datasetVersion });
@@ -895,4 +902,4 @@ function requestScan() {
   store.remove("lease", "scan");
   tick();
 }
-module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick, isSystemPaused, setSystemPaused, resetFeedbackRebuildClock: (at = 0) => (lastFeedbackRebuildAt = at) };
+module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick, isSystemPaused, setSystemPaused, isRegularSessionNow, resetFeedbackRebuildClock: (at = 0) => (lastFeedbackRebuildAt = at) };
