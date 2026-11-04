@@ -36,6 +36,15 @@ let running = false,
   streamStatus = "disconnected";
 const prices = new Map();
 let lastUniverseAttempt = 0;
+// Rebuilding the feedback dataset + quality gates + history prune reads every recommendation and shadow candidate
+// and blocks the single Node thread for seconds (measured 7s on a copy of production, 20-37s under load, see
+// docs/CODEX_502_INVESTIGATION.md). reviewTick used to repeat it every ~2.5 minutes whenever any review was
+// retryable/failed, with no new data. Now at most once per FEEDBACK_REBUILD_MIN_MS (default 30 minutes).
+let lastFeedbackRebuildAt = Date.now();
+const feedbackRebuildMinMs = () => {
+  const value = Number(process.env.FEEDBACK_REBUILD_MIN_MS);
+  return Number.isFinite(value) && value >= 0 ? value : 30 * 60000;
+};
 function state(patch) {
   return store.put("runtime", "engine", {
     ...store.get("runtime", "engine"),
@@ -850,7 +859,8 @@ async function reviewTick() {
     if (store.lease("recommendation-review:background", 120000, now)) {
       const result = await recommendations.runDue({ now, limit: 50, owner: `review:${process.pid}` });
       feedback.ensureShadowPolicy();
-      if (result.counts.complete || result.counts.retryable || result.counts.failed) {
+      if ((result.counts.complete || result.counts.retryable || result.counts.failed) && now - lastFeedbackRebuildAt >= feedbackRebuildMinMs()) {
+        lastFeedbackRebuildAt = now;
         const dataset = feedback.buildDataset({ asOf: new Date(now).toISOString(), horizon: "d5" });
         feedback.evaluateGates({ datasetVersion: dataset.datasetVersion });
         feedback.pruneHistory({ now });
@@ -885,4 +895,4 @@ function requestScan() {
   store.remove("lease", "scan");
   tick();
 }
-module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick, isSystemPaused, setSystemPaused };
+module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick, isSystemPaused, setSystemPaused, resetFeedbackRebuildClock: (at = 0) => (lastFeedbackRebuildAt = at) };
