@@ -53,6 +53,14 @@ function startAlpacaTraderSafely() {
   }
 }
 
+// Log-only timing of SQL / store calls / requests and event-loop stalls (see eventLoopMonitor.js).
+// LOOP_MONITOR=off disables it; a failure here never stops startup.
+try {
+  require("./eventLoopMonitor").install({ app });
+} catch (error) {
+  console.error(`[startup] event loop monitor failed to install: ${error.message}`);
+}
+
 // The server owns the persistent v3 scheduler; browser visits never trigger monitoring.
 app.listen(port, () => {
   console.log(`TradeSense API listening on port ${port}`);
