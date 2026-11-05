@@ -367,6 +367,8 @@ function database() {
       CREATE INDEX IF NOT EXISTS idx_recommendations_strategy_session ON recommendations(strategy,strategy_version,session_date);
       CREATE INDEX IF NOT EXISTS idx_recommendation_receipts_user_available ON recommendation_receipts(user_id,available_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS idx_recommendation_jobs_state_due ON recommendation_review_jobs(state,due_at,next_retry_at);
+      -- qualityReportForUser (the dashboard) joins jobs by recommendation+user+horizon; without this it scanned all jobs per row (62s on production data).
+      CREATE INDEX IF NOT EXISTS idx_recommendation_jobs_recommendation ON recommendation_review_jobs(recommendation_id,user_id,horizon);
       CREATE INDEX IF NOT EXISTS idx_recommendation_evaluations_scope ON recommendation_evaluations(recommendation_id,receipt_id,evaluator_version,horizon);
       CREATE INDEX IF NOT EXISTS idx_market_evidence_symbol_window ON market_evidence_metadata(symbol,window_start,window_end,feed);
       CREATE INDEX IF NOT EXISTS idx_catalyst_events_symbol_time ON catalyst_events(symbol,event_at,provider);
