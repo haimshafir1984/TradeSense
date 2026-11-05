@@ -30,6 +30,7 @@ function toForm(profile) {
     dailyLossPct: str(profile.dailyLossPct),
     minPrice: str(profile.minPrice),
     minAdv20: str(profile.minAdv20),
+    maxAdv20: str(profile.maxAdv20),
     minShares: str(profile.minShares),
     minScore: str(profile.minScore),
     strategies: profile.strategies,
@@ -45,6 +46,7 @@ function toPayload(f) {
     dailyLossPct: num(f.dailyLossPct),
     minPrice: num(f.minPrice),
     minAdv20: num(f.minAdv20),
+    maxAdv20: num(f.maxAdv20),
     minShares: num(f.minShares),
     minScore: num(f.minScore),
     strategies: f.strategies,
@@ -160,8 +162,9 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
         <div className="risk-fields">
           <label>סף מחיר תחתון ($)<input dir="ltr" inputMode="decimal" value={form.minPrice} onChange={(e) => set({ minPrice: e.target.value })} /></label>
           <label>נזילות מינימלית - ADV20 ($)<input dir="ltr" inputMode="decimal" value={form.minAdv20} onChange={(e) => set({ minAdv20: e.target.value })} /></label>
+          <label>נזילות מקסימלית - ADV20 ($)<input dir="ltr" inputMode="decimal" value={form.maxAdv20} onChange={(e) => set({ maxAdv20: e.target.value })} /></label>
         </div>
-        <p className="muted">מניות NASDAQ/NYSE בלבד, לא OTC. המאגר הנוכחי: {uni.ready ? `${fmt(uni.size, 0)} מניות (${uni.date})` : "טרם נבנה היום"}.</p>
+        <p className="muted">מניות NASDAQ/NYSE בלבד, לא OTC. המאגר נבחר לפי התנודתיות היומית הגבוהה ביותר, בטווח הנזילות שנקבע. המאגר הנוכחי: {uni.ready ? `${fmt(uni.size, 0)} מניות (${uni.date})` : "טרם נבנה היום"}.</p>
       </section>
 
       <section className="panel">

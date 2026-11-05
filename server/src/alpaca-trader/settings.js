@@ -25,6 +25,8 @@ const DEFAULTS = Object.freeze({
   dailyLossPct: 7,
   minPrice: 3,
   minAdv20: 3_000_000,
+  // Upper liquidity bound: the arm targets volatile small/mid-caps, so mega-caps above this are left out.
+  maxAdv20: 150_000_000,
   // gap_pullback and momentum_bull_flag need a news/no-news reading (args.hasNews) that this v1 does
   // not yet wire up; they are left out so they don't just sit there skipping with "news_needed" every
   // cycle. The other 7 strategies don't need it.
@@ -70,6 +72,7 @@ function validate(input = {}, base = DEFAULTS) {
   if (input.dailyLossPct !== undefined) out.dailyLossPct = num(input.dailyLossPct, "הפסד יומי מרבי", { min: 0.1, max: 100 });
   if (input.minPrice !== undefined) out.minPrice = num(input.minPrice, "סף מחיר תחתון", { min: 0.01, max: 10000 });
   if (input.minAdv20 !== undefined) out.minAdv20 = num(input.minAdv20, "נזילות מינימלית (ADV20)", { min: 0, max: 1e12 });
+  if (input.maxAdv20 !== undefined) out.maxAdv20 = num(input.maxAdv20, "נזילות מקסימלית (ADV20)", { min: 0, max: 1e13 });
   if (input.strategies !== undefined) {
     if (!Array.isArray(input.strategies) || !input.strategies.length) fail("יש לבחור לפחות אסטרטגיה אחת");
     out.strategies = [...new Set(input.strategies.map(String))];

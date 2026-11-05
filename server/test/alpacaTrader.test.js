@@ -226,3 +226,33 @@ test("exit: a daily-loss breach closes every position regardless of price", asyn
     cleanup();
   }
 });
+
+test("universe: keeps the most volatile names inside the liquidity band, not the biggest mega-caps", async () => {
+  const { universe, settings, alpacaService, cleanup } = setup();
+  try {
+    assert.equal(settings.read().maxAdv20, 150_000_000, "default upper liquidity bound");
+    const now = Date.parse("2026-11-05T15:00:00Z");
+    // 25 daily bars before today: close 10, daily range as given, volume chosen for the dollar volume.
+    const barsFor = (rangePct, dollarVolume, close = 10) =>
+      Array.from({ length: 25 }, (_, i) => ({ t: `2026-10-${String(i + 1).padStart(2, "0")}T04:00:00Z`, c: close, h: close * (1 + rangePct / 2), l: close * (1 - rangePct / 2), v: dollarVolume / close }));
+    const data = {
+      MEGA: barsFor(0.01, 5_000_000_000, 200), // huge liquidity, calm: above the upper bound
+      CALM: barsFor(0.01, 10_000_000),
+      WILD: barsFor(0.12, 20_000_000),
+      MID: barsFor(0.05, 40_000_000),
+      PENNY: barsFor(0.2, 50_000_000, 1), // below the price floor
+      THIN: barsFor(0.3, 500_000), // below the liquidity floor
+    };
+    alpacaService.getActiveAssets = async () => Object.keys(data).map((symbol) => ({ symbol, name: `${symbol} Corp common stock` }));
+    alpacaService.getBarsDetailed = async ({ symbols }) => ({ bars: new Map(symbols.map((s) => [s, data[s]])) });
+    const rows = await universe.build(now, settings.read());
+    assert.deepEqual(rows.map((r) => r.symbol), ["WILD", "MID", "CALM"], "most volatile first; mega-cap, penny and thin names excluded");
+    const { diagnostics } = universe.status(now);
+    assert.equal(diagnostics.aboveLiquidity, 1);
+    assert.equal(diagnostics.belowPrice, 1);
+    assert.equal(diagnostics.belowLiquidity, 1);
+    assert.deepEqual(universe.getRows(now).map((r) => r.symbol), ["WILD", "MID", "CALM"]);
+  } finally {
+    cleanup();
+  }
+});
