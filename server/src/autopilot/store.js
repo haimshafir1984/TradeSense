@@ -108,6 +108,10 @@ function database() {
         throw fallbackError;
       }
     }
+    // db is already assigned above, so a failure in the schema setup below (e.g. "database is locked" while the previous
+    // container still runs during a rolling deploy) must undo that; otherwise every later call skips the setup for the whole
+    // life of the process and misses new tables/indexes (2026-11-05: the dashboard index was never created).
+    try {
     db.exec(`
       PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS recommendation_migrations (
@@ -382,6 +386,15 @@ function database() {
     const columns = db.prepare("PRAGMA table_info(records)").all().map((row) => row.name);
     if (!columns.includes("metadata")) db.exec("ALTER TABLE records ADD COLUMN metadata TEXT");
     db.exec("UPDATE records SET metadata=json_object('symbol',json_extract(body,'$.symbol'),'feed',json_extract(body,'$.feed'),'timeframe',json_extract(body,'$.timeframe'),'lastUsedAt',json_extract(body,'$.lastUsedAt'),'fetchedAt',json_extract(body,'$.fetchedAt'),'sessionDate',json_extract(body,'$.sessionDate'),'barCount',json_array_length(json_extract(body,'$.bars')),'protected',json_extract(body,'$.protected')) WHERE kind='history' AND metadata IS NULL");
+    } catch (error) {
+      try {
+        db.close();
+      } catch {
+        // already unusable
+      }
+      db = null;
+      throw error;
+    }
   }
   return db;
 }
