@@ -323,6 +323,8 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* The Colmex/MT4 control bar and status ribbon do not apply to the separate Alpaca paper account. */}
+      {tab !== "alpaca" && (
       <div className="top-dock">
       <CommandBar
         data={data}
@@ -336,6 +338,7 @@ export default function App() {
       />
       <StatusRibbon data={data} executionState={executionState} mt4Positions={mt4Positions} />
       </div>
+      )}
       <div className="workspace">
         <aside className="sidebar">
           <nav aria-label="ניווט ראשי">
