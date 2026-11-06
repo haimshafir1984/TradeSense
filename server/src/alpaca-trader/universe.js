@@ -21,7 +21,7 @@ function overMemoryGuard() {
 }
 
 // Bump when the ranking rules change so a universe cached earlier the same day is rebuilt with the new rules.
-const RANK_VERSION = 2;
+const RANK_VERSION = 3;
 
 function validSymbol(symbol) {
   return typeof symbol === "string" && /^[A-Z]{1,5}$/.test(symbol);
@@ -49,6 +49,28 @@ async function activeAssets() {
   const bySymbol = new Map();
   for (const row of rows) if (!bySymbol.has(row.symbol)) bySymbol.set(row.symbol, row);
   return [...bySymbol.values()];
+}
+
+// The intraday scan reads IEX candles, and IEX volume is only a few percent of the consolidated (SIP) volume the
+// daily average above is built from. Comparing the two made relative volume ~0.03 for every stock, so the
+// rvol>=1.2/1.5 strategies could never match (2026-11-05: 0 matches all session). Keep an IEX-based 20-day average
+// volume per universe stock so today's IEX volume is compared with IEX history (same units).
+async function attachIexVolume(rows, date, now) {
+  for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
+    const batch = rows.slice(offset, offset + BATCH_SIZE);
+    try {
+      const detail = await alpaca.getBarsDetailed({ symbols: batch.map((r) => r.symbol), timeframe: "1Day", days: 30, feed: "iex", adjustment: "split", now });
+      for (const row of batch) {
+        const bars = (detail.bars.get(row.symbol) || []).filter((bar) => market.nyDate(Date.parse(bar.t)) < date).slice(-20);
+        const volumes = bars.map((bar) => Number(bar.v)).filter((v) => Number.isFinite(v) && v >= 0);
+        row.avgIexVolume20d = volumes.length >= 10 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : null;
+      }
+      detail.bars.clear();
+    } catch {
+      for (const row of batch) row.avgIexVolume20d = null;
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 async function build(now = Date.now(), profile) {
@@ -81,6 +103,7 @@ async function build(now = Date.now(), profile) {
   // The most volatile names first (not the most liquid, which would pick the mega-caps).
   rows.sort((a, b) => b.avgRangePct20 - a.avgRangePct20 || b.avgDollarVolume20d - a.avgDollarVolume20d);
   const capped = rows.slice(0, MAX_UNIVERSE);
+  await attachIexVolume(capped, date, now);
   diagnostics.eligible = rows.length;
   diagnostics.capped = Math.max(0, rows.length - capped.length);
   // Even a guard-stopped (partial) universe is cached and used: it's a real, if incomplete, result -

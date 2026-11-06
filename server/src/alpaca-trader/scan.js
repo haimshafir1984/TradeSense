@@ -2,9 +2,9 @@
 // same shared, symbol-keyed caches the Colmex side uses - autopilot/history.js - read-only reuse,
 // no shared decision state), evaluate every active strategy per symbol, and feed matches into entry.js.
 //
-// Known v1 simplification: relative volume is a simple same-session proxy (today's cumulative volume
-// vs. the 20-day average volume, scaled by elapsed time), not the SIP-calendar-exact version the main
-// engine uses. Also no exchange holiday calendar: a non-trading day just yields a closed market and
+// Known v1 simplification: relative volume is a simple same-session proxy (today's cumulative IEX volume
+// vs. the stock's own 20-day IEX average volume from universe.js, scaled by elapsed time), not the
+// calendar-exact version the main engine uses. Also no exchange holiday calendar: a non-trading day just yields a closed market and
 // an empty scan, not a crash.
 const { nyDate, nyTimestamp } = require("../autopilot/market");
 const history = require("../autopilot/history");
@@ -40,7 +40,7 @@ function simpleRvol(bars, session, now, avgVolume20d) {
 }
 
 async function run(profile, now = Date.now()) {
-  const diagnostics = { marketOpen: isMarketHours(now), universeSize: 0, evaluated: 0, matched: 0, errors: [] };
+  const diagnostics = { marketOpen: isMarketHours(now), universeSize: 0, evaluated: 0, matched: 0, rvolMissing: 0, rvolMax: 0, rvolOver1_2: 0, errors: [] };
   if (!diagnostics.marketOpen) return diagnostics;
 
   let rows = universe.getRows(now);
@@ -56,6 +56,7 @@ async function run(profile, now = Date.now()) {
   if (!rows.length) return diagnostics;
 
   const symbols = rows.map((r) => r.symbol);
+  const iexAvgVolume = new Map(rows.map((r) => [r.symbol, r.avgIexVolume20d]));
   const dailyResult = await history.ensureDailyFeatures(symbols, now);
   const session = sessionBounds(now);
 
@@ -81,7 +82,12 @@ async function run(profile, now = Date.now()) {
       const bars = intraday.bars.get(symbol) || [];
       if (!daily || !bars.length) continue;
       diagnostics.evaluated += 1;
-      const rvol = simpleRvol(bars, session, now, daily.avgVolume20d);
+      const rvol = simpleRvol(bars, session, now, iexAvgVolume.get(symbol));
+      if (rvol == null) diagnostics.rvolMissing += 1;
+      else {
+        diagnostics.rvolMax = Math.max(diagnostics.rvolMax, Number(rvol.toFixed(2)));
+        if (rvol >= 1.2) diagnostics.rvolOver1_2 += 1;
+      }
       const { plans } = strategies.evaluateDetailed({
         bars, asOf: now, sessionOpen: session.open, sessionClose: session.close,
         daily, rvol, gapPct: daily.gapPct, hasNews: null,

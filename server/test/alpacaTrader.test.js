@@ -256,3 +256,30 @@ test("universe: keeps the most volatile names inside the liquidity band, not the
     cleanup();
   }
 });
+
+test("universe + scan: relative volume compares today's IEX volume with the stock's own IEX average (SIP-vs-IEX mix-up gave rvol~0.03 and 0 matches)", async () => {
+  const { universe, settings, alpacaService, cleanup } = setup();
+  try {
+    const now = Date.parse("2026-11-05T15:00:00Z"); // 10:00 New York
+    const dailyBars = (v) => Array.from({ length: 25 }, (_, i) => ({ t: `2026-10-${String(i + 1).padStart(2, "0")}T04:00:00Z`, c: 10, h: 10.5, l: 9.5, v }));
+    alpacaService.getActiveAssets = async () => [{ symbol: "AAAA", name: "A Corp common stock" }];
+    alpacaService.getBarsDetailed = async ({ symbols, feed }) => ({ bars: new Map(symbols.map((s) => [s, dailyBars(feed === "iex" ? 1000 : 5_000_000)])) });
+    const rows = await universe.build(now, settings.read());
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].avgIexVolume20d, 1000, "IEX average, not the SIP one");
+
+    delete require.cache[require.resolve("../src/alpaca-trader/scan")];
+    delete require.cache[require.resolve("../src/autopilot/history")];
+    const history = require("../src/autopilot/history");
+    const scan = require("../src/alpaca-trader/scan");
+    history.ensureDailyFeatures = async () => ({ features: new Map([["AAAA", { features: { avgVolume20d: 5_000_000 } }]]), complete: true });
+    const intraday = Array.from({ length: 6 }, (_, i) => ({ t: new Date(Date.parse("2026-11-05T14:30:00Z") + i * 300000).toISOString(), o: 10, h: 10.1, l: 9.9, c: 10, v: 100 }));
+    history.ensureIntradayBars = async () => ({ bars: new Map([["AAAA", intraday]]), errors: [] });
+    const diagnostics = await scan.run({ strategies: [], minPrice: 3, minAdv20: 3e6, maxAdv20: 150e6 }, now);
+    // 600 shares so far vs 1000 * (30 min / 390 min) expected = ~7.8x; against the SIP average it would be ~0.0016x.
+    assert.ok(diagnostics.rvolMax > 7 && diagnostics.rvolMax < 8.5, `rvolMax ${diagnostics.rvolMax}`);
+    assert.equal(diagnostics.rvolOver1_2, 1);
+  } finally {
+    cleanup();
+  }
+});
