@@ -412,12 +412,29 @@ function summaryForUser(userId) {
   return summary;
 }
 
+// A review that keeps coming back "retryable" used to be retried every 30 minutes forever (1,300-1,500 attempts on
+// ~1,000 jobs by 2026-11-06). Because the queue was served oldest-first, those jobs took every one of the 50 slots per
+// minute and ~85,000 never-tried jobs were never reached, so the learning loop got no evidence at all. Retries now back
+// off, and a job is abandoned once its data problem is clearly not going to fix itself.
+const MAX_REVIEW_ATTEMPTS = 8;
+const PERMANENT_DATA_REASONS = ["internal_bar_gap", "missing_window_bars"]; // bars that were never traded do not appear later
+const PERMANENT_MAX_ATTEMPTS = 3;
+
+function nextRetryPlan(attempts, reason, now = Date.now()) {
+  const limit = PERMANENT_DATA_REASONS.includes(reason) ? PERMANENT_MAX_ATTEMPTS : MAX_REVIEW_ATTEMPTS;
+  if (attempts >= limit) return { state: "abandoned", nextRetryAt: null };
+  const delay = Math.min(24 * 3600000, 30 * 60000 * 2 ** Math.min(5, Math.max(0, attempts - 1)));
+  return { state: "retryable_error", nextRetryAt: new Date(now + delay).toISOString() };
+}
+
 function dueJobs(now = Date.now(), limit = 25, owner = `worker:${process.pid}`) {
   const nowIso = new Date(now).toISOString();
+  // Self-healing cleanup of jobs that already exhausted their attempts (cheap: filtered by state first).
+  run("UPDATE recommendation_review_jobs SET state='abandoned', lease_owner=NULL, lease_until=NULL, updated_at=? WHERE state IN ('retryable_error','evaluating') AND attempts>=?", nowIso, MAX_REVIEW_ATTEMPTS);
   const jobs = all(
     `SELECT * FROM recommendation_review_jobs
      WHERE state IN ('pending','retryable_error','evaluating') AND due_at<=? AND (next_retry_at IS NULL OR next_retry_at<=?) AND (lease_until IS NULL OR lease_until<=?)
-     ORDER BY due_at ASC LIMIT ?`,
+     ORDER BY attempts ASC, due_at ASC LIMIT ?`,
     nowIso, nowIso, nowIso, limit,
   );
   const claimed = [];
@@ -471,7 +488,7 @@ function qualityReportForUser(userId) {
      )
      SELECT horizon,strategy,strategy_version,
        COUNT(DISTINCT recommendation_id) AS publishedUniqueSetups,
-       SUM(CASE WHEN job_state IS NOT NULL AND (workflow_status IS NOT NULL OR job_state IN ('complete','retryable_error')) THEN 1 ELSE 0 END) AS matured,
+       SUM(CASE WHEN job_state IS NOT NULL AND (workflow_status IS NOT NULL OR job_state IN ('complete','retryable_error','abandoned')) THEN 1 ELSE 0 END) AS matured,
        SUM(CASE WHEN workflow_status IS NULL AND COALESCE(job_state,'pending') IN ('pending','evaluating') THEN 1 ELSE 0 END) AS pending,
        SUM(CASE WHEN workflow_status IN ('retryable_error','needs_data') THEN 1 ELSE 0 END) AS needsData,
        SUM(CASE WHEN workflow_status='complete' THEN 1 ELSE 0 END) AS complete,
@@ -685,11 +702,11 @@ async function evaluateJob(job, now = Date.now()) {
     hash({ rec: rec.id, receipt: job.receipt_id, version: result.evaluatorVersion, dataRevision: result.coverage.dataRevision, horizon: job.horizon }).slice(0, 32),
     rec.id, job.receipt_id, job.user_id, result.evaluatorVersion, result.coverage.dataRevision, previous?.id || null, `review:${job.horizon}`, checkedAt,
   );
-  const nextState = result.workflowStatus === "retryable_error" ? "retryable_error" : "complete";
+  const plan = result.workflowStatus === "retryable_error" ? nextRetryPlan(Number(job.attempts || 0) + 1, result.coverage?.reason, now) : { state: "complete", nextRetryAt: null };
   const writeResult = run(
     "UPDATE recommendation_review_jobs SET state=?, attempts=attempts+1, next_retry_at=?, lease_owner=NULL, lease_until=NULL, last_error=NULL, updated_at=? WHERE job_key=? AND lease_owner=?",
-    nextState,
-    nextState === "retryable_error" ? new Date(now + 30 * 60000).toISOString() : null,
+    plan.state,
+    plan.nextRetryAt,
     checkedAt,
     job.job_key,
     job.lease_owner,
@@ -718,10 +735,10 @@ async function runDue({ now = Date.now(), limit = 25, owner } = {}) {
       counts.failed += 1;
       failures.push({ jobKey: job.job_key, error: error.message });
       const attempts = Number(job.attempts || 0) + 1;
-      const delay = Math.min(24 * 3600000, 10 * 60000 * 2 ** Math.min(6, attempts));
+      const retry = nextRetryPlan(attempts, null, now);
       run(
-        "UPDATE recommendation_review_jobs SET state='retryable_error', attempts=?, next_retry_at=?, lease_owner=NULL, lease_until=NULL, last_error=?, updated_at=? WHERE job_key=? AND lease_owner=?",
-        attempts, new Date(now + delay).toISOString(), error.message, new Date(now).toISOString(), job.job_key, job.lease_owner,
+        "UPDATE recommendation_review_jobs SET state=?, attempts=?, next_retry_at=?, lease_owner=NULL, lease_until=NULL, last_error=?, updated_at=? WHERE job_key=? AND lease_owner=?",
+        retry.state, attempts, retry.nextRetryAt, error.message, new Date(now).toISOString(), job.job_key, job.lease_owner,
       );
     }
   }
@@ -782,6 +799,7 @@ module.exports = {
   dueJobs,
   recordShadowCandidate,
   qualityReportForUser,
+  nextRetryPlan,
   evaluateJob,
   runDue,
   listAllForUser,
