@@ -113,6 +113,23 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
   const decisions = server.decisions || [];
   const exits = server.exits || [];
   const uni = server.universe || {};
+  const todayKey = new Date().toDateString();
+  const todays = decisions.filter((d) => new Date(d.at).toDateString() === todayKey);
+  const entered = todays.filter((d) => d.outcome === "entered");
+  const investedNow = positions.reduce((sum, p) => sum + Math.abs(Number(p.market_value) || 0), 0);
+  const allocatedToday = entered.reduce((sum, d) => sum + (Number(d.price) || 0) * (Number(d.sizing?.shares) || 0), 0);
+  const pctOf = (value) => (Number.isFinite(equity) && equity > 0 ? `${fmt((value / equity) * 100, 1)}%` : "—");
+  const exitFor = (d) => exits.filter((x) => x.symbol === d.symbol && new Date(x.at) >= new Date(d.at)).sort((a, b) => new Date(a.at) - new Date(b.at))[0];
+  // Skipped checks repeat every 5 minutes for the same stock: fold them into one row per stock.
+  const skippedBySymbol = Object.values(
+    todays.filter((d) => d.outcome === "skipped").reduce((acc, d) => {
+      const row = (acc[d.symbol] ||= { symbol: d.symbol, checks: 0, bestScore: null, lastAt: d.at, reason: d.reason, reasonText: d.reasonText });
+      row.checks += 1;
+      if (Number.isFinite(Number(d.score))) row.bestScore = Math.max(row.bestScore ?? -Infinity, Number(d.score));
+      if (new Date(d.at) >= new Date(row.lastAt)) Object.assign(row, { lastAt: d.at, reason: d.reason, reasonText: d.reasonText });
+      return acc;
+    }, {}),
+  ).sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
 
   return (
     <div className="risk-panel">
@@ -143,6 +160,8 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
           <div><span>שווי בתחילת היום</span><b dir="ltr">{money(startEquity)}</b></div>
           <div><span>רווח/הפסד מתחילת היום</span><b dir="ltr" className={dayPnl > 0 ? "pl-up" : dayPnl < 0 ? "pl-down" : ""}>{money(dayPnl)}</b></div>
           <div><span>מזומן פנוי</span><b dir="ltr">{account ? money(Number(account.cash)) : "—"}</b></div>
+          <div><span>מושקע כרגע בפוזיציות פתוחות</span><b dir="ltr">{money(investedNow)} ({pctOf(investedNow)} מהתיק)</b></div>
+          <div><span>הוקצה היום לעסקאות (סה"כ כניסות)</span><b dir="ltr">{money(allocatedToday)} ({pctOf(allocatedToday)} מהתיק)</b></div>
         </div>
         {server.day?.breached && (
           <div className="banner error">מגבלת ההפסד היומי הופעלה. כניסות חדשות חסומות עד יום המסחר הבא; פוזיציות פתוחות נסגרות אוטומטית.</div>
@@ -210,26 +229,53 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
       </section>
 
       <section className="panel">
-        <div className="section-heading"><h2>מה נקנה / מה דולג</h2></div>
-        {decisions.length ? (
+        <div className="section-heading"><h2>מה נקנה היום</h2></div>
+        {entered.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>שעה</th><th>מניה</th><th>תוצאה</th><th>ציון</th><th>כמות</th><th>סיבה</th></tr></thead>
+              <thead><tr><th>שעה</th><th>מניה</th><th>אסטרטגיה</th><th>ציון</th><th>כמות</th><th>סכום</th><th>% מהתיק</th><th>תוצאה</th></tr></thead>
               <tbody>
-                {decisions.slice(0, 30).map((d) => (
-                  <tr key={d.id}>
-                    <td>{time(d.at)}</td>
-                    <td dir="ltr">{d.symbol}</td>
-                    <td>{OUTCOME_LABEL[d.outcome] || d.outcome}</td>
-                    <td dir="ltr">{d.score ?? "—"}</td>
-                    <td dir="ltr">{d.sizing?.shares ?? "—"}</td>
-                    <td>{REASON_LABEL[d.reason] || d.reasonText || d.reason || "—"}</td>
-                  </tr>
-                ))}
+                {entered.map((d) => {
+                  const amount = (Number(d.price) || 0) * (Number(d.sizing?.shares) || 0);
+                  const x = exitFor(d);
+                  return (
+                    <tr key={d.id}>
+                      <td>{time(d.at)}</td>
+                      <td dir="ltr">{d.symbol}</td>
+                      <td>{(d.strategies || []).map((n) => STRATEGY_LABEL[n] || n).join(", ") || "—"}</td>
+                      <td dir="ltr">{d.score ?? "—"}</td>
+                      <td dir="ltr">{d.sizing?.shares ?? "—"}</td>
+                      <td dir="ltr">{amount ? money(amount) : "—"}</td>
+                      <td dir="ltr">{amount ? pctOf(amount) : "—"}</td>
+                      <td>{x ? EXIT_REASON_LABEL[x.reason] || x.reason : "פתוחה"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        ) : <p className="muted">אין עדיין החלטות.</p>}
+        ) : <p className="muted">לא נקנו עדיין מניות היום.</p>}
+        <details className="skipped-details">
+          <summary>דולגו היום: {skippedBySymbol.length} מניות (לחץ להצגה)</summary>
+          {skippedBySymbol.length ? (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>מניה</th><th>מספר בדיקות</th><th>ציון הכי גבוה</th><th>בדיקה אחרונה</th><th>סיבה</th></tr></thead>
+                <tbody>
+                  {skippedBySymbol.map((r) => (
+                    <tr key={r.symbol}>
+                      <td dir="ltr">{r.symbol}</td>
+                      <td dir="ltr">{r.checks}</td>
+                      <td dir="ltr">{r.bestScore ?? "—"}</td>
+                      <td>{time(r.lastAt)}</td>
+                      <td>{REASON_LABEL[r.reason] || r.reasonText || r.reason || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="muted">לא דולגה אף מניה היום.</p>}
+        </details>
       </section>
 
       <section className="panel">
