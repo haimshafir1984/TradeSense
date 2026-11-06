@@ -12,6 +12,7 @@ const MAX_LOG = 300;
 // kind used elsewhere (including the Colmex side's own "entryBox"/"entryDecision").
 const K_BOX = `${KIND}:box`;
 const K_LOG = `${KIND}:log`;
+const K_META = `${KIND}:tradeMeta`; // orderId -> what was decided at entry (kept; the 300-entry log is pruned)
 
 function boxId(symbol, now) {
   return `${nyDate(now)}:${symbol}`;
@@ -89,6 +90,15 @@ async function flush({ profile, equity, exposure, enabled, place, now = Date.now
       const placed = await place(box.symbol, sizing.shares, lead);
       putBox(box.symbol, now, { ...box, state: "entered", orderId: placed?.orderId || null, closedAt: new Date(now).toISOString() });
       record({ symbol: box.symbol, outcome: "entered", reason: "entered", reasonText: `${sc.families.length} משפחות מסכימות, ציון ${sc.score}, ${sizing.shares} מניות`, strategies: names, orderId: placed?.orderId || null, ...base }, now);
+      try {
+        // Durable record for the trade report (trades.js). A failure here must never affect the order that was just placed.
+        store.put(K_META, placed?.orderId || `${new Date(now).toISOString()}:${box.symbol}`, {
+          orderId: placed?.orderId || null, symbol: box.symbol, at: new Date(now).toISOString(), strategies: names,
+          lead: lead.strategy || names[0] || null, score: sc.score, plannedPrice: price, shares: sizing.shares, stop, target: Number(lead.target) || null,
+        });
+      } catch {
+        // metadata is best-effort
+      }
       results.push({ symbol: box.symbol, outcome: "entered", shares: sizing.shares, score: sc.score, stop, target: Number(lead.target) || null });
     } catch (error) {
       const transient = ["account_unavailable", "not_configured"].includes(error.code);
@@ -108,4 +118,13 @@ function todayBoxes(now = Date.now()) {
   return store.listIds(K_BOX).filter((id) => id.startsWith(`${today}:`)).map((id) => store.get(K_BOX, id));
 }
 
-module.exports = { observe, flush, recentLog, todayBoxes };
+function tradeMeta() {
+  return store.list(K_META);
+}
+
+// Entered decisions still present in the (pruned) log since a time; a fallback match for trades older than the metadata record.
+function enteredSince(sinceMs) {
+  return store.list(K_LOG).filter((d) => d.outcome === "entered" && Date.parse(d.at) >= sinceMs);
+}
+
+module.exports = { observe, flush, recentLog, todayBoxes, tradeMeta, enteredSince };

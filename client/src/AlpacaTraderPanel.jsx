@@ -119,6 +119,13 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
   const investedNow = positions.reduce((sum, p) => sum + Math.abs(Number(p.market_value) || 0), 0);
   const allocatedToday = entered.reduce((sum, d) => sum + (Number(d.price) || 0) * (Number(d.sizing?.shares) || 0), 0);
   const pctOf = (value) => (Number.isFinite(equity) && equity > 0 ? `${fmt((value / equity) * 100, 1)}%` : "—");
+  const perf = server.performance || {};
+  const perfTrades = perf.trades || [];
+  const stats = perf.stats || null;
+  const signed = (value) => (Number.isFinite(value) ? `${value > 0 ? "+" : ""}${money(value)}` : "—");
+  const pctSigned = (value, digits = 2) => (Number.isFinite(value) ? `${value > 0 ? "+" : ""}${fmt(value, digits)}%` : "—");
+  const plClass = (value) => (value > 0 ? "pl-up" : value < 0 ? "pl-down" : "");
+  const tradeFor = (d) => perfTrades.find((t) => d.orderId && t.entryOrderId === d.orderId);
   const exitFor = (d) => exits.filter((x) => x.symbol === d.symbol && new Date(x.at) >= new Date(d.at)).sort((a, b) => new Date(a.at) - new Date(b.at))[0];
   // Skipped checks repeat every 5 minutes for the same stock: fold them into one row per stock.
   const skippedBySymbol = Object.values(
@@ -238,6 +245,7 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
                 {entered.map((d) => {
                   const amount = (Number(d.price) || 0) * (Number(d.sizing?.shares) || 0);
                   const x = exitFor(d);
+                  const trade = tradeFor(d);
                   return (
                     <tr key={d.id}>
                       <td>{time(d.at)}</td>
@@ -247,7 +255,7 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
                       <td dir="ltr">{d.sizing?.shares ?? "—"}</td>
                       <td dir="ltr">{amount ? money(amount) : "—"}</td>
                       <td dir="ltr">{amount ? pctOf(amount) : "—"}</td>
-                      <td>{x ? EXIT_REASON_LABEL[x.reason] || x.reason : "פתוחה"}</td>
+                      <td dir="ltr" className={trade ? plClass(trade.pnl) : ""}>{trade ? `${x ? `${EXIT_REASON_LABEL[x.reason] || x.reason} ` : ""}${signed(trade.pnl)}` : x ? EXIT_REASON_LABEL[x.reason] || x.reason : "פתוחה"}</td>
                     </tr>
                   );
                 })}
@@ -276,6 +284,68 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
             </div>
           ) : <p className="muted">לא דולגה אף מניה היום.</p>}
         </details>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>סיכום ביצועים ({perf.windowDays || 14} ימים אחרונים)</h2></div>
+        {stats && stats.overall.trades ? (
+          <>
+            <div className="risk-live">
+              <div><span>עסקאות שהסתיימו</span><b dir="ltr">{stats.overall.trades}</b></div>
+              <div><span>הצליחו / נכשלו</span><b dir="ltr">{stats.overall.wins} / {stats.overall.losses} ({fmt(stats.overall.winRatePct, 0)}%)</b></div>
+              <div><span>רווח/הפסד כולל</span><b dir="ltr" className={plClass(stats.overall.totalPnl)}>{signed(stats.overall.totalPnl)}</b></div>
+              <div><span>רווח ממוצע / הפסד ממוצע</span><b dir="ltr">{signed(stats.overall.avgWin)} / {signed(stats.overall.avgLoss)}</b></div>
+              <div><span>פער ממוצע בין מחיר מתוכנן למחיר ביצוע</span><b dir="ltr">{pctSigned(stats.overall.avgSlippagePct)}</b></div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>אסטרטגיה</th><th>עסקאות</th><th>הצליחו</th><th>נכשלו</th><th>% הצלחה</th><th>רווח/הפסד כולל</th><th>ממוצע לעסקה</th></tr></thead>
+                <tbody>
+                  {stats.byStrategy.map((r) => (
+                    <tr key={r.strategy}>
+                      <td>{STRATEGY_LABEL[r.strategy] || (r.strategy === "unknown" ? "לא ידוע" : r.strategy)}</td>
+                      <td dir="ltr">{r.trades}</td>
+                      <td dir="ltr">{r.wins}</td>
+                      <td dir="ltr">{r.losses}</td>
+                      <td dir="ltr">{fmt(r.winRatePct, 0)}%</td>
+                      <td dir="ltr" className={plClass(r.totalPnl)}>{signed(r.totalPnl)}</td>
+                      <td dir="ltr" className={plClass(r.totalPnl)}>{signed(r.totalPnl / r.trades)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="muted">מחושב מההזמנות שבוצעו בפועל ב-Alpaca. כמה עסקאות הן מעט מדי כדי להסיק מסקנות; כדאי להסתכל על מגמה אחרי שבועיים-שלושה.</p>
+          </>
+        ) : <p className="muted">{perf.error ? `לא ניתן לטעון ביצועים: ${perf.error}` : "אין עדיין עסקאות שהסתיימו."}</p>}
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>עסקאות שהסתיימו</h2></div>
+        {perfTrades.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>יציאה</th><th>מניה</th><th>אסטרטגיה</th><th>כמות</th><th>מחיר כניסה</th><th>מחיר יציאה</th><th>סכום</th><th>רווח/הפסד</th><th>%</th><th>פער ביצוע</th><th>סיבה</th></tr></thead>
+              <tbody>
+                {perfTrades.slice(0, 40).map((t) => (
+                  <tr key={`${t.entryOrderId}:${t.exitOrderId}`}>
+                    <td>{new Date(t.exitAt).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td dir="ltr">{t.symbol}</td>
+                    <td>{STRATEGY_LABEL[t.strategy] || t.strategy || "—"}</td>
+                    <td dir="ltr">{fmt(t.qty, 0)}</td>
+                    <td dir="ltr">{money(t.entryPrice)}</td>
+                    <td dir="ltr">{money(t.exitPrice)}</td>
+                    <td dir="ltr">{money(t.amount)}</td>
+                    <td dir="ltr" className={plClass(t.pnl)}>{signed(t.pnl)}</td>
+                    <td dir="ltr" className={plClass(t.pnl)}>{pctSigned(t.pnlPct)}</td>
+                    <td dir="ltr">{pctSigned(t.slippagePct)}</td>
+                    <td>{EXIT_REASON_LABEL[t.exitReason] || t.exitReason || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted">אין עדיין עסקאות שהסתיימו.</p>}
       </section>
 
       <section className="panel">

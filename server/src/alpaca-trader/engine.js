@@ -121,6 +121,7 @@ async function view(now = Date.now()) {
   const positions = broker.isConfigured() ? await broker.getPositions().catch(() => []) : [];
   const day = await risk.evaluateDay(now, profile.dailyLossPct).catch((error) => ({ error: error.message }));
   const universe = require("./universe").status(now);
+  const performance = await require("./trades").summary(now).catch((error) => ({ trades: [], stats: null, error: error.message }));
   return {
     configured: broker.isConfigured(),
     profile,
@@ -133,6 +134,7 @@ async function view(now = Date.now()) {
     candidates: entry.todayBoxes(now),
     decisions: entry.recentLog(100),
     exits: exitManager.recentLog(100),
+    performance,
   };
 }
 

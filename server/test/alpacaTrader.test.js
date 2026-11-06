@@ -125,6 +125,9 @@ test("entry: a box scores, sizes and enters once, then locks the symbol for the 
     });
     assert.equal(results[0].outcome, "entered");
     assert.ok(placed && placed.symbol === "AAPL" && placed.shares > 0);
+    const meta = entry.tradeMeta();
+    assert.equal(meta.length, 1, "a durable entry record is kept for the trade report");
+    assert.deepEqual([meta[0].orderId, meta[0].symbol, meta[0].lead, meta[0].plannedPrice], ["o1", "AAPL", "orb15", 200]);
 
     // A second signal the same day for the same symbol must not re-enter.
     entry.observe({ signal: { ...signal, id: "AAPL:orb15:bar2" }, now: now + 7 * 60000 });
@@ -302,6 +305,47 @@ test("engine: scans are aligned to just after each 5-minute boundary (a late pha
       assert.equal(fire.getUTCSeconds(), 20);
       assert.equal(fire.getUTCMinutes() % 5, 0);
     }
+  } finally {
+    cleanup();
+  }
+});
+
+test("trades: pairs Alpaca fills FIFO into realized trades, joins strategy/slippage/exit reason, and summarizes per strategy", () => {
+  const { cleanup } = setup();
+  try {
+    delete require.cache[require.resolve("../src/alpaca-trader/trades")];
+    const trades = require("../src/alpaca-trader/trades");
+    const fill = (id, symbol, side, qty, price, at) => ({ id, symbol, side, filled_qty: String(qty), filled_avg_price: String(price), filled_at: at });
+    const orders = [
+      fill("b1", "AAA", "buy", 100, 10.1, "2026-11-06T15:30:05Z"),
+      fill("s1", "AAA", "sell", 100, 11, "2026-11-06T16:30:10Z"), // +90
+      fill("b2", "BBB", "buy", 200, 5, "2026-11-06T17:00:03Z"),
+      fill("s2", "BBB", "sell", 80, 4.9, "2026-11-06T17:05:02Z"), // partial exit: -8
+      fill("s3", "BBB", "sell", 120, 4.8, "2026-11-06T17:06:02Z"), // rest: -24
+      { id: "x", symbol: "CCC", side: "buy", filled_qty: "0", filled_avg_price: null, filled_at: null }, // never filled: ignored
+    ];
+    const paired = trades.pairTrades(orders);
+    assert.equal(paired.length, 3);
+    assert.equal(paired[0].pnl.toFixed(2), "90.00");
+    assert.equal(paired[1].qty, 80);
+    assert.equal(paired[2].pnl.toFixed(2), "-24.00");
+
+    const enriched = trades.enrich(paired, {
+      meta: [{ orderId: "b1", symbol: "AAA", strategies: ["orb15", "vwap_reclaim"], lead: "orb15", score: 70, plannedPrice: 10 }],
+      entered: [{ symbol: "BBB", at: "2026-11-06T17:00:00Z", strategies: ["vwap_pullback"], score: 50, price: 5 }],
+      exits: [{ symbol: "AAA", at: "2026-11-06T16:30:00Z", reason: "target" }, { symbol: "BBB", at: "2026-11-06T17:05:00Z", reason: "stop" }],
+    });
+    assert.equal(enriched[0].strategy, "orb15");
+    assert.equal(enriched[0].slippagePct.toFixed(1), "1.0", "filled 10.10 against a planned 10.00");
+    assert.equal(enriched[0].exitReason, "target");
+    assert.equal(enriched[1].strategy, "vwap_pullback", "matched by symbol and time when there is no order-id metadata");
+    assert.equal(enriched[1].exitReason, "stop");
+
+    const stats = trades.buildStats(enriched);
+    assert.equal(stats.overall.trades, 3);
+    assert.equal(stats.overall.wins, 1);
+    assert.equal(stats.overall.totalPnl.toFixed(2), "58.00");
+    assert.deepEqual(stats.byStrategy.map((s) => [s.strategy, Math.round(s.totalPnl)]), [["orb15", 90], ["vwap_pullback", -32]]);
   } finally {
     cleanup();
   }

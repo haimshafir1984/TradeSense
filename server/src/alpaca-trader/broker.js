@@ -53,8 +53,9 @@ async function getPositions() {
   return call("/positions");
 }
 
-async function getOrders({ status = "open", limit = 100 } = {}) {
-  return call(`/orders?status=${encodeURIComponent(status)}&limit=${limit}`);
+async function getOrders({ status = "open", limit = 100, after, direction } = {}) {
+  const extra = (after ? `&after=${encodeURIComponent(after)}` : "") + (direction ? `&direction=${encodeURIComponent(direction)}` : "");
+  return call(`/orders?status=${encodeURIComponent(status)}&limit=${limit}${extra}`);
 }
 
 // side: "buy" | "sell". qty is whole or fractional shares (Alpaca accepts fractional for market day orders).
