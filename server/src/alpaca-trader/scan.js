@@ -40,7 +40,7 @@ function simpleRvol(bars, session, now, avgVolume20d) {
 }
 
 async function run(profile, now = Date.now()) {
-  const diagnostics = { marketOpen: isMarketHours(now), universeSize: 0, evaluated: 0, matched: 0, rvolMissing: 0, rvolMax: 0, rvolOver1_2: 0, errors: [] };
+  const diagnostics = { marketOpen: isMarketHours(now), universeSize: 0, evaluated: 0, matched: 0, rvolMissing: 0, rvolMax: 0, rvolOver1_2: 0, reasons: {}, errors: [] };
   if (!diagnostics.marketOpen) return diagnostics;
 
   let rows = universe.getRows(now);
@@ -88,10 +88,17 @@ async function run(profile, now = Date.now()) {
         diagnostics.rvolMax = Math.max(diagnostics.rvolMax, Number(rvol.toFixed(2)));
         if (rvol >= 1.2) diagnostics.rvolOver1_2 += 1;
       }
-      const { plans } = strategies.evaluateDetailed({
+      const { plans, results } = strategies.evaluateDetailed({
         bars, asOf: now, sessionOpen: session.open, sessionClose: session.close,
         daily, rvol, gapPct: daily.gapPct, hasNews: null,
       });
+      // Why each enabled strategy did or did not match, summed over the universe (shows up in /status diagnostics).
+      for (const [strategy, result] of results || []) {
+        if (!profile.strategies.includes(strategy)) continue;
+        const code = result.matched ? "matched" : result.reasonCode || "unknown";
+        const bucket = (diagnostics.reasons[strategy] ||= {});
+        bucket[code] = (bucket[code] || 0) + 1;
+      }
       for (const plan of plans) {
         if (!profile.strategies.includes(plan.strategy)) continue;
         diagnostics.matched += 1;

@@ -279,6 +279,9 @@ test("universe + scan: relative volume compares today's IEX volume with the stoc
     // 600 shares so far vs 1000 * (30 min / 390 min) expected = ~7.8x; against the SIP average it would be ~0.0016x.
     assert.ok(diagnostics.rvolMax > 7 && diagnostics.rvolMax < 8.5, `rvolMax ${diagnostics.rvolMax}`);
     assert.equal(diagnostics.rvolOver1_2, 1);
+    assert.deepEqual(Object.keys(diagnostics.reasons), [], "no enabled strategies in this profile, so nothing to summarise");
+    const withStrategy = await scan.run({ strategies: ["orb15"], minPrice: 3, minAdv20: 3e6, maxAdv20: 150e6 }, now);
+    assert.deepEqual(withStrategy.reasons, { orb15: { daily_missing: 1 } }, "reason counts per enabled strategy");
   } finally {
     cleanup();
   }
