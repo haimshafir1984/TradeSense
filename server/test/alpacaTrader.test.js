@@ -286,3 +286,23 @@ test("universe + scan: relative volume compares today's IEX volume with the stoc
     cleanup();
   }
 });
+
+test("engine: scans are aligned to just after each 5-minute boundary (a late phase made every stock intraday_missing)", () => {
+  const { cleanup } = setup();
+  try {
+    delete require.cache[require.resolve("../src/alpaca-trader/engine")];
+    const { msUntilNextBar } = require("../src/alpaca-trader/engine");
+    const at = (hhmmss) => Date.parse(`2026-11-06T${hhmmss}Z`);
+    assert.equal(msUntilNextBar(at("15:04:34"), 20000), 46000, "26s to the boundary, then 20s");
+    assert.equal(msUntilNextBar(at("15:05:05"), 20000), 15000, "already past the boundary but still before its 20s delay");
+    assert.equal(msUntilNextBar(at("15:05:30"), 20000), 290000, "just missed this one: wait for the next boundary");
+    for (const second of [0, 59, 120, 241, 299]) {
+      const now = at("15:00:00") + second * 1000;
+      const fire = new Date(now + msUntilNextBar(now, 20000));
+      assert.equal(fire.getUTCSeconds(), 20);
+      assert.equal(fire.getUTCMinutes() % 5, 0);
+    }
+  } finally {
+    cleanup();
+  }
+});

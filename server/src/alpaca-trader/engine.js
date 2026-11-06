@@ -14,7 +14,19 @@ const TICK_MS = Number(process.env.ALPACA_TRADER_SCAN_INTERVAL_MS || 300000); //
 // crash loop (exit 137) on 2026-11-03.
 const STARTUP_DELAY_MS = Number(process.env.ALPACA_TRADER_STARTUP_DELAY_MS || 180000);
 
+// The strategies only accept a just-closed 5-minute candle (strategies.js: the newest closed candle must be at most
+// 7 minutes old). A scan that runs late inside a 5-minute window sees a candle 9+ minutes old and rejects every
+// stock as intraday_missing; with a fixed interval that phase never changes (2026-11-06: 134/134 intraday_missing).
+// So scans are aligned to run shortly after each 5-minute boundary, once the new candle has been published.
+const BAR_MS = 300000;
+const ALIGN_DELAY_MS = Number(process.env.ALPACA_TRADER_ALIGN_DELAY_MS || 20000);
+function msUntilNextBar(now = Date.now(), delayMs = ALIGN_DELAY_MS) {
+  const wait = BAR_MS - (now % BAR_MS) + delayMs;
+  return wait > BAR_MS ? wait - BAR_MS : wait;
+}
+
 let timer = null;
+let alignTimer = null;
 let startupTimer = null;
 let running = false;
 
@@ -78,13 +90,18 @@ async function tick(now = Date.now()) {
 }
 
 function start() {
-  if (timer || startupTimer || process.env.ALPACA_TRADER_ENABLED !== "true") return;
+  if (timer || startupTimer || alignTimer || process.env.ALPACA_TRADER_ENABLED !== "true") return;
   state({ startedAt: new Date().toISOString() });
   startupTimer = setTimeout(() => {
     startupTimer = null;
     tick();
-    timer = setInterval(tick, TICK_MS);
-    timer.unref();
+    alignTimer = setTimeout(() => {
+      alignTimer = null;
+      tick();
+      timer = setInterval(tick, TICK_MS);
+      timer.unref();
+    }, msUntilNextBar());
+    alignTimer.unref();
   }, STARTUP_DELAY_MS);
   startupTimer.unref();
 }
@@ -92,8 +109,10 @@ function start() {
 function stop() {
   if (timer) clearInterval(timer);
   if (startupTimer) clearTimeout(startupTimer);
+  if (alignTimer) clearTimeout(alignTimer);
   timer = null;
   startupTimer = null;
+  alignTimer = null;
 }
 
 async function view(now = Date.now()) {
@@ -117,4 +136,4 @@ async function view(now = Date.now()) {
   };
 }
 
-module.exports = { start, stop, tick, view, TICK_MS };
+module.exports = { start, stop, tick, view, TICK_MS, msUntilNextBar };
