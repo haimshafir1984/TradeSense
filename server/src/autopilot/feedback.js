@@ -10,8 +10,11 @@ const GATE_VERSION = "feedback-gates-v2";
 const LEARNER_VERSION = "bucket-outcome-v2";
 const DEFAULT_GATES = {
   minForwardSessions: 7,
-  minResolvedSetups: 20,
-  minProspectiveResolvedSetups: 20,
+  // Raised from 20/20 so the learned ranking only switches on with real evidence, not noise: 100 resolved setups,
+  // spread over at least 15 different trading days (a single day's burst of results can not activate it).
+  minResolvedSetups: 100,
+  minProspectiveResolvedSetups: 100,
+  minResolvedSessions: 15,
   minPriceCoveragePct: 70,
   maxNoFillPct: 70,
   maxAmbiguousPct: 20,
@@ -485,6 +488,7 @@ function datasetOutcomeMetrics(dataset, counts, coverage) {
   const replay = dataset ? json(dataset.coverage_json, {})?.replay || {} : {};
   return {
     resolvedSetups,
+    resolvedSessions: new Set(resolved.map((row) => String(row.decision_at).slice(0, 10))).size,
     prospectiveResolvedSetups: prospectiveResolved.length,
     priceCoveragePct: (resolvedSetups / priceCoverageBase) * 100,
     noFillPct: resolvedSetups ? (noFill / resolvedSetups) * 100 : 0,
@@ -601,6 +605,7 @@ function evaluateGates({ policyVersion = SHADOW_POLICY_VERSION, datasetVersion, 
     gates.forwardSessions >= gates.minForwardSessions &&
     metrics.resolvedSetups >= gates.minResolvedSetups &&
     metrics.prospectiveResolvedSetups >= gates.minProspectiveResolvedSetups &&
+    metrics.resolvedSessions >= gates.minResolvedSessions &&
     metrics.priceCoveragePct >= gates.minPriceCoveragePct &&
     metrics.noFillPct <= gates.maxNoFillPct &&
     metrics.ambiguousPct <= gates.maxAmbiguousPct &&
@@ -611,6 +616,7 @@ function evaluateGates({ policyVersion = SHADOW_POLICY_VERSION, datasetVersion, 
   if (gates.forwardSessions < gates.minForwardSessions) failedReasons.push("forward_sessions_insufficient");
   if (metrics.prospectiveResolvedSetups < gates.minProspectiveResolvedSetups) failedReasons.push("prospective_evidence_insufficient");
   if (metrics.resolvedSetups < gates.minResolvedSetups) failedReasons.push("resolved_setups_insufficient");
+  if (metrics.resolvedSessions < gates.minResolvedSessions) failedReasons.push("resolved_sessions_insufficient");
   if (metrics.priceCoveragePct < gates.minPriceCoveragePct) failedReasons.push("price_coverage_insufficient");
   if (metrics.noFillPct > gates.maxNoFillPct) failedReasons.push("no_fill_too_high");
   if (metrics.ambiguousPct > gates.maxAmbiguousPct) failedReasons.push("ambiguity_too_high");
