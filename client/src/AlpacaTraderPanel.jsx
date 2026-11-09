@@ -18,7 +18,7 @@ const REASON_LABEL = {
   disabled: "המסחר כבוי", daily_loss_breached: "הפסד יומי חרג", account_unavailable: "אין חיבור לחשבון",
   symbol_busy: "כבר יש פוזיציה/הזמנה", not_configured: "המפתחות לא מוגדרים",
 };
-const EXIT_REASON_LABEL = { stop: "סטופ", target: "יעד", end_of_day: "סוף יום", daily_loss_breached: "הפסד יומי חרג" };
+const EXIT_REASON_LABEL = { stop: "סטופ", breakeven_stop: "סטופ ב-break-even", target: "יעד", end_of_day: "סוף יום", daily_loss_breached: "הפסד יומי חרג" };
 
 function toForm(profile) {
   return {
@@ -30,6 +30,8 @@ function toForm(profile) {
     dailyLossPct: str(profile.dailyLossPct),
     minPrice: str(profile.minPrice),
     minAdv20: str(profile.minAdv20),
+    trailingStopEnabled: profile.trailingStopEnabled !== false,
+    breakEvenAtR: str(profile.breakEvenAtR),
     maxAdv20: str(profile.maxAdv20),
     minShares: str(profile.minShares),
     minScore: str(profile.minScore),
@@ -46,6 +48,8 @@ function toPayload(f) {
     dailyLossPct: num(f.dailyLossPct),
     minPrice: num(f.minPrice),
     minAdv20: num(f.minAdv20),
+    trailingStopEnabled: f.trailingStopEnabled,
+    breakEvenAtR: num(f.breakEvenAtR),
     maxAdv20: num(f.maxAdv20),
     minShares: num(f.minShares),
     minScore: num(f.minScore),
@@ -120,6 +124,7 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
   const allocatedToday = entered.reduce((sum, d) => sum + (Number(d.price) || 0) * (Number(d.sizing?.shares) || 0), 0);
   const pctOf = (value) => (Number.isFinite(equity) && equity > 0 ? `${fmt((value / equity) * 100, 1)}%` : "—");
   const perf = server.performance || {};
+  const planFor = (symbol) => (server.plans || []).find((x) => x.symbol === symbol);
   const perfTrades = perf.trades || [];
   const stats = perf.stats || null;
   const signed = (value) => (Number.isFinite(value) ? `${value > 0 ? "+" : ""}${money(value)}` : "—");
@@ -181,6 +186,17 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
           <input type="checkbox" checked={form.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
           מסחר פעיל בחשבון Alpaca (סריקה רצה תמיד; כיבוי כאן עוצר רק כניסות חדשות, לא מעקב אחרי פוזיציות קיימות)
         </label>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>סטופ נגרר</h2></div>
+        <label className="inline">
+          <input type="checkbox" checked={form.trailingStopEnabled} onChange={(e) => set({ trailingStopEnabled: e.target.checked })} />
+          להעביר את הסטופ לנקודת הכניסה (break-even) כשהעסקה מרוויחה מספיק, כדי שעסקה שהייתה ברווח לא תהפוך להפסד
+        </label>
+        <div className="risk-fields">
+          <label>העברה אחרי רווח של (כפולות הסיכון, 1 = כמו הסיכון המקורי)<input dir="ltr" inputMode="decimal" value={form.breakEvenAtR} onChange={(e) => set({ breakEvenAtR: e.target.value })} /></label>
+        </div>
       </section>
 
       <section className="panel">
@@ -353,7 +369,7 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
         {positions.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>מניה</th><th>כמות</th><th>מחיר כניסה</th><th>מחיר נוכחי</th><th>רווח/הפסד</th></tr></thead>
+              <thead><tr><th>מניה</th><th>כמות</th><th>מחיר כניסה</th><th>מחיר נוכחי</th><th>סטופ</th><th>יעד</th><th>רווח/הפסד</th></tr></thead>
               <tbody>
                 {positions.map((p) => (
                   <tr key={p.symbol}>
@@ -361,6 +377,8 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
                     <td dir="ltr">{fmt(Number(p.qty), 4)}</td>
                     <td dir="ltr">{money(Number(p.avg_entry_price))}</td>
                     <td dir="ltr">{money(Number(p.current_price))}</td>
+                    <td dir="ltr">{planFor(p.symbol)?.stop ? `${money(planFor(p.symbol).stop)}${planFor(p.symbol).breakEvenAt ? " (break-even)" : ""}` : "—"}</td>
+                    <td dir="ltr">{planFor(p.symbol)?.target ? money(planFor(p.symbol).target) : "—"}</td>
                     <td dir="ltr" className={Number(p.unrealized_pl) > 0 ? "pl-up" : Number(p.unrealized_pl) < 0 ? "pl-down" : ""}>{money(Number(p.unrealized_pl))}</td>
                   </tr>
                 ))}

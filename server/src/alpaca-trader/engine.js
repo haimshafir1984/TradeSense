@@ -55,7 +55,7 @@ async function tick(now = Date.now()) {
       return;
     }
     const day = await risk.evaluateDay(now, profile.dailyLossPct).catch((error) => ({ error: error.message }));
-    const exits = await exitManager.manage({ dailyBreached: day?.breached === true, now }).catch((error) => [{ outcome: "error", reason: error.message }]);
+    const exits = await exitManager.manage({ dailyBreached: day?.breached === true, now, profile }).catch((error) => [{ outcome: "error", reason: error.message }]);
 
     const diagnostics = await scan.run(profile, now).catch((error) => ({ error: error.message }));
 
@@ -134,6 +134,7 @@ async function view(now = Date.now()) {
     candidates: entry.todayBoxes(now),
     decisions: entry.recentLog(100),
     exits: exitManager.recentLog(100),
+    plans: exitManager.plans(),
     performance,
   };
 }

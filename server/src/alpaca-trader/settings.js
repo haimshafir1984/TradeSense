@@ -25,6 +25,9 @@ const DEFAULTS = Object.freeze({
   dailyLossPct: 7,
   minPrice: 3,
   minAdv20: 3_000_000,
+  // Break-even trailing stop: once a position is up breakEvenAtR times its initial risk, the stop moves up to the entry price.
+  trailingStopEnabled: true,
+  breakEvenAtR: 1,
   // Upper liquidity bound: the arm targets volatile small/mid-caps, so mega-caps above this are left out.
   maxAdv20: 150_000_000,
   // gap_pullback and momentum_bull_flag need a news/no-news reading (args.hasNews) that this v1 does
@@ -71,6 +74,11 @@ function validate(input = {}, base = DEFAULTS) {
   if (input.minShares !== undefined) out.minShares = num(input.minShares, "כמות מינימלית", { min: 1, max: 1000 });
   if (input.dailyLossPct !== undefined) out.dailyLossPct = num(input.dailyLossPct, "הפסד יומי מרבי", { min: 0.1, max: 100 });
   if (input.minPrice !== undefined) out.minPrice = num(input.minPrice, "סף מחיר תחתון", { min: 0.01, max: 10000 });
+  if (input.trailingStopEnabled !== undefined) {
+    if (typeof input.trailingStopEnabled !== "boolean") fail("ערך לא תקין: סטופ נגרר");
+    out.trailingStopEnabled = input.trailingStopEnabled;
+  }
+  if (input.breakEvenAtR !== undefined) out.breakEvenAtR = num(input.breakEvenAtR, "הסטופ עובר ל-break-even אחרי (כפולות סיכון)", { min: 0.1, max: 10 });
   if (input.minAdv20 !== undefined) out.minAdv20 = num(input.minAdv20, "נזילות מינימלית (ADV20)", { min: 0, max: 1e12 });
   if (input.maxAdv20 !== undefined) out.maxAdv20 = num(input.maxAdv20, "נזילות מקסימלית (ADV20)", { min: 0, max: 1e13 });
   if (input.strategies !== undefined) {

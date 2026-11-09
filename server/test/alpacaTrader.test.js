@@ -350,3 +350,55 @@ test("trades: pairs Alpaca fills FIFO into realized trades, joins strategy/slipp
     cleanup();
   }
 });
+
+test("exit: break-even trailing stop moves the stop to the entry at 1R, never lowers it, and closes a trade that falls back", async () => {
+  const { exitManager, broker, settings, cleanup } = setup();
+  try {
+    assert.equal(settings.read().trailingStopEnabled, true);
+    assert.equal(settings.read().breakEvenAtR, 1);
+    exitManager.recordPlan("TRAIL", { stop: 98, target: 104 }); // entry 100 -> risk 2 -> break-even trigger at 102
+    const closed = [];
+    broker.closePosition = async (symbol) => { closed.push(symbol); return {}; };
+    const position = (price) => [{ symbol: "TRAIL", qty: "10", avg_entry_price: "100", current_price: String(price) }];
+    const now = Date.parse("2026-11-09T15:00:00Z");
+
+    broker.getPositions = async () => position(101.5); // up 0.75R: nothing yet
+    assert.deepEqual(await exitManager.manage({ dailyBreached: false, now }), []);
+    assert.equal(exitManager.plans()[0].stop, 98);
+
+    broker.getPositions = async () => position(102.2); // up 1.1R: stop moves to the entry, no exit
+    assert.deepEqual(await exitManager.manage({ dailyBreached: false, now }), []);
+    const armed = exitManager.plans()[0];
+    assert.equal(armed.stop, 100);
+    assert.equal(armed.initialStop, 98, "the original risk is remembered");
+    assert.ok(armed.breakEvenAt);
+
+    broker.getPositions = async () => position(101); // pulled back but still above the entry: stays open
+    assert.deepEqual(await exitManager.manage({ dailyBreached: false, now }), []);
+    assert.deepEqual(closed, []);
+
+    broker.getPositions = async () => position(99.9); // back through the entry: closed at break-even, not at the old -2 stop
+    const results = await exitManager.manage({ dailyBreached: false, now });
+    assert.deepEqual(closed, ["TRAIL"]);
+    assert.equal(results[0].reason, "breakeven_stop");
+  } finally {
+    cleanup();
+  }
+});
+
+test("exit: the trailing stop does nothing when switched off, and never moves a stop that is already above the entry", async () => {
+  const { exitManager, settings, cleanup } = setup();
+  try {
+    const now = Date.parse("2026-11-09T15:00:00Z");
+    const plan = { symbol: "X", stop: 98, initialStop: 98, target: 104 };
+    const base = { entryPrice: 100, price: 103, now };
+    assert.equal(exitManager.armBreakEven(plan, { ...base, profile: { trailingStopEnabled: false, breakEvenAtR: 1 } }), plan, "disabled: unchanged");
+    assert.equal(exitManager.armBreakEven(plan, { ...base, profile: { trailingStopEnabled: true, breakEvenAtR: 2 } }), plan, "needs 2R: 103 is only 1.5R");
+    assert.equal(exitManager.armBreakEven({ ...plan, stop: 101 }, { ...base, profile: { trailingStopEnabled: true, breakEvenAtR: 1 } }).stop, 101, "an already higher stop is kept");
+    assert.equal(exitManager.armBreakEven(plan, { entryPrice: NaN, price: 103, now, profile: { trailingStopEnabled: true, breakEvenAtR: 1 } }), plan, "missing entry price: unchanged");
+    assert.throws(() => settings.save({ breakEvenAtR: 0 }));
+    assert.equal(settings.save({ trailingStopEnabled: false }).trailingStopEnabled, false);
+  } finally {
+    cleanup();
+  }
+});
