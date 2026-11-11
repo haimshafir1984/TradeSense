@@ -542,3 +542,22 @@ test("notify: opted-in profiles get a push event for every buy and every exit; o
     cleanup();
   }
 });
+
+test("engine: each in-session scan is kept in a short history with summed reason codes (to answer 'why was nothing bought')", () => {
+  const { cleanup } = setup();
+  try {
+    delete require.cache[require.resolve("../src/alpaca-trader/engine")];
+    const engine = require("../src/alpaca-trader/engine");
+    const at = (hhmm) => Date.parse(`2026-11-11T${hhmm}:20Z`);
+    engine.recordScan(at("15:05"), { marketOpen: false }, []); // outside the session: not recorded
+    engine.recordScan(at("15:10"), { marketOpen: true, universeSize: 150, evaluated: 140, matched: 0, rvolOver1_2: 30, rvolMax: 3.2, errors: [], reasons: { orb15: { trigger_not_met: 100, intraday_missing: 40 }, vwap_reclaim: { trigger_not_met: 90, intraday_missing: 40, matched: 1 } } }, []);
+    engine.recordScan(at("15:15"), { marketOpen: true, universeSize: 150, evaluated: 141, matched: 2, rvolOver1_2: 31, rvolMax: 3.4, errors: [], reasons: {} }, [{ outcome: "entered" }, { outcome: "skipped" }]);
+    const scans = engine.recentScans(10);
+    assert.equal(scans.length, 2);
+    assert.equal(scans[0].at, "2026-11-11T15:15:20.000Z", "newest first");
+    assert.equal(scans[0].entered, 1);
+    assert.deepEqual(scans[1].reasons, { trigger_not_met: 190, intraday_missing: 80, matched: 1 }, "summed over strategies");
+  } finally {
+    cleanup();
+  }
+});

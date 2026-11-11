@@ -40,6 +40,33 @@ function state(patch) {
   }
 }
 
+// Short history of each in-session scan, so "why was nothing bought today?" can be answered after the fact (the status
+// only keeps the latest scan). Reason codes are summed over all stocks and strategies.
+const K_SCANLOG = `${KIND}:scanLog`;
+const MAX_SCANLOG = 300;
+
+function recordScan(now, diagnostics, entries) {
+  try {
+    if (!diagnostics?.marketOpen) return;
+    const reasons = {};
+    for (const perStrategy of Object.values(diagnostics.reasons || {})) for (const [code, count] of Object.entries(perStrategy)) reasons[code] = (reasons[code] || 0) + count;
+    const at = new Date(now).toISOString();
+    store.put(K_SCANLOG, at, {
+      id: at, at, universeSize: diagnostics.universeSize, evaluated: diagnostics.evaluated, matched: diagnostics.matched,
+      rvolOver1_2: diagnostics.rvolOver1_2, rvolMax: diagnostics.rvolMax, reasons, entered: (entries || []).filter((e) => e.outcome === "entered").length,
+      errors: (diagnostics.errors || []).length,
+    });
+    const ids = store.listIds(K_SCANLOG).sort();
+    for (const old of ids.slice(0, Math.max(0, ids.length - MAX_SCANLOG))) store.remove(K_SCANLOG, old);
+  } catch {
+    // diagnostics only
+  }
+}
+
+function recentScans(limit = 40) {
+  return store.list(K_SCANLOG).sort((a, b) => (a.id < b.id ? 1 : -1)).slice(0, limit);
+}
+
 function getState() {
   return store.get(KIND, STATE_KEY) || { startedAt: null, heartbeatAt: null };
 }
@@ -117,6 +144,7 @@ async function tick(now = Date.now()) {
         state({ error: error.message });
       }
     }
+    recordScan(now, diagnostics, entries);
     state({ error: null, lastScanAt: new Date(now).toISOString(), diagnostics, day, exits, entries });
   } catch (error) {
     state({ error: error.message });
@@ -173,10 +201,11 @@ async function view(now = Date.now()) {
     universe,
     candidates: entry.todayBoxes(now),
     decisions: entry.recentLog(100),
+    scans: recentScans(60),
     exits: exitManager.recentLog(100),
     plans: exitManager.plans(),
     performance,
   };
 }
 
-module.exports = { start, stop, tick, exitTick, view, TICK_MS, msUntilNextBar };
+module.exports = { start, stop, tick, exitTick, view, TICK_MS, msUntilNextBar, recordScan, recentScans };

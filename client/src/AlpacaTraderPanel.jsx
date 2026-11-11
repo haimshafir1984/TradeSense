@@ -18,6 +18,10 @@ const REASON_LABEL = {
   disabled: "המסחר כבוי", daily_loss_breached: "הפסד יומי חרג", account_unavailable: "אין חיבור לחשבון",
   symbol_busy: "כבר יש פוזיציה/הזמנה", not_configured: "המפתחות לא מוגדרים",
 };
+const SCAN_REASON_LABEL = {
+  intraday_missing: "אין נר טרי", trigger_not_met: "הטריגר לא התקיים", rvol_below_threshold: "נפח יחסי נמוך", opening_range_incomplete: "טווח הפתיחה לא שלם",
+  daily_missing: "חסרים נתונים יומיים", outside_window: "מחוץ לחלון הזמן", invalid_plan: "תוכנית לא תקינה", rvol_missing: "אין נפח יחסי", matched: "התאמה",
+};
 const EXIT_REASON_LABEL = { stop: "סטופ", breakeven_stop: "סטופ ב-break-even", carried_over: "נסגרה בפתיחה (נשארה מיום קודם)", target: "יעד", end_of_day: "סוף יום", daily_loss_breached: "הפסד יומי חרג" };
 
 function toForm(profile) {
@@ -381,6 +385,32 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
             </table>
           </div>
         ) : <p className="muted">אין עדיין עסקאות שהסתיימו.</p>}
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>סריקות אחרונות</h2></div>
+        <details className="skipped-details">
+          <summary>למה לא נקנה? מה כל סריקה מצאה ({(server.scans || []).length})</summary>
+          {(server.scans || []).length ? (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>שעה</th><th>נבדקו</th><th>התאמות</th><th>נפח יחסי מעל 1.2</th><th>נכנסו</th><th>הסיבות העיקריות לפסילה</th></tr></thead>
+                <tbody>
+                  {(server.scans || []).map((s) => (
+                    <tr key={s.id}>
+                      <td>{time(s.at)}</td>
+                      <td dir="ltr">{s.evaluated}</td>
+                      <td dir="ltr">{s.matched}</td>
+                      <td dir="ltr">{s.rvolOver1_2 ?? "—"}</td>
+                      <td dir="ltr">{s.entered}</td>
+                      <td>{Object.entries(s.reasons || {}).filter(([code]) => code !== "matched").sort((a, b) => b[1] - a[1]).slice(0, 3).map(([code, n]) => `${SCAN_REASON_LABEL[code] || code}: ${n}`).join(" · ") || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="muted">עדיין אין סריקות מתועדות.</p>}
+        </details>
       </section>
 
       <section className="panel">
