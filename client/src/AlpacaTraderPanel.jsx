@@ -90,6 +90,16 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
     setForm((f) => ({ ...f, strategies: f.strategies.includes(key) ? f.strategies.filter((s) => s !== key) : [...f.strategies, key] }));
   };
 
+  async function toggleNotify(enabled) {
+    try {
+      await alpacaApi("/notify", { method: "PUT", body: JSON.stringify({ enabled }) });
+      await load();
+      onNotice?.(enabled ? "התראות Alpaca הופעלו לפרופיל הזה" : "התראות Alpaca כובו");
+    } catch (e) {
+      onError?.(e.message);
+    }
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -186,6 +196,15 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
           <input type="checkbox" checked={form.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
           מסחר פעיל בחשבון Alpaca (סריקה רצה תמיד; כיבוי כאן עוצר רק כניסות חדשות, לא מעקב אחרי פוזיציות קיימות)
         </label>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>התראות</h2></div>
+        <label className="inline">
+          <input type="checkbox" checked={Boolean(server.notify?.enabled)} onChange={(e) => toggleNotify(e.target.checked)} />
+          שלח לי התראה קופצת על כל קנייה וכל יציאה בחשבון Alpaca
+        </label>
+        <p className="muted">ההתראות מגיעות למכשירים שבהם אישרת התראות באתר. ההגדרה נשמרת מיד ושייכת לפרופיל הזה בלבד.</p>
       </section>
 
       <section className="panel">

@@ -85,6 +85,7 @@ async function manage({ dailyBreached, now = Date.now(), profile } = {}) {
       await broker.closePosition(symbol);
       store.remove(K_PLAN, symbol);
       logExit({ symbol, reason, qty, price: price || null }, now);
+      require("./notify").exited({ symbol, reason, qty, price, entryPrice: Number(position.avg_entry_price), pnl: Number(position.unrealized_pl), now });
       results.push({ symbol, outcome: "closed", reason });
     } catch (error) {
       logExit({ symbol, reason: `${reason}_failed`, error: error.message }, now);

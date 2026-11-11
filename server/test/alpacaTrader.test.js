@@ -12,6 +12,7 @@ function setup() {
     delete require.cache[require.resolve(file)];
   }
   delete require.cache[require.resolve("../src/providers/alpacaService")];
+  for (const file of ["../src/alpaca-trader/notify", "../src/autopilot/notifications", "../src/autopilot/settings"]) delete require.cache[require.resolve(file)];
   const store = require("../src/autopilot/store");
   const settings = require("../src/alpaca-trader/settings");
   const risk = require("../src/alpaca-trader/risk");
@@ -495,6 +496,49 @@ test("engine: the exit loop closes a stopped-out position by itself during the s
   } finally {
     delete process.env.ALPACA_TRADER_API_KEY_ID;
     delete process.env.ALPACA_TRADER_API_SECRET_KEY;
+    cleanup();
+  }
+});
+
+test("notify: opted-in profiles get a push event for every buy and every exit; others get nothing", async () => {
+  const { store, entry, exitManager, broker, cleanup } = setup();
+  try {
+    const notify = require("../src/alpaca-trader/notify");
+    const settingsOfUsers = require("../src/autopilot/settings");
+    assert.equal(notify.isEnabled("user-a"), false);
+    notify.setEnabled("user-a", true);
+    assert.equal(notify.isEnabled("user-a"), true);
+    // A profile that only wants Colmex purchases pushed (pushOnlyBought) must still get these.
+    settingsOfUsers.save({ pushOnlyBought: true }, "user-a");
+    assert.equal(settingsOfUsers.read("user-a").pushOnlyBought, true, "the filter really is on for this profile");
+
+    // Buy
+    const profile = { windowMin: 5, minScore: 45, immediateScore: 80, familyPoints: [40, 65, 80, 90], qualityMax: 10, catalystMax: 8, perTradeMinPct: 30, perTradeMaxPct: 50, totalExposurePct: 60, maxRiskPct: 4, minShares: 1 };
+    const now = Date.parse("2026-11-11T15:00:00Z");
+    entry.observe({ signal: { id: "NTFY:orb15:bar1", ticker: "NTFY", strategy: "orb15", entry: 20, stop: 19, target: 22, daily: { atr14: 2, avgDollarVolume20d: 80_000_000 }, rvol: 3, expiresAt: new Date(now + 600000).toISOString() }, now });
+    await entry.flush({ profile, equity: 100000, exposure: 0, enabled: true, now: now + 6 * 60000, place: async () => ({ orderId: "ord-1" }) });
+    const buy = store.getUser("user-a", "event", "alpaca:entry:ord-1");
+    assert.ok(buy, "buy event stored");
+    assert.match(buy.title, /נקנתה NTFY/);
+    assert.match(buy.body, /סטופ \$19\.00 · יעד \$22\.00/);
+    assert.ok(store.getUser("user-a", "outbox", "alpaca:entry:ord-1"), "queued for push even with pushOnlyBought");
+
+    // Exit
+    exitManager.recordPlan("NTFY", { stop: 19, target: 22 }, now);
+    broker.getPositions = async () => [{ symbol: "NTFY", qty: "100", avg_entry_price: "20", current_price: "18.5", unrealized_pl: "-150" }];
+    broker.closePosition = async () => ({});
+    await exitManager.manage({ dailyBreached: false, now: now + 3600000 });
+    const exitEvents = store.listUser("user-a", "event").filter((e) => e.id.startsWith("alpaca:exit:NTFY"));
+    assert.equal(exitEvents.length, 1);
+    assert.match(exitEvents[0].title, /יציאה מ-NTFY \(סטופ\)/);
+    assert.match(exitEvents[0].body, /-\$150/);
+
+    // A profile that never opted in gets nothing
+    assert.equal(store.listUser("user-b", "event").length, 0);
+    // Opt-out stops further notices
+    notify.setEnabled("user-a", false);
+    assert.equal(notify.entered({ symbol: "ZZZ", shares: 1, price: 1, equity: 1000, stop: 0.9, target: 1.2, score: 50, now }), 0);
+  } finally {
     cleanup();
   }
 });

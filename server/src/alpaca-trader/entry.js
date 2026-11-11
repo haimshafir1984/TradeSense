@@ -104,6 +104,7 @@ async function flush({ profile, equity, exposure, enabled, place, now = Date.now
       } catch {
         // metadata is best-effort
       }
+      require("./notify").entered({ symbol: box.symbol, shares: sizing.shares, price, equity, stop, target: Number(lead.target) || null, score: sc.score, strategies: names, orderId: placed?.orderId, now });
       results.push({ symbol: box.symbol, outcome: "entered", shares: sizing.shares, score: sc.score, stop, target: Number(lead.target) || null });
     } catch (error) {
       const transient = ["account_unavailable", "not_configured"].includes(error.code);
