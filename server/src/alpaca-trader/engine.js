@@ -30,8 +30,14 @@ let alignTimer = null;
 let startupTimer = null;
 let running = false;
 
+// Status only: a locked database must not turn into an unhandled rejection that ends the process (see autopilot/engine.js).
 function state(patch) {
-  return store.put(KIND, STATE_KEY, { ...store.get(KIND, STATE_KEY), ...patch });
+  try {
+    return store.put(KIND, STATE_KEY, { ...store.get(KIND, STATE_KEY), ...patch });
+  } catch (error) {
+    console.warn(`[alpaca-trader] state update skipped: ${error.message}`);
+    return null;
+  }
 }
 
 function getState() {

@@ -52,11 +52,18 @@ function isRegularSessionNow(now) {
   const weekday = new Date(date + "T12:00:00Z").getUTCDay();
   return weekday >= 1 && weekday <= 5 && now >= market.nyTimestamp(date, "09:30") && now < market.nyTimestamp(date, "16:00");
 }
+// Runtime status only. A "database is locked" here used to escape from the tick's catch block as an unhandled rejection
+// and kill the whole process (exit 1 during the 2026-11-09 deploy, while the previous container held the write lock).
 function state(patch) {
-  return store.put("runtime", "engine", {
-    ...store.get("runtime", "engine"),
-    ...patch,
-  });
+  try {
+    return store.put("runtime", "engine", {
+      ...store.get("runtime", "engine"),
+      ...patch,
+    });
+  } catch (error) {
+    console.warn(`[engine] runtime state update skipped: ${error.message}`);
+    return null;
+  }
 }
 function liveQuote(symbol, snapshot, now) {
   const stream = prices.get(symbol);
@@ -902,4 +909,4 @@ function requestScan() {
   store.remove("lease", "scan");
   tick();
 }
-module.exports = { start, stop, tick, requestScan, scan, monitor, reviewTick, isSystemPaused, setSystemPaused, isRegularSessionNow, resetFeedbackRebuildClock: (at = 0) => (lastFeedbackRebuildAt = at) };
+module.exports = { state, start, stop, tick, requestScan, scan, monitor, reviewTick, isSystemPaused, setSystemPaused, isRegularSessionNow, resetFeedbackRebuildClock: (at = 0) => (lastFeedbackRebuildAt = at) };

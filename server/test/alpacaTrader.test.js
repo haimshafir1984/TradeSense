@@ -427,3 +427,25 @@ test("entry: several boxes decided in the same pass share the exposure limit ins
     cleanup();
   }
 });
+
+test("engine status writes survive a locked database instead of crashing the process (the 2026-11-09 exit 1 during a rolling deploy)", () => {
+  const { store, cleanup } = setup();
+  const realPut = store.put;
+  const warn = console.warn;
+  const warnings = [];
+  console.warn = (line) => warnings.push(String(line));
+  try {
+    for (const modulePath of ["../src/alpaca-trader/engine", "../src/autopilot/engine"]) delete require.cache[require.resolve(modulePath)];
+    const alpacaEngine = require("../src/alpaca-trader/engine");
+    store.put = () => { throw new Error("database is locked"); };
+    // The alpaca engine's status write happens inside tick(); the autopilot one is exported directly.
+    const autopilotEngine = require("../src/autopilot/engine");
+    assert.equal(autopilotEngine.state({ error: "x" }), null, "no throw, returns null");
+    assert.ok(warnings.some((w) => /state update skipped: database is locked/.test(w)));
+    assert.equal(typeof alpacaEngine.tick, "function");
+  } finally {
+    store.put = realPut;
+    console.warn = warn;
+    cleanup();
+  }
+});

@@ -61,6 +61,12 @@ try {
   console.error(`[startup] event loop monitor failed to install: ${error.message}`);
 }
 
+// A single failed background task (for example a write that hit "database is locked") must not end the process: this
+// service trades and monitors positions. Log it and keep running.
+process.on("unhandledRejection", (reason) => {
+  console.error(`[unhandledRejection] ${reason?.stack || reason}`);
+});
+
 // The server owns the persistent v3 scheduler; browser visits never trigger monitoring.
 app.listen(port, () => {
   console.log(`TradeSense API listening on port ${port}`);
