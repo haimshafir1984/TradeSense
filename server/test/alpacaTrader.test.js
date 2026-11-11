@@ -402,3 +402,28 @@ test("exit: the trailing stop does nothing when switched off, and never moves a 
     cleanup();
   }
 });
+
+test("entry: several boxes decided in the same pass share the exposure limit instead of each using all of it (the 2026-11-10 over-allocation)", async () => {
+  const { entry, cleanup } = setup();
+  try {
+    const profile = { windowMin: 5, minScore: 45, immediateScore: 80, familyPoints: [40, 65, 80, 90], qualityMax: 10, catalystMax: 8, perTradeMinPct: 30, perTradeMaxPct: 50, totalExposurePct: 60, maxRiskPct: 4, minShares: 1 };
+    const now = Date.parse("2026-11-10T15:00:00Z");
+    for (const ticker of ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"]) {
+      entry.observe({
+        signal: { id: `${ticker}:orb15:bar1`, ticker, strategy: "orb15", entry: 10, stop: 9.5, daily: { atr14: 1, avgDollarVolume20d: 80_000_000 }, rvol: 3, expiresAt: new Date(now + 600000).toISOString() },
+        now,
+      });
+    }
+    const placed = [];
+    const results = await entry.flush({
+      profile, equity: 100_000, exposure: 0, enabled: true, now: now + 6 * 60000,
+      place: async (symbol, shares) => { placed.push({ symbol, shares, notional: shares * 10 }); return { orderId: `o-${symbol}` }; },
+    });
+    const total = placed.reduce((sum, p) => sum + p.notional, 0);
+    assert.ok(placed.length >= 1, "something is still bought");
+    assert.ok(total <= 60_000 + 1, `six boxes together stay inside 60% of the account, got ${total}`);
+    assert.ok(results.filter((r) => r.outcome === "skipped").length >= 1, "boxes that no longer fit are skipped, not oversized");
+  } finally {
+    cleanup();
+  }
+});

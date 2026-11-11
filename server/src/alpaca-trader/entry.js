@@ -57,6 +57,10 @@ function observe({ signal, now = Date.now() }) {
 async function flush({ profile, equity, exposure, enabled, place, now = Date.now() }) {
   const results = [];
   const today = nyDate(now);
+  // The caller measures exposure once per scan, before any of this scan's orders exist. Every box decided in the same
+  // pass used to be sized against that same number, so six simultaneous entries could each take up to half of the
+  // account (2026-11-10: six ~$30k positions on a $100k account, then a -7% day). Track what this pass already placed.
+  let runningExposure = Number(exposure) || 0;
   for (const id of store.listIds(K_BOX)) {
     if (!id.startsWith(`${today}:`)) continue;
     const box = store.get(K_BOX, id);
@@ -80,7 +84,7 @@ async function flush({ profile, equity, exposure, enabled, place, now = Date.now
     const price = Number(lead.entry);
     const stop = Number(lead.stop);
     if (!Number.isFinite(price) || !Number.isFinite(stop) || price <= 0) { skip("invalid_plan", "מחיר/סטופ לא תקינים"); continue; }
-    const sizing = shared.size({ score: sc.score, price, stop, equity, exposure, profile });
+    const sizing = shared.size({ score: sc.score, price, stop, equity, exposure: runningExposure, profile });
     const base = { score: sc.score, families: sc.families, sizing, price };
     if (sizing.shares < profile.minShares) {
       skip("size_too_small", `הכמות שיצאה (${sizing.shares}) נמוכה מהמינימום ${profile.minShares}`, base);
@@ -88,6 +92,7 @@ async function flush({ profile, equity, exposure, enabled, place, now = Date.now
     }
     try {
       const placed = await place(box.symbol, sizing.shares, lead);
+      runningExposure += price * sizing.shares;
       putBox(box.symbol, now, { ...box, state: "entered", orderId: placed?.orderId || null, closedAt: new Date(now).toISOString() });
       record({ symbol: box.symbol, outcome: "entered", reason: "entered", reasonText: `${sc.families.length} משפחות מסכימות, ציון ${sc.score}, ${sizing.shares} מניות`, strategies: names, orderId: placed?.orderId || null, ...base }, now);
       try {
