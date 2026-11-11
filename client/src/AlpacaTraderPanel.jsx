@@ -18,7 +18,7 @@ const REASON_LABEL = {
   disabled: "המסחר כבוי", daily_loss_breached: "הפסד יומי חרג", account_unavailable: "אין חיבור לחשבון",
   symbol_busy: "כבר יש פוזיציה/הזמנה", not_configured: "המפתחות לא מוגדרים",
 };
-const EXIT_REASON_LABEL = { stop: "סטופ", breakeven_stop: "סטופ ב-break-even", target: "יעד", end_of_day: "סוף יום", daily_loss_breached: "הפסד יומי חרג" };
+const EXIT_REASON_LABEL = { stop: "סטופ", breakeven_stop: "סטופ ב-break-even", carried_over: "נסגרה בפתיחה (נשארה מיום קודם)", target: "יעד", end_of_day: "סוף יום", daily_loss_breached: "הפסד יומי חרג" };
 
 function toForm(profile) {
   return {

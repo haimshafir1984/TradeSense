@@ -33,6 +33,15 @@ function logExit(entry, now = Date.now()) {
   return id;
 }
 
+// Regular session only (weekdays 09:30-16:00 New York). Outside it a market order is not executed: it queues for the next
+// open. On 2026-11-09 the end-of-day close went out at 16:20 NY, sat in the queue overnight, and filled at the next open
+// after a -8..-10% gap.
+function inSession(now) {
+  const date = nyDate(now);
+  const weekday = new Date(date + "T12:00:00Z").getUTCDay();
+  return weekday >= 1 && weekday <= 5 && now >= nyTimestamp(date, "09:30") && now < nyTimestamp(date, "16:00");
+}
+
 function isPastClose(now) {
   return now >= nyTimestamp(nyDate(now), "15:55");
 }
@@ -49,7 +58,10 @@ async function manage({ dailyBreached, now = Date.now(), profile } = {}) {
     return [{ outcome: "error", reason: error.message }];
   }
   const eod = isPastClose(now);
+  const sessionOpen = inSession(now);
+  const today = nyDate(now);
   for (const position of positions || []) {
+    if (!sessionOpen) continue; // never submit an order that would only queue for the next open
     const symbol = position.symbol;
     const qty = Math.abs(Number(position.qty) || 0);
     if (qty <= 0) continue;
@@ -62,6 +74,7 @@ async function manage({ dailyBreached, now = Date.now(), profile } = {}) {
     }
     let reason = null;
     if (dailyBreached) reason = "daily_loss_breached";
+    else if (plan?.enteredAt && nyDate(Date.parse(plan.enteredAt)) < today) reason = "carried_over"; // held past an earlier close: out at the first chance
     else if (eod) reason = "end_of_day";
     else if (plan && Number.isFinite(price)) {
       if (Number.isFinite(plan.stop) && price <= plan.stop) reason = plan.breakEvenAt ? "breakeven_stop" : "stop";
@@ -89,4 +102,4 @@ function plans() {
   return store.list(K_PLAN);
 }
 
-module.exports = { recordPlan, manage, recentLog, isPastClose, armBreakEven, plans };
+module.exports = { recordPlan, manage, recentLog, isPastClose, inSession, armBreakEven, plans };

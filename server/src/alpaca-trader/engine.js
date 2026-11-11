@@ -50,6 +50,36 @@ async function placeOrder(symbol, shares, signal) {
   return { orderId: order?.id || null };
 }
 
+// Exits run in their own loop so that a slow scan (universe build, many symbols, a stalled request) can never delay a
+// stop or the end-of-day close. A lock keeps the scan tick and this loop from closing the same position twice.
+const EXIT_TICK_MS = Number(process.env.ALPACA_TRADER_EXIT_INTERVAL_MS || 30000);
+let exitRunning = false;
+let exitTimer = null;
+
+async function guardedManage({ dailyBreached, now, profile }) {
+  if (exitRunning) return [];
+  exitRunning = true;
+  try {
+    return await exitManager.manage({ dailyBreached, now, profile });
+  } finally {
+    exitRunning = false;
+  }
+}
+
+async function exitTick(now = Date.now()) {
+  try {
+    if (!broker.isConfigured() || !exitManager.inSession(now)) return [];
+    const profile = settings.read();
+    const day = await risk.evaluateDay(now, profile.dailyLossPct).catch(() => null);
+    const results = await guardedManage({ dailyBreached: day?.breached === true, now, profile });
+    if (results.length) state({ exits: results, exitCheckedAt: new Date(now).toISOString() });
+    return results;
+  } catch (error) {
+    console.warn(`[alpaca-trader] exit check failed: ${error.message}`);
+    return [];
+  }
+}
+
 async function tick(now = Date.now()) {
   if (running) return;
   running = true;
@@ -61,7 +91,7 @@ async function tick(now = Date.now()) {
       return;
     }
     const day = await risk.evaluateDay(now, profile.dailyLossPct).catch((error) => ({ error: error.message }));
-    const exits = await exitManager.manage({ dailyBreached: day?.breached === true, now, profile }).catch((error) => [{ outcome: "error", reason: error.message }]);
+    const exits = await guardedManage({ dailyBreached: day?.breached === true, now, profile }).catch((error) => [{ outcome: "error", reason: error.message }]);
 
     const diagnostics = await scan.run(profile, now).catch((error) => ({ error: error.message }));
 
@@ -108,6 +138,8 @@ function start() {
       timer.unref();
     }, msUntilNextBar());
     alignTimer.unref();
+    exitTimer = setInterval(exitTick, EXIT_TICK_MS);
+    exitTimer.unref();
   }, STARTUP_DELAY_MS);
   startupTimer.unref();
 }
@@ -116,6 +148,8 @@ function stop() {
   if (timer) clearInterval(timer);
   if (startupTimer) clearTimeout(startupTimer);
   if (alignTimer) clearTimeout(alignTimer);
+  if (exitTimer) clearInterval(exitTimer);
+  exitTimer = null;
   timer = null;
   startupTimer = null;
   alignTimer = null;
@@ -145,4 +179,4 @@ async function view(now = Date.now()) {
   };
 }
 
-module.exports = { start, stop, tick, view, TICK_MS, msUntilNextBar };
+module.exports = { start, stop, tick, exitTick, view, TICK_MS, msUntilNextBar };

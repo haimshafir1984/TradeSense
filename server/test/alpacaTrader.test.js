@@ -449,3 +449,52 @@ test("engine status writes survive a locked database instead of crashing the pro
     cleanup();
   }
 });
+
+test("exit: nothing is submitted after the regular session (it would only queue for the next open), and a position carried over from an earlier day is closed at the first chance", async () => {
+  const { exitManager, broker, cleanup } = setup();
+  try {
+    exitManager.recordPlan("LATE", { stop: 3, target: 4 }, Date.parse("2026-11-09T15:00:00Z"));
+    const closed = [];
+    broker.closePosition = async (symbol) => { closed.push(symbol); return {}; };
+    broker.getPositions = async () => [{ symbol: "LATE", qty: "100", avg_entry_price: "3.5", current_price: "3.4" }];
+
+    // 16:20 New York on 2026-11-09: the real incident. Past 15:55, but the market is closed: no order.
+    assert.deepEqual(await exitManager.manage({ dailyBreached: false, now: Date.parse("2026-11-09T21:20:00Z") }), []);
+    assert.deepEqual(closed, []);
+    assert.equal(exitManager.inSession(Date.parse("2026-11-09T20:59:00Z")), true, "15:59 New York is still the session");
+    assert.equal(exitManager.inSession(Date.parse("2026-11-09T21:00:00Z")), false);
+    assert.equal(exitManager.inSession(Date.parse("2026-11-07T16:00:00Z")), false, "Saturday");
+
+    // Next morning, 09:35 New York: entered yesterday, so it is closed immediately even though stop/target are not hit.
+    const results = await exitManager.manage({ dailyBreached: false, now: Date.parse("2026-11-10T14:35:00Z") });
+    assert.deepEqual(closed, ["LATE"]);
+    assert.equal(results[0].reason, "carried_over");
+  } finally {
+    cleanup();
+  }
+});
+
+test("engine: the exit loop closes a stopped-out position by itself during the session, and stays idle outside it", async () => {
+  const { exitManager, broker, cleanup } = setup();
+  process.env.ALPACA_TRADER_API_KEY_ID = "test";
+  process.env.ALPACA_TRADER_API_SECRET_KEY = "test";
+  try {
+    delete require.cache[require.resolve("../src/alpaca-trader/engine")];
+    const engine = require("../src/alpaca-trader/engine");
+    exitManager.recordPlan("STOPME", { stop: 9, target: 12 }, Date.parse("2026-11-10T14:40:00Z"));
+    const closed = [];
+    broker.getAccount = async () => ({ equity: "100000" });
+    broker.getPositions = async () => [{ symbol: "STOPME", qty: "50", avg_entry_price: "10", current_price: "8.9" }];
+    broker.closePosition = async (symbol) => { closed.push(symbol); return {}; };
+
+    assert.deepEqual(await engine.exitTick(Date.parse("2026-11-10T22:00:00Z")), [], "after the close: idle");
+    assert.deepEqual(closed, []);
+    const results = await engine.exitTick(Date.parse("2026-11-10T15:00:00Z"));
+    assert.deepEqual(closed, ["STOPME"]);
+    assert.equal(results[0].reason, "stop");
+  } finally {
+    delete process.env.ALPACA_TRADER_API_KEY_ID;
+    delete process.env.ALPACA_TRADER_API_SECRET_KEY;
+    cleanup();
+  }
+});
