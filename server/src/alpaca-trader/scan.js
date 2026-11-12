@@ -59,6 +59,11 @@ async function run(profile, now = Date.now()) {
   const iexAvgVolume = new Map(rows.map((r) => [r.symbol, r.avgIexVolume20d]));
   const dailyResult = await history.ensureDailyFeatures(symbols, now);
   const session = sessionBounds(now);
+  // Strategies read only just-closed 5-minute candles and reject data whose newest closed candle is over 7 minutes old
+  // (strategies.js). Judged against the raw clock, a scan that starts 2+ minutes into a bar window (a startup scan, one
+  // delayed by a long previous scan) saw every stock as intraday_missing (2026-11-12: 896/896). Evaluate as of the
+  // latest 5-minute boundary instead: same candles, and the timing of the scan inside the window no longer matters.
+  const barBoundary = Math.floor(now / 300000) * 300000;
 
   for (let offset = 0; offset < symbols.length; offset += INTRADAY_BATCH) {
     if (universe.overMemoryGuard()) {
@@ -89,7 +94,7 @@ async function run(profile, now = Date.now()) {
         if (rvol >= 1.2) diagnostics.rvolOver1_2 += 1;
       }
       const { plans, results } = strategies.evaluateDetailed({
-        bars, asOf: now, sessionOpen: session.open, sessionClose: session.close,
+        bars, asOf: barBoundary, sessionOpen: session.open, sessionClose: session.close,
         daily, rvol, gapPct: daily.gapPct, hasNews: null,
       });
       // Why each enabled strategy did or did not match, summed over the universe (shows up in /status diagnostics).

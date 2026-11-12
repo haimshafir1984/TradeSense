@@ -561,3 +561,24 @@ test("engine: each in-session scan is kept in a short history with summed reason
     cleanup();
   }
 });
+
+test("scan: a scan that starts a few minutes into a 5-minute window still sees the latest closed candle as fresh (all stocks were intraday_missing)", async () => {
+  const { universe, cleanup } = setup();
+  try {
+    delete require.cache[require.resolve("../src/alpaca-trader/scan")];
+    delete require.cache[require.resolve("../src/autopilot/history")];
+    const history = require("../src/autopilot/history");
+    const scan = require("../src/alpaca-trader/scan");
+    const now = Date.parse("2026-11-12T15:02:52Z"); // 10:02:52 New York: 2:52 after the 15:00 boundary
+    universe.getRows = () => [{ symbol: "LATE", avgIexVolume20d: 1000 }];
+    history.ensureDailyFeatures = async () => ({ features: new Map([["LATE", { features: { atr14: 1, avgVolume20d: 5_000_000, price: 10 } }]]), complete: true });
+    // Candles 14:30 .. 14:55: the 14:55 one closed at 15:00, the 15:00 one is still forming at 15:02:52.
+    const bars = Array.from({ length: 6 }, (_, i) => ({ t: new Date(Date.parse("2026-11-12T14:30:00Z") + i * 300000).toISOString(), o: 10, h: 10.1, l: 9.9, c: 10, v: 100 }));
+    history.ensureIntradayBars = async () => ({ bars: new Map([["LATE", bars]]), errors: [] });
+    const diagnostics = await scan.run({ strategies: ["orb15"], minPrice: 3, minAdv20: 3e6, maxAdv20: 150e6 }, now);
+    assert.ok(!diagnostics.reasons.orb15?.intraday_missing, JSON.stringify(diagnostics.reasons));
+    assert.equal(Object.values(diagnostics.reasons.orb15 || {}).reduce((a, b) => a + b, 0), 1, "the stock was evaluated by the strategy");
+  } finally {
+    cleanup();
+  }
+});
