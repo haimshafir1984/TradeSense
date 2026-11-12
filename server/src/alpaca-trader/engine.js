@@ -93,9 +93,12 @@ async function guardedManage({ dailyBreached, now, profile }) {
   }
 }
 
+let lastExitTickAt = null; // in memory only: the exit loop runs every 30s, not worth a database write each time
+
 async function exitTick(now = Date.now()) {
   try {
     if (!broker.isConfigured() || !exitManager.inSession(now)) return [];
+    lastExitTickAt = new Date(now).toISOString();
     const profile = settings.read();
     const day = await risk.evaluateDay(now, profile.dailyLossPct).catch(() => null);
     const results = await guardedManage({ dailyBreached: day?.breached === true, now, profile });
@@ -202,6 +205,8 @@ async function view(now = Date.now()) {
     candidates: entry.todayBoxes(now),
     decisions: entry.recentLog(100),
     scans: recentScans(60),
+    history: await require("./history").dailyHistory(now).catch(() => ({ baseValue: null, days: [] })),
+    exitLoop: { lastTickAt: lastExitTickAt, intervalMs: EXIT_TICK_MS },
     exits: exitManager.recentLog(100),
     plans: exitManager.plans(),
     performance,

@@ -53,6 +53,11 @@ async function getPositions() {
   return call("/positions");
 }
 
+// Daily equity series for the paper account: { timestamp[], equity[], profit_loss[], profit_loss_pct[], base_value }.
+async function getPortfolioHistory({ period = "3M", timeframe = "1D" } = {}) {
+  return call(`/account/portfolio/history?period=${encodeURIComponent(period)}&timeframe=${encodeURIComponent(timeframe)}`);
+}
+
 async function getOrders({ status = "open", limit = 100, after, direction } = {}) {
   const extra = (after ? `&after=${encodeURIComponent(after)}` : "") + (direction ? `&direction=${encodeURIComponent(direction)}` : "");
   return call(`/orders?status=${encodeURIComponent(status)}&limit=${limit}${extra}`);
@@ -70,4 +75,4 @@ async function closePosition(symbol) {
   return call(`/positions/${encodeURIComponent(symbol)}`, { method: "DELETE" });
 }
 
-module.exports = { BASE_URL, isConfigured, getAccount, getPositions, getOrders, placeMarketOrder, closePosition };
+module.exports = { BASE_URL, isConfigured, getAccount, getPositions, getPortfolioHistory, getOrders, placeMarketOrder, closePosition };

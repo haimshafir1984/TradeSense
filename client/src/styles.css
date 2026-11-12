@@ -1340,3 +1340,48 @@ footer {
 .settings-group > .risk-panel { margin-top: 4px; }
 .settings-actions { display: flex; padding-top: 6px; }
 .page-heading h1 .badge { font-size: 0.45em; vertical-align: middle; margin-inline-start: 10px; }
+
+/* Alpaca tab: status line, warnings, meters, hints, equity curve, phone cards */
+.banner.warn { background: #fff7e6; color: #8a5a00; border: 1px solid #f0d9a8; }
+.banner.info { background: #eef6ff; color: #1d4f8c; border: 1px solid #cfe0f5; }
+.status-line { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; }
+.chip { padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.06); font-size: 0.82rem; }
+.chip.ok { background: #e4f4ec; color: #0f6b46; }
+.chip.bad { background: #fdeaea; color: #a12a2a; }
+.pause-toggle { padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(0, 0, 0, 0.2); background: #fff; cursor: pointer; font-weight: 600; white-space: nowrap; }
+.pause-toggle:disabled { opacity: 0.5; cursor: default; }
+.glance-title { margin: 16px 0 2px; font-size: 0.95rem; }
+.limit-meter { margin: 10px 0 2px; }
+.limit-label { font-size: 0.85rem; margin-bottom: 6px; }
+.progress { height: 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.08); overflow: hidden; }
+.progress i { display: block; height: 100%; border-radius: 6px; }
+.progress i.ok { background: #2f9e6d; }
+.progress i.warn { background: #e0a526; }
+.progress i.bad { background: #d14343; }
+.range-bar { position: relative; width: 90px; height: 8px; border-radius: 4px; display: inline-block; background: linear-gradient(90deg, #f3c9c9, #e9e9e9 50%, #c8e8d6); }
+.range-bar i { position: absolute; top: -3px; width: 3px; height: 14px; background: #0f4c45; transform: translateX(-50%); border-radius: 2px; }
+.hint { display: inline; }
+.hint summary { display: inline-flex; width: 16px; height: 16px; border-radius: 50%; background: #dfe8e6; color: #0f4c45; font-size: 11px; font-weight: 700; align-items: center; justify-content: center; cursor: pointer; list-style: none; margin-inline-start: 6px; vertical-align: middle; }
+.hint summary::-webkit-details-marker { display: none; }
+.hint > span { display: block; font-weight: 400; font-size: 0.8rem; line-height: 1.5; background: #f6faf9; border: 1px solid #d5e3e0; border-radius: 8px; padding: 8px 10px; margin-top: 6px; white-space: normal; color: #2b3b39; max-width: 340px; }
+.equity-chart { width: 100%; height: auto; max-height: 200px; margin: 6px 0 10px; }
+.equity-chart.up { color: #2f9e6d; }
+.equity-chart.down { color: #d14343; }
+.equity-line { stroke: currentColor; stroke-width: 2; }
+.equity-base { stroke: rgba(0, 0, 0, 0.28); stroke-dasharray: 4 4; }
+.equity-dot { fill: currentColor; }
+.equity-label { font-size: 11px; fill: rgba(0, 0, 0, 0.5); }
+tfoot td { font-weight: 700; border-top: 2px solid rgba(0, 0, 0, 0.12); }
+@media (max-width: 760px) {
+  .stack-table thead { display: none; }
+  .stack-table, .stack-table tbody, .stack-table tr, .stack-table td { display: block; width: 100%; box-sizing: border-box; }
+  .stack-table tr { border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 10px; padding: 6px 10px; margin-bottom: 10px; }
+  .stack-table td { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; white-space: normal; text-align: end; border: 0; }
+  .stack-table td::before { content: attr(data-label); font-weight: 600; opacity: 0.7; text-align: start; }
+  .stack-table tfoot { display: block; }
+  .stack-table tfoot tr { display: block; border: 0; padding: 4px 10px; }
+  .stack-table tfoot td { display: inline; border: 0; margin-inline-end: 10px; }
+  .stack-table tfoot td:empty { display: none; }
+  .pause-toggle { width: 100%; }
+  .page-heading { flex-wrap: wrap; }
+}

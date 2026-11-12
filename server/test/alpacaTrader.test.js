@@ -651,3 +651,26 @@ test("exit: with partial profit-taking off, or a position too small to split, th
     cleanup();
   }
 });
+
+test("history: Alpaca's parallel arrays become one row per trading day, dropping days with no equity", () => {
+  const { cleanup } = setup();
+  try {
+    const { shapeHistory } = require("../src/alpaca-trader/history");
+    const day = (iso) => Date.parse(iso) / 1000;
+    const shaped = shapeHistory({
+      base_value: 100000,
+      timestamp: [day("2026-11-05T05:00:00Z"), day("2026-11-06T05:00:00Z"), day("2026-11-09T05:00:00Z")],
+      equity: [null, 101922.36, 99518.34],
+      profit_loss: [0, 1922.36, -2404.02],
+      profit_loss_pct: [0, 0.0192236, -0.0235],
+    });
+    assert.equal(shaped.baseValue, 100000);
+    assert.deepEqual(shaped.days.map((d) => d.date), ["2026-11-06", "2026-11-09"]);
+    assert.equal(shaped.days[0].equity, 101922.36);
+    assert.equal(shaped.days[0].profitLossPct.toFixed(2), "1.92");
+    assert.equal(shaped.days[1].profitLoss, -2404.02);
+    assert.deepEqual(shapeHistory({}).days, [], "an empty response is fine");
+  } finally {
+    cleanup();
+  }
+});
