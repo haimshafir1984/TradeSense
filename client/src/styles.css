@@ -1335,3 +1335,8 @@ footer {
 .subtab.selected { background: #fff; color: #0f4c45; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .skipped-details { margin-top: 14px; }
 .skipped-details summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.collapsible-panel > summary, .settings-group > summary { cursor: pointer; font-weight: 700; font-size: 1.05rem; padding: 4px 0; }
+.collapsible-panel[open] > summary, .settings-group[open] > summary { margin-bottom: 12px; }
+.settings-group > .risk-panel { margin-top: 4px; }
+.settings-actions { display: flex; padding-top: 6px; }
+.page-heading h1 .badge { font-size: 0.45em; vertical-align: middle; margin-inline-start: 10px; }

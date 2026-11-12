@@ -162,19 +162,18 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
       <div className="page-heading">
         <div>
           <span className="eyebrow">חשבון דמו נפרד, לא קשור ל-Colmex/MT4</span>
-          <h1>חשבון דמו Alpaca</h1>
+          <h1>חשבון דמו Alpaca <span className={server.profile?.enabled ? "badge live-badge" : "badge amber"}>{server.profile?.enabled ? "מסחר פעיל" : "מסחר כבוי"}</span></h1>
           <p>סריקה עצמאית על מניות small/mid-cap תנודתיות, עם חשבון נייר (paper) נפרד ב-Alpaca. שינוי כאן לא משפיע על הצד השני.</p>
         </div>
-        <button className="primary" disabled={busy || saving || !dirty.current} onClick={save}>
-          {saving ? "שומר..." : "שמור הגדרות"}
-        </button>
       </div>
+
 
       {!configured && (
         <div className="banner error" role="alert">
           מפתחות ALPACA_TRADER_API_KEY_ID / ALPACA_TRADER_API_SECRET_KEY לא מוגדרים בשרת. הגדר אותם ב-Dokploy כדי שהחשבון יתחבר.
         </div>
       )}
+
 
       <section className="panel">
         <div className="section-heading">
@@ -195,67 +194,27 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
       </section>
 
       <section className="panel">
-        <div className="section-heading"><h2>הפעלה</h2></div>
-        <label className="inline">
-          <input type="checkbox" checked={form.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-          מסחר פעיל בחשבון Alpaca (סריקה רצה תמיד; כיבוי כאן עוצר רק כניסות חדשות, לא מעקב אחרי פוזיציות קיימות)
-        </label>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading"><h2>התראות</h2></div>
-        <label className="inline">
-          <input type="checkbox" checked={Boolean(server.notify?.enabled)} onChange={(e) => toggleNotify(e.target.checked)} />
-          שלח לי התראה קופצת על כל קנייה וכל יציאה בחשבון Alpaca
-        </label>
-        <p className="muted">ההתראות מגיעות למכשירים שבהם אישרת התראות באתר. ההגדרה נשמרת מיד ושייכת לפרופיל הזה בלבד.</p>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading"><h2>סטופ נגרר</h2></div>
-        <label className="inline">
-          <input type="checkbox" checked={form.trailingStopEnabled} onChange={(e) => set({ trailingStopEnabled: e.target.checked })} />
-          להעביר את הסטופ לנקודת הכניסה (break-even) כשהעסקה מרוויחה מספיק, כדי שעסקה שהייתה ברווח לא תהפוך להפסד
-        </label>
-        <div className="risk-fields">
-          <label>העברה אחרי רווח של (כפולות הסיכון, 1 = כמו הסיכון המקורי)<input dir="ltr" inputMode="decimal" value={form.breakEvenAtR} onChange={(e) => set({ breakEvenAtR: e.target.value })} /></label>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading"><h2>סף ומאגר מניות</h2></div>
-        <div className="risk-fields">
-          <label>סף מחיר תחתון ($)<input dir="ltr" inputMode="decimal" value={form.minPrice} onChange={(e) => set({ minPrice: e.target.value })} /></label>
-          <label>נזילות מינימלית - ADV20 ($)<input dir="ltr" inputMode="decimal" value={form.minAdv20} onChange={(e) => set({ minAdv20: e.target.value })} /></label>
-          <label>נזילות מקסימלית - ADV20 ($)<input dir="ltr" inputMode="decimal" value={form.maxAdv20} onChange={(e) => set({ maxAdv20: e.target.value })} /></label>
-        </div>
-        <p className="muted">מניות NASDAQ/NYSE בלבד, לא OTC. המאגר נבחר לפי התנודתיות היומית הגבוהה ביותר, בטווח הנזילות שנקבע. המאגר הנוכחי: {uni.ready ? `${fmt(uni.size, 0)} מניות (${uni.date})` : "טרם נבנה היום"}.</p>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading"><h2>סיכון וגודל פוזיציה</h2></div>
-        <div className="risk-fields">
-          <label>אחוז מינימלי לעסקה<input dir="ltr" inputMode="decimal" value={form.perTradeMinPct} onChange={(e) => set({ perTradeMinPct: e.target.value })} /></label>
-          <label>אחוז מקסימלי לעסקה<input dir="ltr" inputMode="decimal" value={form.perTradeMaxPct} onChange={(e) => set({ perTradeMaxPct: e.target.value })} /></label>
-          <label>חשיפה כוללת (%)<input dir="ltr" inputMode="decimal" value={form.totalExposurePct} onChange={(e) => set({ totalExposurePct: e.target.value })} /></label>
-          <label>סיכון מרבי לעסקה (%)<input dir="ltr" inputMode="decimal" value={form.maxRiskPct} onChange={(e) => set({ maxRiskPct: e.target.value })} /></label>
-          <label>הפסד יומי מרבי (%)<input dir="ltr" inputMode="decimal" value={form.dailyLossPct} onChange={(e) => set({ dailyLossPct: e.target.value })} /></label>
-          <label>ציון מינימלי לכניסה<input dir="ltr" inputMode="decimal" value={form.minScore} onChange={(e) => set({ minScore: e.target.value })} /></label>
-          <label>כמות מינימלית למניה<input dir="ltr" inputMode="numeric" value={form.minShares} onChange={(e) => set({ minShares: e.target.value })} /></label>
-        </div>
-        <p className="muted">אין מגבלת לוט של Colmex כאן: Alpaca מאפשרת כל כמות, כולל שברי מניה. "כמות מינימלית" הוא סף שבחרת, לא מגבלת ברוקר.</p>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading"><h2>אסטרטגיות פעילות</h2></div>
-        <div className="risk-fields">
-          {Object.entries(STRATEGY_LABEL).map(([key, label]) => (
-            <label key={key} className="inline">
-              <input type="checkbox" checked={form.strategies.includes(key)} onChange={() => toggleStrategy(key)} /> {label}
-            </label>
-          ))}
-        </div>
-        <p className="muted">gap_pullback ו-momentum_bull_flag לא זמינות כאן עדיין: הן דורשות בדיקת חדשות שלא חוברה בגרסה הזו.</p>
+        <div className="section-heading"><h2>פוזיציות פתוחות</h2></div>
+        {positions.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>מניה</th><th>כמות</th><th>מחיר כניסה</th><th>מחיר נוכחי</th><th>סטופ</th><th>יעד</th><th>רווח/הפסד</th></tr></thead>
+              <tbody>
+                {positions.map((p) => (
+                  <tr key={p.symbol}>
+                    <td dir="ltr">{p.symbol}</td>
+                    <td dir="ltr">{fmt(Number(p.qty), 4)}</td>
+                    <td dir="ltr">{money(Number(p.avg_entry_price))}</td>
+                    <td dir="ltr">{money(Number(p.current_price))}</td>
+                    <td dir="ltr">{planFor(p.symbol)?.stop ? `${money(planFor(p.symbol).stop)}${planFor(p.symbol).breakEvenAt ? " (break-even)" : ""}` : "—"}</td>
+                    <td dir="ltr">{planFor(p.symbol)?.target ? money(planFor(p.symbol).target) : "—"}</td>
+                    <td dir="ltr" className={Number(p.unrealized_pl) > 0 ? "pl-up" : Number(p.unrealized_pl) < 0 ? "pl-down" : ""}>{money(Number(p.unrealized_pl))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted">אין כרגע פוזיציות פתוחות.</p>}
       </section>
 
       <section className="panel">
@@ -359,8 +318,8 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
         ) : <p className="muted">{perf.error ? `לא ניתן לטעון ביצועים: ${perf.error}` : "אין עדיין עסקאות שהסתיימו."}</p>}
       </section>
 
-      <section className="panel">
-        <div className="section-heading"><h2>עסקאות שהסתיימו</h2></div>
+      <details className="panel collapsible-panel">
+        <summary>עסקאות שהסתיימו ({perfTrades.length})</summary>
         {perfTrades.length ? (
           <div className="table-wrap">
             <table>
@@ -385,7 +344,23 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
             </table>
           </div>
         ) : <p className="muted">אין עדיין עסקאות שהסתיימו.</p>}
-      </section>
+      </details>
+
+      <details className="panel collapsible-panel">
+        <summary>יציאות אחרונות ({exits.length})</summary>
+        {exits.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>שעה</th><th>מניה</th><th>סיבה</th></tr></thead>
+              <tbody>
+                {exits.slice(0, 20).map((x) => (
+                  <tr key={x.id}><td>{time(x.at)}</td><td dir="ltr">{x.symbol}</td><td>{EXIT_REASON_LABEL[x.reason] || x.reason}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted">אין עדיין יציאות.</p>}
+      </details>
 
       <section className="panel">
         <div className="section-heading"><h2>סריקות אחרונות</h2></div>
@@ -413,45 +388,80 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
         </details>
       </section>
 
+      <details className="panel settings-group">
+        <summary>הגדרות (הפעלה, התראות, סטופ נגרר, סיכון, אסטרטגיות ועוד){dirty.current ? " · יש שינויים שלא נשמרו" : ""}</summary>
+        <div className="risk-panel">
       <section className="panel">
-        <div className="section-heading"><h2>פוזיציות פתוחות</h2></div>
-        {positions.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>מניה</th><th>כמות</th><th>מחיר כניסה</th><th>מחיר נוכחי</th><th>סטופ</th><th>יעד</th><th>רווח/הפסד</th></tr></thead>
-              <tbody>
-                {positions.map((p) => (
-                  <tr key={p.symbol}>
-                    <td dir="ltr">{p.symbol}</td>
-                    <td dir="ltr">{fmt(Number(p.qty), 4)}</td>
-                    <td dir="ltr">{money(Number(p.avg_entry_price))}</td>
-                    <td dir="ltr">{money(Number(p.current_price))}</td>
-                    <td dir="ltr">{planFor(p.symbol)?.stop ? `${money(planFor(p.symbol).stop)}${planFor(p.symbol).breakEvenAt ? " (break-even)" : ""}` : "—"}</td>
-                    <td dir="ltr">{planFor(p.symbol)?.target ? money(planFor(p.symbol).target) : "—"}</td>
-                    <td dir="ltr" className={Number(p.unrealized_pl) > 0 ? "pl-up" : Number(p.unrealized_pl) < 0 ? "pl-down" : ""}>{money(Number(p.unrealized_pl))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <p className="muted">אין כרגע פוזיציות פתוחות.</p>}
+        <div className="section-heading"><h2>הפעלה</h2></div>
+        <label className="inline">
+          <input type="checkbox" checked={form.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+          מסחר פעיל בחשבון Alpaca (סריקה רצה תמיד; כיבוי כאן עוצר רק כניסות חדשות, לא מעקב אחרי פוזיציות קיימות)
+        </label>
       </section>
 
       <section className="panel">
-        <div className="section-heading"><h2>יציאות אחרונות</h2></div>
-        {exits.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>שעה</th><th>מניה</th><th>סיבה</th></tr></thead>
-              <tbody>
-                {exits.slice(0, 20).map((x) => (
-                  <tr key={x.id}><td>{time(x.at)}</td><td dir="ltr">{x.symbol}</td><td>{EXIT_REASON_LABEL[x.reason] || x.reason}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <p className="muted">אין עדיין יציאות.</p>}
+        <div className="section-heading"><h2>התראות</h2></div>
+        <label className="inline">
+          <input type="checkbox" checked={Boolean(server.notify?.enabled)} onChange={(e) => toggleNotify(e.target.checked)} />
+          שלח לי התראה קופצת על כל קנייה וכל יציאה בחשבון Alpaca
+        </label>
+        <p className="muted">ההתראות מגיעות למכשירים שבהם אישרת התראות באתר. ההגדרה נשמרת מיד ושייכת לפרופיל הזה בלבד.</p>
       </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>סטופ נגרר</h2></div>
+        <label className="inline">
+          <input type="checkbox" checked={form.trailingStopEnabled} onChange={(e) => set({ trailingStopEnabled: e.target.checked })} />
+          להעביר את הסטופ לנקודת הכניסה (break-even) כשהעסקה מרוויחה מספיק, כדי שעסקה שהייתה ברווח לא תהפוך להפסד
+        </label>
+        <div className="risk-fields">
+          <label>העברה אחרי רווח של (כפולות הסיכון, 1 = כמו הסיכון המקורי)<input dir="ltr" inputMode="decimal" value={form.breakEvenAtR} onChange={(e) => set({ breakEvenAtR: e.target.value })} /></label>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>סף ומאגר מניות</h2></div>
+        <div className="risk-fields">
+          <label>סף מחיר תחתון ($)<input dir="ltr" inputMode="decimal" value={form.minPrice} onChange={(e) => set({ minPrice: e.target.value })} /></label>
+          <label>נזילות מינימלית - ADV20 ($)<input dir="ltr" inputMode="decimal" value={form.minAdv20} onChange={(e) => set({ minAdv20: e.target.value })} /></label>
+          <label>נזילות מקסימלית - ADV20 ($)<input dir="ltr" inputMode="decimal" value={form.maxAdv20} onChange={(e) => set({ maxAdv20: e.target.value })} /></label>
+        </div>
+        <p className="muted">מניות NASDAQ/NYSE בלבד, לא OTC. המאגר נבחר לפי התנודתיות היומית הגבוהה ביותר, בטווח הנזילות שנקבע. המאגר הנוכחי: {uni.ready ? `${fmt(uni.size, 0)} מניות (${uni.date})` : "טרם נבנה היום"}.</p>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>סיכון וגודל פוזיציה</h2></div>
+        <div className="risk-fields">
+          <label>אחוז מינימלי לעסקה<input dir="ltr" inputMode="decimal" value={form.perTradeMinPct} onChange={(e) => set({ perTradeMinPct: e.target.value })} /></label>
+          <label>אחוז מקסימלי לעסקה<input dir="ltr" inputMode="decimal" value={form.perTradeMaxPct} onChange={(e) => set({ perTradeMaxPct: e.target.value })} /></label>
+          <label>חשיפה כוללת (%)<input dir="ltr" inputMode="decimal" value={form.totalExposurePct} onChange={(e) => set({ totalExposurePct: e.target.value })} /></label>
+          <label>סיכון מרבי לעסקה (%)<input dir="ltr" inputMode="decimal" value={form.maxRiskPct} onChange={(e) => set({ maxRiskPct: e.target.value })} /></label>
+          <label>הפסד יומי מרבי (%)<input dir="ltr" inputMode="decimal" value={form.dailyLossPct} onChange={(e) => set({ dailyLossPct: e.target.value })} /></label>
+          <label>ציון מינימלי לכניסה<input dir="ltr" inputMode="decimal" value={form.minScore} onChange={(e) => set({ minScore: e.target.value })} /></label>
+          <label>כמות מינימלית למניה<input dir="ltr" inputMode="numeric" value={form.minShares} onChange={(e) => set({ minShares: e.target.value })} /></label>
+        </div>
+        <p className="muted">אין מגבלת לוט של Colmex כאן: Alpaca מאפשרת כל כמות, כולל שברי מניה. "כמות מינימלית" הוא סף שבחרת, לא מגבלת ברוקר.</p>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>אסטרטגיות פעילות</h2></div>
+        <div className="risk-fields">
+          {Object.entries(STRATEGY_LABEL).map(([key, label]) => (
+            <label key={key} className="inline">
+              <input type="checkbox" checked={form.strategies.includes(key)} onChange={() => toggleStrategy(key)} /> {label}
+            </label>
+          ))}
+        </div>
+        <p className="muted">gap_pullback ו-momentum_bull_flag לא זמינות כאן עדיין: הן דורשות בדיקת חדשות שלא חוברה בגרסה הזו.</p>
+      </section>
+
+          <div className="settings-actions">
+            <button className="primary" disabled={busy || saving || !dirty.current} onClick={save}>
+              {saving ? "שומר..." : "שמור הגדרות"}
+            </button>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
