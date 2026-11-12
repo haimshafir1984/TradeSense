@@ -28,6 +28,12 @@ const DEFAULTS = Object.freeze({
   // Break-even trailing stop: once a position is up breakEvenAtR times its initial risk, the stop moves up to the entry price.
   trailingStopEnabled: true,
   breakEvenAtR: 1,
+  // At the target (2R) sell partialPct % of the shares; the rest has no fixed target: its stop is raised to lock
+  // partialLockR x the original risk of profit, then follows the highest price at partialTrailR x the original risk.
+  partialEnabled: true,
+  partialPct: 50,
+  partialLockR: 1,
+  partialTrailR: 1,
   // Upper liquidity bound: the arm targets volatile small/mid-caps, so mega-caps above this are left out.
   maxAdv20: 150_000_000,
   // gap_pullback and momentum_bull_flag need a news/no-news reading (args.hasNews) that this v1 does
@@ -79,6 +85,13 @@ function validate(input = {}, base = DEFAULTS) {
     out.trailingStopEnabled = input.trailingStopEnabled;
   }
   if (input.breakEvenAtR !== undefined) out.breakEvenAtR = num(input.breakEvenAtR, "הסטופ עובר ל-break-even אחרי (כפולות סיכון)", { min: 0.1, max: 10 });
+  if (input.partialEnabled !== undefined) {
+    if (typeof input.partialEnabled !== "boolean") fail("ערך לא תקין: מימוש חלקי");
+    out.partialEnabled = input.partialEnabled;
+  }
+  if (input.partialPct !== undefined) out.partialPct = num(input.partialPct, "אחוז למימוש בהגעה ליעד", { min: 10, max: 90 });
+  if (input.partialLockR !== undefined) out.partialLockR = num(input.partialLockR, "רווח נעול לשאר (כפולות סיכון)", { min: 0, max: 1.9 });
+  if (input.partialTrailR !== undefined) out.partialTrailR = num(input.partialTrailR, "מרחק הסטופ הנגרר (כפולות סיכון)", { min: 0.25, max: 5 });
   if (input.minAdv20 !== undefined) out.minAdv20 = num(input.minAdv20, "נזילות מינימלית (ADV20)", { min: 0, max: 1e12 });
   if (input.maxAdv20 !== undefined) out.maxAdv20 = num(input.maxAdv20, "נזילות מקסימלית (ADV20)", { min: 0, max: 1e13 });
   if (input.strategies !== undefined) {

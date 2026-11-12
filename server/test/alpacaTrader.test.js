@@ -582,3 +582,72 @@ test("scan: a scan that starts a few minutes into a 5-minute window still sees t
     cleanup();
   }
 });
+
+test("exit: at the target half is sold, the rest loses its fixed target, locks profit and trails the highest price", async () => {
+  const { exitManager, broker, settings, cleanup } = setup();
+  try {
+    assert.deepEqual([settings.read().partialEnabled, settings.read().partialPct, settings.read().partialLockR, settings.read().partialTrailR], [true, 50, 1, 1]);
+    exitManager.recordPlan("RUN", { stop: 98, target: 104 }); // entry 100: risk 2, target 2R
+    const sold = [];
+    const closed = [];
+    broker.placeMarketOrder = async (order) => { sold.push(order); return { id: "s1" }; };
+    broker.closePosition = async (symbol) => { closed.push(symbol); return {}; };
+    const position = (qty, price) => [{ symbol: "RUN", qty: String(qty), avg_entry_price: "100", current_price: String(price), unrealized_pl: String((price - 100) * qty) }];
+    const now = Date.parse("2026-11-12T16:00:00Z");
+
+    broker.getPositions = async () => position(100, 104.2); // reaches the target
+    let results = await exitManager.manage({ dailyBreached: false, now });
+    assert.deepEqual(sold, [{ symbol: "RUN", qty: 50, side: "sell" }]);
+    assert.deepEqual(closed, [], "the position is not closed");
+    assert.equal(results[0].outcome, "partial");
+    let plan = exitManager.plans()[0];
+    assert.equal(plan.target, null, "no fixed target for the rest");
+    assert.equal(plan.stop, 102.2, "at least entry + 1R (102), and 2 below the high of 104.2");
+    assert.equal(plan.partialQty, 50);
+
+    broker.getPositions = async () => position(50, 104.2); // still at the target: no second partial
+    assert.deepEqual(await exitManager.manage({ dailyBreached: false, now: now + 30000 }), []);
+    assert.equal(sold.length, 1);
+
+    broker.getPositions = async () => position(50, 108); // new high: the stop follows, never down
+    await exitManager.manage({ dailyBreached: false, now: now + 60000 });
+    assert.equal(exitManager.plans()[0].stop, 106);
+    broker.getPositions = async () => position(50, 106.5);
+    await exitManager.manage({ dailyBreached: false, now: now + 90000 });
+    assert.equal(exitManager.plans()[0].stop, 106, "a pullback does not lower the stop");
+
+    broker.getPositions = async () => position(50, 105.9); // falls through the trailing stop
+    results = await exitManager.manage({ dailyBreached: false, now: now + 120000 });
+    assert.deepEqual(closed, ["RUN"]);
+    assert.equal(results[0].reason, "trailing_stop");
+  } finally {
+    cleanup();
+  }
+});
+
+test("exit: with partial profit-taking off, or a position too small to split, the target still closes everything", async () => {
+  const { exitManager, broker, settings, cleanup } = setup();
+  try {
+    const sold = [];
+    const closed = [];
+    broker.placeMarketOrder = async (order) => { sold.push(order); return {}; };
+    broker.closePosition = async (symbol) => { closed.push(symbol); return {}; };
+    const now = Date.parse("2026-11-12T16:00:00Z");
+    const hit = (symbol, qty) => [{ symbol, qty: String(qty), avg_entry_price: "100", current_price: "104.5", unrealized_pl: String(4.5 * qty) }];
+
+    exitManager.recordPlan("ONE", { stop: 98, target: 104 });
+    broker.getPositions = async () => hit("ONE", 1); // one share cannot be split
+    assert.equal((await exitManager.manage({ dailyBreached: false, now }))[0].reason, "target");
+    assert.deepEqual([sold.length, closed], [0, ["ONE"]]);
+
+    settings.save({ partialEnabled: false });
+    exitManager.recordPlan("OFF", { stop: 98, target: 104 });
+    broker.getPositions = async () => hit("OFF", 100);
+    assert.equal((await exitManager.manage({ dailyBreached: false, now }))[0].reason, "target");
+    assert.deepEqual([sold.length, closed], [0, ["ONE", "OFF"]]);
+    assert.throws(() => settings.save({ partialPct: 5 }));
+    assert.throws(() => settings.save({ partialLockR: 3 }));
+  } finally {
+    cleanup();
+  }
+});

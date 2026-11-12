@@ -22,7 +22,7 @@ const SCAN_REASON_LABEL = {
   intraday_missing: "אין נר טרי", trigger_not_met: "הטריגר לא התקיים", rvol_below_threshold: "נפח יחסי נמוך", opening_range_incomplete: "טווח הפתיחה לא שלם",
   daily_missing: "חסרים נתונים יומיים", outside_window: "מחוץ לחלון הזמן", invalid_plan: "תוכנית לא תקינה", rvol_missing: "אין נפח יחסי", matched: "התאמה",
 };
-const EXIT_REASON_LABEL = { stop: "סטופ", breakeven_stop: "סטופ ב-break-even", carried_over: "נסגרה בפתיחה (נשארה מיום קודם)", target: "יעד", end_of_day: "סוף יום", daily_loss_breached: "הפסד יומי חרג" };
+const EXIT_REASON_LABEL = { stop: "סטופ", breakeven_stop: "סטופ ב-break-even", partial_target: "מימוש חלקי ביעד", trailing_stop: "סטופ נגרר", carried_over: "נסגרה בפתיחה (נשארה מיום קודם)", target: "יעד", end_of_day: "סוף יום", daily_loss_breached: "הפסד יומי חרג" };
 
 function toForm(profile) {
   return {
@@ -36,6 +36,10 @@ function toForm(profile) {
     minAdv20: str(profile.minAdv20),
     trailingStopEnabled: profile.trailingStopEnabled !== false,
     breakEvenAtR: str(profile.breakEvenAtR),
+    partialEnabled: profile.partialEnabled !== false,
+    partialPct: str(profile.partialPct),
+    partialLockR: str(profile.partialLockR),
+    partialTrailR: str(profile.partialTrailR),
     maxAdv20: str(profile.maxAdv20),
     minShares: str(profile.minShares),
     minScore: str(profile.minScore),
@@ -54,6 +58,10 @@ function toPayload(f) {
     minAdv20: num(f.minAdv20),
     trailingStopEnabled: f.trailingStopEnabled,
     breakEvenAtR: num(f.breakEvenAtR),
+    partialEnabled: f.partialEnabled,
+    partialPct: num(f.partialPct),
+    partialLockR: num(f.partialLockR),
+    partialTrailR: num(f.partialTrailR),
     maxAdv20: num(f.maxAdv20),
     minShares: num(f.minShares),
     minScore: num(f.minScore),
@@ -206,8 +214,8 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
                     <td dir="ltr">{fmt(Number(p.qty), 4)}</td>
                     <td dir="ltr">{money(Number(p.avg_entry_price))}</td>
                     <td dir="ltr">{money(Number(p.current_price))}</td>
-                    <td dir="ltr">{planFor(p.symbol)?.stop ? `${money(planFor(p.symbol).stop)}${planFor(p.symbol).breakEvenAt ? " (break-even)" : ""}` : "—"}</td>
-                    <td dir="ltr">{planFor(p.symbol)?.target ? money(planFor(p.symbol).target) : "—"}</td>
+                    <td dir="ltr">{planFor(p.symbol)?.stop ? `${money(planFor(p.symbol).stop)}${planFor(p.symbol).partialAt ? " (נגרר)" : planFor(p.symbol).breakEvenAt ? " (break-even)" : ""}` : "—"}</td>
+                    <td dir="ltr">{planFor(p.symbol)?.partialAt ? "מומש חלקית" : planFor(p.symbol)?.target ? money(planFor(p.symbol).target) : "—"}</td>
                     <td dir="ltr" className={Number(p.unrealized_pl) > 0 ? "pl-up" : Number(p.unrealized_pl) < 0 ? "pl-down" : ""}>{money(Number(p.unrealized_pl))}</td>
                   </tr>
                 ))}
@@ -417,6 +425,20 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
         <div className="risk-fields">
           <label>העברה אחרי רווח של (כפולות הסיכון, 1 = כמו הסיכון המקורי)<input dir="ltr" inputMode="decimal" value={form.breakEvenAtR} onChange={(e) => set({ breakEvenAtR: e.target.value })} /></label>
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>מימוש חלקי ביעד</h2></div>
+        <label className="inline">
+          <input type="checkbox" checked={form.partialEnabled} onChange={(e) => set({ partialEnabled: e.target.checked })} />
+          כשהעסקה מגיעה ליעד (2R): למכור חלק, ולהשאיר את השאר בלי יעד קבוע עם סטופ שעולה עם המחיר
+        </label>
+        <div className="risk-fields">
+          <label>אחוז למכור ביעד (%)<input dir="ltr" inputMode="decimal" value={form.partialPct} onChange={(e) => set({ partialPct: e.target.value })} /></label>
+          <label>רווח שננעל לשאר (כפולות סיכון)<input dir="ltr" inputMode="decimal" value={form.partialLockR} onChange={(e) => set({ partialLockR: e.target.value })} /></label>
+          <label>מרחק הסטופ הנגרר מהשיא (כפולות סיכון)<input dir="ltr" inputMode="decimal" value={form.partialTrailR} onChange={(e) => set({ partialTrailR: e.target.value })} /></label>
+        </div>
+        <p className="muted">דוגמה: כניסה ב-100, סטופ ב-98 (סיכון 2), יעד ב-104. ביעד נמכרת מחצית. לשאר הסטופ עולה ל-102 לפחות (רווח של 1R) ואחר כך מלווה את השיא במרחק 2. בלי יעד נוסף.</p>
       </section>
 
       <section className="panel">

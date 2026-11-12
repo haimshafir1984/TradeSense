@@ -13,7 +13,7 @@ const STRATEGY_LABEL = {
 };
 const EXIT_LABEL = {
   stop: "סטופ", breakeven_stop: "סטופ ב-break-even", target: "יעד", end_of_day: "סגירת סוף יום",
-  daily_loss_breached: "מגבלת הפסד יומי", carried_over: "נסגרה בפתיחה (נשארה מיום קודם)",
+  daily_loss_breached: "מגבלת הפסד יומי", partial_target: "מימוש חלקי ביעד", trailing_stop: "סטופ נגרר", carried_over: "נסגרה בפתיחה (נשארה מיום קודם)",
 };
 
 function isEnabled(userId) {

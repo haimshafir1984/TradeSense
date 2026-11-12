@@ -27,6 +27,38 @@ function armBreakEven(plan, { entryPrice, price, profile, now }) {
   return next;
 }
 
+// After the partial exit the rest of the position has no fixed target. Its stop only ever moves up: it follows the highest
+// price seen at plan.trailDistance below it (and never below the profit locked when the partial was taken).
+function trailRemainder(plan, { price }) {
+  if (!plan?.partialAt || !Number.isFinite(price)) return plan;
+  const distance = Number(plan.trailDistance);
+  if (!(distance > 0)) return plan;
+  const highWater = Math.max(Number(plan.highWater) || price, price);
+  const stop = Math.max(Number(plan.stop) || 0, highWater - distance);
+  if (stop === plan.stop && highWater === plan.highWater) return plan;
+  const next = { ...plan, highWater, stop };
+  store.put(K_PLAN, plan.symbol, next);
+  return next;
+}
+
+// Sells part of the position at the target and arms the trailing stop for the rest. Returns the result row, or null when
+// the position is too small to split (the caller then closes it fully, the old behaviour).
+async function takePartial(position, plan, { qty, price, profile, now }) {
+  const symbol = position.symbol;
+  const sellQty = Math.floor((qty * profile.partialPct) / 100);
+  const entry = Number(position.avg_entry_price);
+  const initialStop = Number.isFinite(plan.initialStop) ? plan.initialStop : plan.stop;
+  const risk = entry - initialStop;
+  if (!(sellQty >= 1) || qty - sellQty < 1 || !(risk > 0) || !Number.isFinite(price)) return null;
+  await broker.placeMarketOrder({ symbol, qty: sellQty, side: "sell" });
+  const trailDistance = profile.partialTrailR * risk;
+  const stop = Math.min(Math.max(plan.stop, entry + profile.partialLockR * risk, price - trailDistance), price - 0.01);
+  store.put(K_PLAN, symbol, { ...plan, initialStop, target: null, partialAt: new Date(now).toISOString(), partialQty: sellQty, trailDistance, highWater: price, stop });
+  logExit({ symbol, reason: "partial_target", qty: sellQty, price }, now);
+  require("./notify").exited({ symbol, reason: "partial_target", qty: sellQty, price, entryPrice: entry, pnl: (Number(position.unrealized_pl) * sellQty) / qty, now });
+  return { symbol, outcome: "partial", reason: "partial_target", qty: sellQty };
+}
+
 function logExit(entry, now = Date.now()) {
   const id = `${new Date(now).toISOString()}:${entry.symbol}`;
   store.put(K_LOG, id, { id, at: new Date(now).toISOString(), ...entry });
@@ -69,6 +101,7 @@ async function manage({ dailyBreached, now = Date.now(), profile } = {}) {
     let plan = store.get(K_PLAN, symbol);
     try {
       plan = armBreakEven(plan, { entryPrice: Number(position.avg_entry_price), price, profile: trailProfile, now });
+      plan = trailRemainder(plan, { price });
     } catch {
       // the trailing stop is best-effort; the original stop/target below still apply
     }
@@ -77,10 +110,23 @@ async function manage({ dailyBreached, now = Date.now(), profile } = {}) {
     else if (plan?.enteredAt && nyDate(Date.parse(plan.enteredAt)) < today) reason = "carried_over"; // held past an earlier close: out at the first chance
     else if (eod) reason = "end_of_day";
     else if (plan && Number.isFinite(price)) {
-      if (Number.isFinite(plan.stop) && price <= plan.stop) reason = plan.breakEvenAt ? "breakeven_stop" : "stop";
+      if (Number.isFinite(plan.stop) && price <= plan.stop) reason = plan.partialAt ? "trailing_stop" : plan.breakEvenAt ? "breakeven_stop" : "stop";
       else if (Number.isFinite(plan.target) && price >= plan.target) reason = "target";
     }
     if (!reason) continue;
+    if (reason === "target" && trailProfile.partialEnabled && !plan.partialAt) {
+      try {
+        const partial = await takePartial(position, plan, { qty, price, profile: trailProfile, now });
+        if (partial) {
+          results.push(partial);
+          continue;
+        }
+      } catch (error) {
+        logExit({ symbol, reason: "partial_target_failed", error: error.message }, now);
+        results.push({ symbol, outcome: "error", reason: error.message });
+        continue;
+      }
+    }
     try {
       await broker.closePosition(symbol);
       store.remove(K_PLAN, symbol);
@@ -103,4 +149,4 @@ function plans() {
   return store.list(K_PLAN);
 }
 
-module.exports = { recordPlan, manage, recentLog, isPastClose, inSession, armBreakEven, plans };
+module.exports = { recordPlan, manage, recentLog, isPastClose, inSession, armBreakEven, trailRemainder, plans };
