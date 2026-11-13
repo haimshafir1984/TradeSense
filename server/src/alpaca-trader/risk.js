@@ -48,20 +48,30 @@ async function evaluateDay(now = Date.now(), dailyLossPct) {
 }
 
 // Market value of open positions plus pending orders, in dollars - for the exposure cap.
-async function exposureNow() {
+// What is already committed: notional of open positions and pending buy orders, and how many distinct symbols that is.
+async function exposureSnapshot() {
   const [positions, orders] = await Promise.all([
     broker.getPositions().catch(() => []),
     broker.getOrders({ status: "open" }).catch(() => []),
   ]);
   let total = 0;
-  for (const p of positions || []) total += Math.abs(Number(p.market_value) || 0);
+  const symbols = new Set();
+  for (const p of positions || []) {
+    total += Math.abs(Number(p.market_value) || 0);
+    symbols.add(p.symbol);
+  }
   for (const o of orders || []) {
     if (o.side !== "buy") continue;
     const qty = Number(o.qty) || 0;
     const price = Number(o.limit_price) || Number(o.filled_avg_price) || 0;
     total += qty * price;
+    symbols.add(o.symbol);
   }
-  return total;
+  return { exposure: total, count: symbols.size };
+}
+
+async function exposureNow() {
+  return (await exposureSnapshot()).exposure;
 }
 
 // Blocks a new entry: day-loss breach, insufficient fresh equity, or a pending/open position already in this symbol.
@@ -88,4 +98,4 @@ async function validateSignal({ symbol, equity, now = Date.now(), profile }) {
   }
 }
 
-module.exports = { dayState, ensureDayBase, evaluateDay, exposureNow, validateSignal };
+module.exports = { dayState, ensureDayBase, evaluateDay, exposureNow, exposureSnapshot, validateSignal };

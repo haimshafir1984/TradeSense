@@ -26,6 +26,16 @@ const DEFAULTS = Object.freeze({
   minPrice: 3,
   minAdv20: 3_000_000,
   // Break-even trailing stop: once a position is up breakEvenAtR times its initial risk, the stop moves up to the entry price.
+  // Entry: a marketable limit order (immediate-or-cancel) priced at most maxSlippagePct above the signal price. If the price
+  // has already run further, nothing is bought (logged as price_too_far). Measured fills were +0.9% on average and +4% on some.
+  limitEntryEnabled: true,
+  maxSlippagePct: 0.75,
+  // Sizing: "risk" = risk riskPerTradePct of the account per trade (distance to the stop), capped at maxPositionPct of the
+  // account per position and maxOpenPositions at a time; "budget" = the older score-scaled perTradeMin/MaxPct budget.
+  sizingMode: "risk",
+  riskPerTradePct: 0.75,
+  maxPositionPct: 15,
+  maxOpenPositions: 5,
   trailingStopEnabled: true,
   breakEvenAtR: 1,
   // At the target (2R) sell partialPct % of the shares; the rest has no fixed target: its stop is raised to lock
@@ -80,6 +90,18 @@ function validate(input = {}, base = DEFAULTS) {
   if (input.minShares !== undefined) out.minShares = num(input.minShares, "כמות מינימלית", { min: 1, max: 1000 });
   if (input.dailyLossPct !== undefined) out.dailyLossPct = num(input.dailyLossPct, "הפסד יומי מרבי", { min: 0.1, max: 100 });
   if (input.minPrice !== undefined) out.minPrice = num(input.minPrice, "סף מחיר תחתון", { min: 0.01, max: 10000 });
+  if (input.limitEntryEnabled !== undefined) {
+    if (typeof input.limitEntryEnabled !== "boolean") fail("ערך לא תקין: כניסה בהוראת limit");
+    out.limitEntryEnabled = input.limitEntryEnabled;
+  }
+  if (input.maxSlippagePct !== undefined) out.maxSlippagePct = num(input.maxSlippagePct, "תקרת פער מחיר בכניסה (%)", { min: 0.05, max: 5 });
+  if (input.sizingMode !== undefined) {
+    if (!["risk", "budget"].includes(input.sizingMode)) fail("ערך לא תקין: שיטת גודל פוזיציה");
+    out.sizingMode = input.sizingMode;
+  }
+  if (input.riskPerTradePct !== undefined) out.riskPerTradePct = num(input.riskPerTradePct, "סיכון לעסקה (% מהתיק)", { min: 0.05, max: 10 });
+  if (input.maxPositionPct !== undefined) out.maxPositionPct = num(input.maxPositionPct, "תקרת פוזיציה (% מהתיק)", { min: 1, max: 100 });
+  if (input.maxOpenPositions !== undefined) out.maxOpenPositions = Math.round(num(input.maxOpenPositions, "מספר פוזיציות פתוחות מרבי", { min: 1, max: 50 }));
   if (input.trailingStopEnabled !== undefined) {
     if (typeof input.trailingStopEnabled !== "boolean") fail("ערך לא תקין: סטופ נגרר");
     out.trailingStopEnabled = input.trailingStopEnabled;

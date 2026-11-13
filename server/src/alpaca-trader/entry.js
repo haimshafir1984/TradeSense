@@ -53,14 +53,28 @@ function observe({ signal, now = Date.now() }) {
   return { state: "open" };
 }
 
+// Alpaca-specific sizing. "risk" mode risks a fixed share of the account per trade and caps the size of any single position,
+// instead of the score-scaled 30-50% budget the Colmex side uses (shared.size, still used in "budget" mode).
+function sizeTrade({ score, price, stop, equity, exposure, profile }) {
+  if (profile.sizingMode !== "risk") return shared.size({ score, price, stop, equity, exposure, profile });
+  const dist = price - stop;
+  const byRisk = dist > 0 ? Math.floor((equity * profile.riskPerTradePct) / 100 / dist) : 0;
+  const byCap = Math.floor((equity * profile.maxPositionPct) / 100 / price);
+  const byRoom = Math.floor(((equity * profile.totalExposurePct) / 100 - exposure) / price);
+  const shares = Math.max(0, Math.min(byRisk, byCap, byRoom));
+  const limitedBy = shares === byRoom && byRoom < Math.min(byRisk, byCap) ? "exposure" : shares === byCap && byCap <= byRisk ? "position_cap" : "risk";
+  return { shares, pct: Math.round(((shares * price) / equity) * 10000) / 100, budget: Math.round((equity * profile.maxPositionPct) / 100), byBudget: byCap, byRisk, byRoom, limitedBy };
+}
+
 // Decides every open box. place(symbol, shares, signal) must place the order and return {orderId} or throw.
-async function flush({ profile, equity, exposure, enabled, place, now = Date.now() }) {
+async function flush({ profile, equity, exposure, openCount = 0, enabled, place, now = Date.now() }) {
   const results = [];
   const today = nyDate(now);
   // The caller measures exposure once per scan, before any of this scan's orders exist. Every box decided in the same
   // pass used to be sized against that same number, so six simultaneous entries could each take up to half of the
   // account (2026-11-10: six ~$30k positions on a $100k account, then a -7% day). Track what this pass already placed.
   let runningExposure = Number(exposure) || 0;
+  let runningCount = Number(openCount) || 0;
   for (const id of store.listIds(K_BOX)) {
     if (!id.startsWith(`${today}:`)) continue;
     const box = store.get(K_BOX, id);
@@ -84,7 +98,11 @@ async function flush({ profile, equity, exposure, enabled, place, now = Date.now
     const price = Number(lead.entry);
     const stop = Number(lead.stop);
     if (!Number.isFinite(price) || !Number.isFinite(stop) || price <= 0) { skip("invalid_plan", "מחיר/סטופ לא תקינים"); continue; }
-    const sizing = shared.size({ score: sc.score, price, stop, equity, exposure: runningExposure, profile });
+    if (Number(profile.maxOpenPositions) > 0 && runningCount >= profile.maxOpenPositions) {
+      skip("max_positions", `כבר ${runningCount} פוזיציות פתוחות (מרבי ${profile.maxOpenPositions})`, { score: sc.score });
+      continue;
+    }
+    const sizing = sizeTrade({ score: sc.score, price, stop, equity, exposure: runningExposure, profile });
     const base = { score: sc.score, families: sc.families, sizing, price };
     if (sizing.shares < profile.minShares) {
       skip("size_too_small", `הכמות שיצאה (${sizing.shares}) נמוכה מהמינימום ${profile.minShares}`, base);
@@ -92,7 +110,12 @@ async function flush({ profile, equity, exposure, enabled, place, now = Date.now
     }
     try {
       const placed = await place(box.symbol, sizing.shares, lead);
-      runningExposure += price * sizing.shares;
+      // A limit entry can be filled in part (or at a better price than planned): book what really happened.
+      const shares = Number.isFinite(placed?.filledQty) && placed.filledQty > 0 ? placed.filledQty : sizing.shares;
+      const filledAt = Number.isFinite(placed?.fillPrice) && placed.fillPrice > 0 ? placed.fillPrice : price;
+      runningExposure += filledAt * shares;
+      runningCount += 1;
+      sizing.shares = shares;
       putBox(box.symbol, now, { ...box, state: "entered", orderId: placed?.orderId || null, closedAt: new Date(now).toISOString() });
       record({ symbol: box.symbol, outcome: "entered", reason: "entered", reasonText: `${sc.families.length} משפחות מסכימות, ציון ${sc.score}, ${sizing.shares} מניות`, strategies: names, orderId: placed?.orderId || null, ...base }, now);
       try {
@@ -133,4 +156,4 @@ function enteredSince(sinceMs) {
   return store.list(K_LOG).filter((d) => d.outcome === "entered" && Date.parse(d.at) >= sinceMs);
 }
 
-module.exports = { observe, flush, recentLog, todayBoxes, tradeMeta, enteredSince };
+module.exports = { observe, flush, sizeTrade, recentLog, todayBoxes, tradeMeta, enteredSince };

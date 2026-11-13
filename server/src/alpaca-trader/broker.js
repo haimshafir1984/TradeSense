@@ -71,8 +71,21 @@ async function placeMarketOrder({ symbol, qty, side }) {
   });
 }
 
+// Marketable limit order. With timeInForce "ioc" whatever can be filled at limitPrice or better fills at once and the rest is
+// cancelled, so the price can never end up worse than limitPrice.
+async function placeLimitOrder({ symbol, qty, side, limitPrice, timeInForce = "ioc" }) {
+  return call("/orders", {
+    method: "POST",
+    body: { symbol, qty: String(qty), side, type: "limit", limit_price: String(limitPrice), time_in_force: timeInForce },
+  });
+}
+
+async function getOrder(orderId) {
+  return call(`/orders/${encodeURIComponent(orderId)}`);
+}
+
 async function closePosition(symbol) {
   return call(`/positions/${encodeURIComponent(symbol)}`, { method: "DELETE" });
 }
 
-module.exports = { BASE_URL, isConfigured, getAccount, getPositions, getPortfolioHistory, getOrders, placeMarketOrder, closePosition };
+module.exports = { BASE_URL, isConfigured, getAccount, getPositions, getPortfolioHistory, getOrders, getOrder, placeMarketOrder, placeLimitOrder, closePosition };

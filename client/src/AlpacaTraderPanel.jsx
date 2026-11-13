@@ -18,7 +18,7 @@ const OUTCOME_LABEL = { entered: "נכנסנו", skipped: "דילגנו" };
 const REASON_LABEL = {
   score_low: "ציון נמוך מהסף", signals_expired: "האיתותים פגו", size_too_small: "כמות קטנה מדי",
   disabled: "המסחר כבוי", daily_loss_breached: "הפסד יומי חרג", account_unavailable: "אין חיבור לחשבון",
-  symbol_busy: "כבר יש פוזיציה/הזמנה", not_configured: "המפתחות לא מוגדרים",
+  symbol_busy: "כבר יש פוזיציה/הזמנה", not_configured: "המפתחות לא מוגדרים", price_too_far: "המחיר ברח מעל התקרה", max_positions: "הגעת למספר הפוזיציות המרבי", place_failed: "ההזמנה נכשלה",
 };
 const SCAN_REASON_LABEL = {
   intraday_missing: "אין נר טרי", trigger_not_met: "הטריגר לא התקיים", rvol_below_threshold: "נפח יחסי נמוך", opening_range_incomplete: "טווח הפתיחה לא שלם",
@@ -38,6 +38,12 @@ function toForm(profile) {
     minAdv20: str(profile.minAdv20),
     trailingStopEnabled: profile.trailingStopEnabled !== false,
     breakEvenAtR: str(profile.breakEvenAtR),
+    limitEntryEnabled: profile.limitEntryEnabled !== false,
+    maxSlippagePct: str(profile.maxSlippagePct),
+    sizingMode: profile.sizingMode || "risk",
+    riskPerTradePct: str(profile.riskPerTradePct),
+    maxPositionPct: str(profile.maxPositionPct),
+    maxOpenPositions: str(profile.maxOpenPositions),
     partialEnabled: profile.partialEnabled !== false,
     partialPct: str(profile.partialPct),
     partialLockR: str(profile.partialLockR),
@@ -60,6 +66,12 @@ function toPayload(f) {
     minAdv20: num(f.minAdv20),
     trailingStopEnabled: f.trailingStopEnabled,
     breakEvenAtR: num(f.breakEvenAtR),
+    limitEntryEnabled: f.limitEntryEnabled,
+    maxSlippagePct: num(f.maxSlippagePct),
+    sizingMode: f.sizingMode,
+    riskPerTradePct: num(f.riskPerTradePct),
+    maxPositionPct: num(f.maxPositionPct),
+    maxOpenPositions: num(f.maxOpenPositions),
     partialEnabled: f.partialEnabled,
     partialPct: num(f.partialPct),
     partialLockR: num(f.partialLockR),
@@ -537,6 +549,32 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
           שלח לי התראה קופצת על כל קנייה וכל יציאה בחשבון Alpaca
         </label>
         <p className="muted">ההתראות מגיעות למכשירים שבהם אישרת התראות באתר. ההגדרה נשמרת מיד ושייכת לפרופיל הזה בלבד.</p>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>כניסה: תקרת פער מחיר <Hint>האיתות מחליט לקנות במחיר מסוים, אבל עד שהפקודה מתבצעת המחיר יכול לברוח. עם הגדרה זו הפקודה נשלחת כ-limit שמתבטל מיד אם המחיר מעל התקרה (אחוז מעל מחיר האיתות), והעסקה מדולגת. במדידות שלנו הפער הממוצע היה 0.9%, ובחלק מהעסקאות מעל 4%.</Hint></h2></div>
+        <label className="inline">
+          <input type="checkbox" checked={form.limitEntryEnabled} onChange={(e) => set({ limitEntryEnabled: e.target.checked })} />
+          לקנות רק עד תקרת מחיר (הוראת limit); אם כבוי, קנייה בהוראת שוק במחיר כלשהו
+        </label>
+        <div className="risk-fields">
+          <label>תקרת פער מעל מחיר האיתות (%)<input dir="ltr" inputMode="decimal" value={form.maxSlippagePct} onChange={(e) => set({ maxSlippagePct: e.target.value })} /></label>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading"><h2>גודל פוזיציה <Hint>שיטת "סיכון": בכל עסקה מסכנים אחוז קבוע מהתיק (המרחק מהכניסה עד הסטופ), עם תקרה לגודל פוזיציה בודדת ולמספר הפוזיציות הפתוחות. כך אף עסקה אחת לא מכריעה את התוצאה. שיטת "תקציב" היא השיטה הישנה: אחוז מהתיק לפי הציון (ההגדרות "מינימום/מקסימום לעסקה" למטה).</Hint></h2></div>
+        <div className="risk-fields">
+          <label>שיטה
+            <select value={form.sizingMode} onChange={(e) => set({ sizingMode: e.target.value })}>
+              <option value="risk">לפי סיכון (מומלץ)</option>
+              <option value="budget">לפי תקציב וציון (ישן)</option>
+            </select>
+          </label>
+          <label>סיכון לעסקה (% מהתיק)<input dir="ltr" inputMode="decimal" value={form.riskPerTradePct} onChange={(e) => set({ riskPerTradePct: e.target.value })} /></label>
+          <label>תקרת פוזיציה בודדת (% מהתיק)<input dir="ltr" inputMode="decimal" value={form.maxPositionPct} onChange={(e) => set({ maxPositionPct: e.target.value })} /></label>
+          <label>מספר פוזיציות פתוחות מרבי<input dir="ltr" inputMode="decimal" value={form.maxOpenPositions} onChange={(e) => set({ maxOpenPositions: e.target.value })} /></label>
+        </div>
       </section>
 
       <section className="panel">

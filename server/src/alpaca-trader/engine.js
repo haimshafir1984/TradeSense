@@ -71,7 +71,33 @@ function getState() {
   return store.get(KIND, STATE_KEY) || { startedAt: null, heartbeatAt: null };
 }
 
-async function placeOrder(symbol, shares, signal) {
+const roundPrice = (value) => (value >= 1 ? Math.round(value * 100) / 100 : Math.round(value * 10000) / 10000);
+
+// An IOC order is final within moments; poll briefly for its outcome. Resolves to the shares actually bought and the average price.
+async function confirmFill(order) {
+  let current = order;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (current && ["filled", "canceled", "expired", "rejected", "done_for_day"].includes(current.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 250 : 500));
+    current = await broker.getOrder(order.id).catch(() => current);
+  }
+  return { qty: Number(current?.filled_qty) || 0, price: Number(current?.filled_avg_price) || null, status: current?.status || null };
+}
+
+async function placeOrder(symbol, shares, signal, profile = settings.read()) {
+  const planned = Number(signal.entry);
+  if (profile.limitEntryEnabled && planned > 0) {
+    const limitPrice = roundPrice(planned * (1 + Number(profile.maxSlippagePct) / 100));
+    const order = await broker.placeLimitOrder({ symbol, qty: shares, side: "buy", limitPrice, timeInForce: "ioc" });
+    const fill = await confirmFill(order);
+    if (!(fill.qty > 0)) {
+      const error = new Error(`המחיר כבר מעל התקרה (${limitPrice}); לא נקנה`);
+      error.code = "price_too_far";
+      throw error;
+    }
+    exitManager.recordPlan(symbol, { stop: signal.stop, target: signal.target });
+    return { orderId: order?.id || null, filledQty: fill.qty, fillPrice: fill.price };
+  }
   const order = await broker.placeMarketOrder({ symbol, qty: shares, side: "buy" });
   exitManager.recordPlan(symbol, { stop: signal.stop, target: signal.target });
   return { orderId: order?.id || null };
@@ -131,16 +157,17 @@ async function tick(now = Date.now()) {
         await risk.ensureDayBase(now);
         const account = await broker.getAccount();
         const equity = Number(account.equity);
-        const exposure = await risk.exposureNow();
+        const { exposure, count: openCount } = await risk.exposureSnapshot();
         entries = await entry.flush({
           profile,
           equity,
           exposure,
+          openCount,
           enabled: profile.enabled,
           now,
           place: async (symbol, shares, signal) => {
             await risk.validateSignal({ symbol, equity, now, profile });
-            return placeOrder(symbol, shares, signal);
+            return placeOrder(symbol, shares, signal, profile);
           },
         });
       } catch (error) {
@@ -213,4 +240,4 @@ async function view(now = Date.now()) {
   };
 }
 
-module.exports = { start, stop, tick, exitTick, view, TICK_MS, msUntilNextBar, recordScan, recentScans };
+module.exports = { start, stop, tick, exitTick, view, TICK_MS, msUntilNextBar, recordScan, recentScans, placeOrder };

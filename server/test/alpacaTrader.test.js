@@ -674,3 +674,84 @@ test("history: Alpaca's parallel arrays become one row per trading day, dropping
     cleanup();
   }
 });
+
+test("sizing: risk mode risks a fixed share per trade, caps one position, and defaults are the agreed ones", () => {
+  const { entry, settings, cleanup } = setup();
+  try {
+    const d = settings.read();
+    assert.deepEqual([d.limitEntryEnabled, d.maxSlippagePct, d.sizingMode, d.riskPerTradePct, d.maxPositionPct, d.maxOpenPositions], [true, 0.75, "risk", 0.75, 15, 5]);
+    const profile = { ...d, totalExposurePct: 60 };
+    const equity = 100_000;
+    // tight stop: risk allows 1500 shares ($15k), the 15% cap allows 1500 -> 1500
+    let size = entry.sizeTrade({ score: 50, price: 10, stop: 9.5, equity, exposure: 0, profile });
+    assert.equal(size.shares, 1500);
+    // wide stop: risk 0.75% = $750 over a $1 stop -> 750 shares, below the cap
+    size = entry.sizeTrade({ score: 50, price: 10, stop: 9, equity, exposure: 0, profile });
+    assert.equal(size.shares, 750);
+    assert.equal(size.limitedBy, "risk");
+    // very tight stop: the risk allowance would be huge, the cap holds it at 15% of the account
+    size = entry.sizeTrade({ score: 50, price: 10, stop: 9.95, equity, exposure: 0, profile });
+    assert.equal(size.shares, 1500);
+    assert.equal(size.limitedBy, "position_cap");
+    // exposure already near the limit: only the remaining room
+    size = entry.sizeTrade({ score: 50, price: 10, stop: 9.5, equity, exposure: 58_000, profile });
+    assert.equal(size.shares, 200);
+    assert.equal(size.limitedBy, "exposure");
+    // the old budget mode is still available and unchanged
+    assert.ok(entry.sizeTrade({ score: 50, price: 10, stop: 9.5, equity, exposure: 0, profile: { ...profile, sizingMode: "budget" } }).shares > 1500);
+    assert.throws(() => settings.save({ sizingMode: "nonsense" }));
+    assert.throws(() => settings.save({ maxSlippagePct: 20 }));
+  } finally {
+    cleanup();
+  }
+});
+
+test("entry: no new position once the maximum number of open positions is reached", async () => {
+  const { entry, cleanup } = setup();
+  try {
+    const profile = { windowMin: 5, minScore: 45, immediateScore: 80, familyPoints: [40, 65, 80, 90], qualityMax: 10, catalystMax: 8, perTradeMinPct: 30, perTradeMaxPct: 50, totalExposurePct: 60, maxRiskPct: 4, minShares: 1, sizingMode: "risk", riskPerTradePct: 0.75, maxPositionPct: 10, maxOpenPositions: 3 };
+    const now = Date.parse("2026-11-13T15:00:00Z");
+    for (const ticker of ["AAA", "BBB", "CCC", "DDD"]) {
+      entry.observe({ signal: { id: `${ticker}:orb15:bar1`, ticker, strategy: "orb15", entry: 10, stop: 9.5, daily: { atr14: 1, avgDollarVolume20d: 80_000_000 }, rvol: 3, expiresAt: new Date(now + 600000).toISOString() }, now });
+    }
+    const placed = [];
+    const results = await entry.flush({ profile, equity: 100_000, exposure: 0, openCount: 1, enabled: true, now: now + 6 * 60000, place: async (symbol, shares) => { placed.push(symbol); return { orderId: `o-${symbol}` }; } });
+    assert.equal(placed.length, 2, "1 already open + 2 new = the maximum of 3");
+    assert.equal(results.filter((r) => r.reason === "max_positions").length, 2);
+  } finally {
+    cleanup();
+  }
+});
+
+test("engine: the entry is a limit order capped above the signal price; an unfilled one buys nothing and records no plan", async () => {
+  const { broker, exitManager, cleanup } = setup();
+  try {
+    delete require.cache[require.resolve("../src/alpaca-trader/engine")];
+    const engine = require("../src/alpaca-trader/engine");
+    const profile = { limitEntryEnabled: true, maxSlippagePct: 0.75 };
+    const signal = { entry: 10, stop: 9.5, target: 11 };
+    const limits = [];
+    broker.placeLimitOrder = async (order) => { limits.push(order); return { id: "ord-1", status: "accepted" }; };
+
+    broker.getOrder = async () => ({ id: "ord-1", status: "filled", filled_qty: "100", filled_avg_price: "10.04" });
+    const filled = await engine.placeOrder("FILL", 100, signal, profile);
+    assert.deepEqual(limits[0], { symbol: "FILL", qty: 100, side: "buy", limitPrice: 10.08, timeInForce: "ioc" }, "limit = 10 * 1.0075 rounded to the cent");
+    assert.deepEqual([filled.filledQty, filled.fillPrice], [100, 10.04]);
+    assert.equal(exitManager.plans().length, 1, "the exit plan exists once something was bought");
+
+    broker.getOrder = async () => ({ id: "ord-1", status: "canceled", filled_qty: "0", filled_avg_price: null });
+    await assert.rejects(() => engine.placeOrder("RAN", 100, signal, profile), (error) => error.code === "price_too_far");
+    assert.equal(exitManager.plans().some((p) => p.symbol === "RAN"), false, "no plan for a stock that was not bought");
+
+    broker.getOrder = async () => ({ id: "ord-1", status: "filled", filled_qty: "60", filled_avg_price: "10.05" });
+    assert.equal((await engine.placeOrder("PART", 100, signal, profile)).filledQty, 60, "a partial fill books the shares actually bought");
+
+    // switched off: the old market order
+    let market = null;
+    broker.placeMarketOrder = async (order) => { market = order; return { id: "m1" }; };
+    await engine.placeOrder("MKT", 5, signal, { limitEntryEnabled: false });
+    assert.deepEqual(market, { symbol: "MKT", qty: 5, side: "buy" });
+  } finally {
+    cleanup();
+  }
+});
