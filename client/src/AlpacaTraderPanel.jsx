@@ -139,6 +139,20 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
     }
   }
 
+  async function exportShadow() {
+    try {
+      const { filename, csv } = await alpacaApi("/shadow-export");
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename || "alpaca-shadow-signals.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      onError?.(e.message);
+    }
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -530,6 +544,32 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
           ) : <p className="muted">עדיין אין סריקות מתועדות.</p>}
         </details>
       </section>
+
+      <details className="panel collapsible-panel">
+        <summary>איתותים שנעקבו "בצל" (גם אלה שלא נקנו): מה היה קורה אילו נכנסנו ({server.shadow?.totalResolved ?? 0} הוכרעו)</summary>
+        <p className="muted">כל איתות שהסורק מוצא נעקב על הנרות עד שהסטופ או היעד נפגעים (או עד סוף היום), בין אם קנינו ובין אם לא. כך מצטברים מאות מקרים במקום כמה עסקאות ביום, ואפשר ללמוד מה עובד. הערכה בלבד: אין בה עלויות, פערי ביצוע או הוראות בפועל. נר שנוגע בסטופ וביעד יחד נספר כסטופ. הערכים ב-R: 1R הוא הסיכון בעסקה.</p>
+        {server.shadow?.rows?.length ? (
+          <div className="table-wrap">
+            <table className="stack-table">
+              <thead><tr><th>אסטרטגיה</th><th>איתותים שהוכרעו</th><th>יעד לפני סטופ</th><th>R ממוצע</th><th>רווח מרבי ממוצע (R)</th><th>ירידה מרבית ממוצעת (R)</th></tr></thead>
+              <tbody>
+                {server.shadow.rows.map((r) => (
+                  <tr key={r.strategy}>
+                    <td data-label="אסטרטגיה">{STRATEGY_LABEL[r.strategy] || r.strategy}</td>
+                    <td data-label="איתותים שהוכרעו" dir="ltr">{r.resolved} ({r.target} יעד / {r.stop} סטופ / {r.eod} סוף יום)</td>
+                    <td data-label="יעד לפני סטופ" dir="ltr">{r.targetFirstPct === null ? "—" : `${fmt(r.targetFirstPct, 0)}%`}</td>
+                    <td data-label="R ממוצע" dir="ltr" className={plClass(r.avgR)}>{Number.isFinite(r.avgR) ? `${r.avgR > 0 ? "+" : ""}${fmt(r.avgR, 2)}R` : "—"}</td>
+                    <td data-label="רווח מרבי ממוצע (R)" dir="ltr">{Number.isFinite(r.avgMfeR) ? `${fmt(r.avgMfeR, 2)}R` : "—"}</td>
+                    <td data-label="ירידה מרבית ממוצעת (R)" dir="ltr">{Number.isFinite(r.avgMaeR) ? `${fmt(r.avgMaeR, 2)}R` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted">עדיין אין איתותים שהוכרעו. הם מתחילים להצטבר מיום המסחר הבא.</p>}
+        <p className="muted">נעקבים כרגע היום: {server.shadow?.openToday ?? 0} איתותים פתוחים.</p>
+        <button className="pause-toggle" onClick={exportShadow}>ייצוא כל האיתותים ל-CSV (לניתוח באקסל)</button>
+      </details>
 
       <details className="panel settings-group">
         <summary>הגדרות (הפעלה, התראות, סטופ נגרר, סיכון, אסטרטגיות ועוד){dirty.current ? " · יש שינויים שלא נשמרו" : ""}</summary>

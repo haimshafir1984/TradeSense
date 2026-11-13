@@ -58,3 +58,10 @@ client/src/AlpacaTraderPanel.jsx    לשונית "חשבון דמו Alpaca"
 ## בדיקות
 
 `server/test/alpacaTrader.test.js` — 7 בדיקות (settings, risk/day-base/breach-latch, entry scoring+sizing+lock, exit stop/breach). רצות עם `broker.js` מדומה (ללא קריאות רשת אמיתיות). `node --test test/*.test.js` מתוך `server/`.
+
+## עדכונים מ-13.11.2026
+
+- **כניסה בהוראת limit (IOC):** הוראת קנייה נשלחת כ-limit במחיר האיתות + `maxSlippagePct` (ברירת מחדל 0.75%) והיא מתבטלת מיד אם המחיר כבר ברח. הסיבה ביומן ההחלטות: `price_too_far`. אפשר לכבות (`limitEntryEnabled`) וחוזרים להוראת שוק.
+- **גודל פוזיציה לפי סיכון (`sizingMode: "risk"`):** מסכנים `riskPerTradePct` (0.75%) מהתיק לעסקה, עם תקרת `maxPositionPct` (15%) לפוזיציה בודדת ו-`maxOpenPositions` (5) פוזיציות פתוחות. השיטה הישנה (תקציב לפי ציון) זמינה כ-`"budget"`.
+- **תיוג בצל (`shadow.js`):** כל איתות שהסורק מוצא נעקב על נרות ה-5 דקות (יעד לפני סטופ, MFE/MAE ב-R, R אחרי 30/60/120 דקות) ונשמר עם התכונות שלו (נפח יחסי, ATR%, שעה, מרחק מ-MA ועוד). סיכום בלשונית ("איתותים שנעקבו בצל") וייצוא CSV. הנתונים נשמרים 60 יום. אין לזה השפעה על המסחר.
+- **אין רענון ברקע:** כל הלשוניות באתר מפסיקות לשאול את השרת כשהדפדפן לא גלוי (`client/src/pollWhileVisible.js`).

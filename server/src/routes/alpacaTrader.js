@@ -29,6 +29,16 @@ router.patch("/settings", (req, res) => {
   }
 });
 
+// All followed signals with their features and outcomes. Returned as JSON (the page sends its login headers with fetch, so a
+// plain download link would not work); the page turns the text into a file.
+router.get("/shadow-export", (_req, res, next) => {
+  try {
+    res.json({ filename: "alpaca-shadow-signals.csv", csv: "\ufeff" + require("../alpaca-trader/shadow").toCsv() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Per-profile opt-in for a push notification on every Alpaca buy and exit.
 router.put("/notify", (req, res) => {
   try {

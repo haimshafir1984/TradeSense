@@ -11,6 +11,7 @@ const history = require("../autopilot/history");
 const strategies = require("../autopilot/strategies");
 const universe = require("./universe");
 const entry = require("./entry");
+const shadow = require("./shadow");
 
 const INTRADAY_BATCH = 20;
 
@@ -97,6 +98,13 @@ async function run(profile, now = Date.now()) {
         bars, asOf: barBoundary, sessionOpen: session.open, sessionClose: session.close,
         daily, rvol, gapPct: daily.gapPct, hasNews: null,
       });
+      // Shadow labelling: every signal is followed on the candles (bought or not), and open ones are updated with the new candles.
+      try {
+        for (const plan of plans) shadow.recordSignal({ plan, symbol, daily, rvol, session, now: barBoundary });
+        shadow.update(symbol, bars, now);
+      } catch {
+        // learning data only: never let it affect the scan
+      }
       // Why each enabled strategy did or did not match, summed over the universe (shows up in /status diagnostics).
       for (const [strategy, result] of results || []) {
         if (!profile.strategies.includes(strategy)) continue;

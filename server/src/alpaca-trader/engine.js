@@ -175,6 +175,11 @@ async function tick(now = Date.now()) {
       }
     }
     recordScan(now, diagnostics, entries);
+    try {
+      require("./shadow").finalizeStale(now);
+    } catch {
+      // learning data only
+    }
     state({ error: null, lastScanAt: new Date(now).toISOString(), diagnostics, day, exits, entries });
   } catch (error) {
     state({ error: error.message });
@@ -232,6 +237,13 @@ async function view(now = Date.now()) {
     candidates: entry.todayBoxes(now),
     decisions: entry.recentLog(100),
     scans: recentScans(60),
+    shadow: (() => {
+      try {
+        return require("./shadow").summary(now);
+      } catch {
+        return null;
+      }
+    })(),
     history: await require("./history").dailyHistory(now).catch(() => ({ baseValue: null, days: [] })),
     exitLoop: { lastTickAt: lastExitTickAt, intervalMs: EXIT_TICK_MS },
     exits: exitManager.recentLog(100),

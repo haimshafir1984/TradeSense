@@ -7,7 +7,7 @@ const os = require("node:os");
 function setup() {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "tradesense-alpaca-"));
   process.env.AUTOPILOT_DB_PATH = path.join(scratch, "test.sqlite");
-  for (const m of ["store", "settings", "risk", "broker", "entry", "exit", "universe"]) {
+  for (const m of ["store", "settings", "risk", "broker", "entry", "exit", "universe", "shadow"]) {
     const file = m === "store" ? "../src/autopilot/store" : `../src/alpaca-trader/${m}`;
     delete require.cache[require.resolve(file)];
   }
@@ -751,6 +751,77 @@ test("engine: the entry is a limit order capped above the signal price; an unfil
     broker.placeMarketOrder = async (order) => { market = order; return { id: "m1" }; };
     await engine.placeOrder("MKT", 5, signal, { limitEntryEnabled: false });
     assert.deepEqual(market, { symbol: "MKT", qty: 5, side: "buy" });
+  } finally {
+    cleanup();
+  }
+});
+
+test("shadow: every signal is followed on the candles - target first, stop first, ambiguous candle, MFE/MAE, end of day", () => {
+  const { cleanup } = setup();
+  try {
+    const shadow = require("../src/alpaca-trader/shadow");
+    shadow.resetIndex();
+    const session = { open: Date.parse("2026-11-13T14:30:00Z"), close: Date.parse("2026-11-13T21:00:00Z") };
+    const signalAt = Date.parse("2026-11-13T15:00:00Z"); // the signal candle starts 15:00, closes (entry) 15:05
+    const plan = (strategy, extra = {}) => ({ strategy, entry: 10, stop: 9, target: 12, barAt: "2026-11-13T15:00:00.000Z", ...extra });
+    const daily = { atr14: 0.4, price: 10, gapPct: 1.5, avgDollarVolume20d: 5e6, ma20: 9.5, ma50: 9 };
+    const candle = (hhmm, o, h, l, c) => ({ t: `2026-11-13T${hhmm}:00Z`, o, h, l, c, v: 1000 });
+    const scanTime = (hhmm) => Date.parse(`2026-11-13T${hhmm}:00Z`);
+
+    assert.equal(shadow.recordSignal({ plan: plan("orb15"), symbol: "TGT", daily, rvol: 2.5, session, now: signalAt }), true);
+    assert.equal(shadow.recordSignal({ plan: plan("orb15"), symbol: "TGT", daily, rvol: 2.5, session, now: signalAt }), false, "first signal per stock/strategy/day only");
+    shadow.recordSignal({ plan: plan("vwap_reclaim"), symbol: "STP", daily, rvol: 1.4, session, now: signalAt });
+    shadow.recordSignal({ plan: plan("vwap_pullback"), symbol: "BOTH", daily, rvol: 1.4, session, now: signalAt });
+    shadow.recordSignal({ plan: plan("reversal5"), symbol: "LATE", daily, rvol: 1.4, session, now: signalAt });
+    assert.equal(shadow.recordSignal({ plan: { strategy: "orb15", entry: 10, stop: 10.5, target: 12, barAt: "x" }, symbol: "BAD", session, now: signalAt }), false, "a plan whose stop is above the entry is ignored");
+
+    // TGT: up 1R by 15:10 (the 15:10 candle closes at 15:15), then the 2R target at 15:20
+    shadow.update("TGT", [candle("15:05", 10, 10.5, 9.9, 10.4), candle("15:10", 10.4, 11.1, 10.3, 11), candle("15:15", 11, 12.2, 10.9, 12)], scanTime("15:25"));
+    // STP: dips to the stop, never reaches the target
+    shadow.update("STP", [candle("15:05", 10, 10.3, 8.95, 9.1), candle("15:10", 9.1, 12.5, 9, 12)], scanTime("15:25"));
+    // BOTH: one candle touches both the stop and the target -> counted as the stop (pessimistic)
+    shadow.update("BOTH", [candle("15:05", 10, 12.5, 8.9, 11)], scanTime("15:25"));
+    // LATE: nothing decisive; the candle still forming (15:25 closes at 15:30) must not be used yet
+    shadow.update("LATE", [candle("15:05", 10, 10.6, 9.7, 10.2), candle("15:10", 10.2, 10.8, 9.8, 10.5), candle("15:25", 10.5, 99, 0.1, 50)], scanTime("15:27"));
+
+    const day = shadow.summary(scanTime("15:27"));
+    const row = (strategy) => day.rows.find((r) => r.strategy === strategy);
+    assert.equal(row("orb15").target, 1);
+    assert.equal(row("orb15").avgR, 2, "target R = (12-10)/1");
+    assert.ok(row("orb15").avgMfeR >= 2.2 - 1e-9, "the high of 12.2 is 2.2R above the entry");
+    assert.equal(row("vwap_reclaim").stop, 1);
+    assert.equal(row("vwap_reclaim").avgR, -1);
+    assert.equal(row("vwap_pullback").stop, 1, "stop and target in one candle: the stop");
+    assert.equal(day.openToday, 1, "LATE is still open");
+
+    // end of day: after 16:00 New York the open one ends at its last seen close (10.5 = +0.5R)
+    assert.equal(shadow.finalizeStale(Date.parse("2026-11-13T21:05:00Z")), 1);
+    const after = shadow.summary(Date.parse("2026-11-13T21:05:00Z"));
+    assert.equal(after.rows.find((r) => r.strategy === "reversal5").avgR, 0.5);
+    assert.equal(after.rows.find((r) => r.strategy === "reversal5").eod, 1);
+    assert.equal(after.openToday, 0);
+    assert.equal(after.totalResolved, 4);
+
+    const csv = shadow.toCsv(Date.parse("2026-11-13T21:05:00Z")).split("\n");
+    assert.match(csv[0], /^date,symbol,strategy,status,result,resultR,mfeR,maeR,r30,r60,r120/);
+    assert.equal(csv.length, 5, "header + 4 signals");
+    assert.ok(csv.find((l) => l.includes(",TGT,orb15,resolved,target,")));
+  } finally {
+    cleanup();
+  }
+});
+
+test("shadow: signals left open from an earlier day are finalised on the next run (e.g. after a restart)", () => {
+  const { cleanup } = setup();
+  try {
+    const shadow = require("../src/alpaca-trader/shadow");
+    shadow.resetIndex();
+    const session = { open: Date.parse("2026-11-12T14:30:00Z") };
+    shadow.recordSignal({ plan: { strategy: "orb15", entry: 10, stop: 9, target: 12, barAt: "2026-11-12T15:00:00.000Z" }, symbol: "OLD", session, now: Date.parse("2026-11-12T15:00:00Z") });
+    shadow.resetIndex(); // a restart forgets the in-memory index
+    assert.equal(shadow.finalizeStale(Date.parse("2026-11-13T14:40:00Z")), 1);
+    assert.equal(shadow.summary(Date.parse("2026-11-13T14:40:00Z")).rows[0].eod, 1);
+    assert.equal(shadow.finalizeStale(Date.parse("2026-11-13T14:45:00Z")), 0, "nothing more to do");
   } finally {
     cleanup();
   }
