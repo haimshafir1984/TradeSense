@@ -220,7 +220,25 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
   if (server.state?.error) warnings.push({ tone: "bad", text: `שגיאה אחרונה של המנוע: ${server.state.error}` });
   if (!server.day?.breached && limitUsedPct >= 70) warnings.push({ tone: "warn", text: `ניצלת ${Math.round(limitUsedPct)}% ממגבלת ההפסד היומי.` });
   if (!tradingOn) warnings.push({ tone: "info", text: "הכניסות החדשות מושהות. יציאות מפוזיציות קיימות ממשיכות כרגיל." });
-  const historyDays = server.history?.days || [];
+  // Alpaca's daily history lags (the latest trading day can be missing for many hours). Fill the gap from what we know: the
+  // account value before today's session equals the previous trading day's close, and today's row is live. Marked as estimates.
+  const rawHistoryDays = server.history?.days || [];
+  const historyDays = (() => {
+    const days = [...rawHistoryDays];
+    const have = new Set(days.map((d) => d.date));
+    const last = days[days.length - 1];
+    const baseToday = server.day?.hasBase && server.day?.date === todayNy ? Number(server.day.baseEquity) : null;
+    const closeBefore = Number.isFinite(baseToday) ? baseToday : equity; // before today's base exists, the live value is still last close
+    let prev = new Date(todayNy + "T12:00:00Z");
+    do prev = new Date(prev.getTime() - 86400000);
+    while ([0, 6].includes(prev.getUTCDay()));
+    const prevDay = prev.toISOString().slice(0, 10);
+    const row = (date, value, from, extra = {}) => ({ date, equity: value, profitLoss: value - from, profitLossPct: (100 * (value - from)) / from, estimated: true, ...extra });
+    if (last && last.date < prevDay && !have.has(prevDay) && Number.isFinite(closeBefore)) days.push(row(prevDay, closeBefore, last.equity));
+    const lastNow = days[days.length - 1];
+    if (!have.has(todayNy) && Number.isFinite(baseToday) && Number.isFinite(equity) && lastNow) days.push(row(todayNy, equity, baseToday));
+    return days;
+  })();
   const tradesByDay = perfTrades.reduce((acc, t) => {
     const key = nyDay(t.exitAt);
     (acc[key] ||= []).push(t);
@@ -459,7 +477,7 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
                   const wins = dayTrades.filter((t) => t.pnl > 0).length;
                   return (
                     <tr key={d.date}>
-                      <td data-label="יום" dir="ltr">{d.date.slice(5).split("-").reverse().join(".")}</td>
+                      <td data-label="יום" dir="ltr">{d.date.slice(5).split("-").reverse().join(".")}{d.estimated ? " *" : ""}</td>
                       <td data-label="שווי בסוף היום" dir="ltr">{money(d.equity)}</td>
                       <td data-label="רווח/הפסד" dir="ltr" className={plClass(d.profitLoss)}>{signed(d.profitLoss)}</td>
                       <td data-label="%" dir="ltr" className={plClass(d.profitLossPct)}>{pctSigned(d.profitLossPct)}</td>
@@ -472,7 +490,7 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
             </table>
           </div>
         ) : null}
-        <p className="muted">נלקח מההיסטוריה של Alpaca (ערך סוף יום). מספר העסקאות מחושב מההזמנות שבוצעו.</p>
+        <p className="muted">נלקח מההיסטוריה של Alpaca (ערך סוף יום). שורה עם * היא הערכה שלנו: Alpaca מעדכנת את היום האחרון באיחור, ולכן אנחנו משלימים אותו משווי החשבון (היום הקודם: שווי החשבון לפני פתיחת היום; היום: השווי הנוכחי). מספר העסקאות מחושב מההזמנות שבוצעו.</p>
       </section>
 
       <details className="panel collapsible-panel">
