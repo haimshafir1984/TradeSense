@@ -4,6 +4,7 @@ import EntryPanel from "./EntryPanel.jsx";
 import PnlPanel from "./PnlPanel.jsx";
 import DecisionLog from "./DecisionLog.jsx";
 import AlpacaTraderPanel from "./AlpacaTraderPanel.jsx";
+import { pollWhileVisible } from "./pollWhileVisible.js";
 // Production builds default to same-origin (the API serves this site); dev talks to :4000.
 const BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? "" : "http://localhost:4000");
 const money = (n) =>
@@ -196,8 +197,7 @@ export default function App() {
   }
   useEffect(() => {
     load();
-    const timer = setInterval(load, 15000);
-    return () => clearInterval(timer);
+    return pollWhileVisible(load, 15000);
   }, []);
   async function act(fn, message) {
     setBusy(true);

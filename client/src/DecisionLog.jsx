@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { pollWhileVisible } from "./pollWhileVisible.js";
 
 // Entry and exit decisions in one compact, scrollable window: the latest few rows are visible, older ones are a scroll away.
 const LABEL = {
@@ -18,8 +19,8 @@ export default function DecisionLog({ executionApi }) {
       executionApi("/entry").then((r) => alive && setWaiting((r.boxes || []).filter((b) => b.state === "open"))).catch(() => {});
     };
     load();
-    const t = setInterval(load, 10000);
-    return () => { alive = false; clearInterval(t); };
+    const stopPolling = pollWhileVisible(load, 10000);
+    return () => { alive = false; stopPolling(); };
   }, []);
   const shown = (rows || []).filter((d) => filter === "all" || (filter === "entered" && d.outcome === "entered") || (filter === "skipped" && (d.outcome === "skipped" || d.outcome === "ignored")) || (filter === "exit" && d.kind === "exit"));
   return (

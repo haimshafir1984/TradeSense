@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { pollWhileVisible } from "./pollWhileVisible.js";
 
 // Entry tab: how signals become a score, and how the score becomes a share count.
 // Everything saved here is enforced on the server (entryDecision). The simulator below uses the same formula.
@@ -56,8 +57,7 @@ export default function EntryPanel({ executionApi, executionState, onNotice, onE
   }
   useEffect(() => {
     load();
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
+    return pollWhileVisible(load, 10000);
   }, []);
 
   const set = (patch) => { dirty.current = true; setForm((f) => ({ ...f, ...patch })); };

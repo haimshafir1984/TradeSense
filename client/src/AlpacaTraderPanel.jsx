@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { EquityChart, Hint, ago, marketStatus, useNow } from "./AlpacaPanelParts.jsx";
+import { pollWhileVisible } from "./pollWhileVisible.js";
 
 // "חשבון דמו Alpaca" tab. Fully separate from the Colmex/MT4 side: its own account, its own
 // universe (lower price/liquidity floor, no Colmex symbol map), its own risk settings.
@@ -95,13 +96,7 @@ export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }
   useEffect(() => {
     load();
     // No polling while the tab is in the background (saves the server a request every 15s per hidden tab).
-    const timer = setInterval(() => { if (!document.hidden) load(); }, 15000);
-    const onVisible = () => { if (!document.hidden) load(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    return pollWhileVisible(load, 15000);
   }, []);
 
   const set = (patch) => { dirty.current = true; setForm((f) => ({ ...f, ...patch })); };

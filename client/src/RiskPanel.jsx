@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { pollWhileVisible } from "./pollWhileVisible.js";
 
 // Risk management tab. Every value here is saved on the server and enforced there (entries, loss limit,
 // take-profit tiers, end of day). Nothing on this page is decoration: a field that is not connected says so.
@@ -62,8 +63,7 @@ export default function RiskPanel({ executionApi, executionState, mt4Positions, 
   }
   useEffect(() => {
     load();
-    const timer = setInterval(load, 15000);
-    return () => clearInterval(timer);
+    return pollWhileVisible(load, 15000);
   }, []);
 
   const set = (patch) => {

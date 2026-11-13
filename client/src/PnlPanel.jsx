@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { pollWhileVisible } from "./pollWhileVisible.js";
 
 // Realized profit/loss by period. Figures come from the closed deals the MT4 EA reports; the server
 // assigns each deal to a New York trading date. Weeks run Monday to Friday. Open positions are not included.
@@ -32,10 +33,10 @@ export default function PnlPanel({ executionApi, mt4Positions }) {
       }
     };
     load();
-    const id = setInterval(load, 20000);
+    const stopPolling = pollWhileVisible(load, 20000);
     return () => {
       live = false;
-      clearInterval(id);
+      stopPolling();
     };
   }, []);
 
