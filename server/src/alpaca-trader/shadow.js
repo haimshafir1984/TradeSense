@@ -279,7 +279,7 @@ function summary(now = Date.now(), days = 30) {
   return { days, rows, openToday, totalResolved: rows.reduce((sum, r) => sum + r.resolved, 0) };
 }
 
-const CSV_COLUMNS = ["date", "symbol", "strategy", "status", "result", "resultR", "mfeR", "maeR", "r30", "r60", "r120", "entry", "stop", "target", "riskPct", "targetR", "rvol", "atrPct", "gapPct", "adv20", "minutesSinceOpen", "hourNy", "aboveMa20", "ma20AboveMa50", "fundLike", "universeRank", "plansThisBar", "decisionOutcome", "decisionReason", "decisionScore", "decidedAt", "dayMfeR", "dayMaeR", "dayCloseR", "nextOpenR", "newsCount", "newsOffering", "newsHeadline", "pathR"];
+const CSV_COLUMNS = ["date", "symbol", "strategy", "status", "result", "resultR", "mfeR", "maeR", "r30", "r60", "r120", "entry", "stop", "target", "riskPct", "targetR", "rvol", "atrPct", "gapPct", "adv20", "minutesSinceOpen", "hourNy", "aboveMa20", "ma20AboveMa50", "fundLike", "universeRank", "plansThisBar", "decisionOutcome", "decisionReason", "decisionScore", "decidedAt", "dayMfeR", "dayMaeR", "dayCloseR", "nextOpenR", "newsCount", "newsOffering", "newsHeadline", "holdResultR", "holdExitDay", "holdReason", "holdComplete", "holdCloseR", "holdHighR", "holdLowR", "holdGapR", "pathR"];
 
 function toCsv(now = Date.now(), days = 60) {
   const since = nyDate(now - days * 86400000);

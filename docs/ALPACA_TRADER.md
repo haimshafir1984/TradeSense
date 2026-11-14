@@ -57,6 +57,7 @@ server/src/alpaca-trader/
   history.js    היסטוריית שווי יומית מ-Alpaca
   shadow.js     תיוג בצל של כל איתות + סיכום + CSV (מסלול יום מלא נכתב פעם אחת בסגירה)
   session.js    שעות מסחר אמיתיות מהלוח של Alpaca (יום מקוצר, חג); נפילה לשעות קבועות אם הלוח לא זמין
+  hold.js       מעקב רב-יומי לאיתותי בצל (עד 5 ימי מסחר, אותו סטופ ויעד; נרות יומיים SIP; נכתב פעם אחת לכל איתות; ALPACA_TRADER_HOLD=off מכבה)
   news.js       תיוג כותרת הנפקה/דילול לכל איתות בצל (איסוף נתונים בלבד; ALPACA_TRADER_NEWS=off מכבה)
   fundFilter.js סינון קרנות ממונפות/ETF לפי שם: לא נסחרות, כן מתויגות בבצל (features.fundLike)
 server/src/routes/alpacaTrader.js   /status, /settings (PATCH), /notify (PUT), /shadow-export
@@ -121,3 +122,4 @@ docker exec $(docker ps --filter "name=tradesense" --format '{{.Names}}' | head 
 - **קרנות ממונפות/ETF:** נפסלות ממסחר לפי שם (מילים חזקות: 2X, 3X, Daily, Leverag*, Inverse, ETF, ETN, שמות מנפיקים). נשארות בסריקה ובבצל עם `fundLike`. רשימת הנפסלות ורשימת "מילים חלשות" לבדיקה בעין: `diagnostics.fundLike` / `weakFlagged` של המאגר (ב-`/status`).
 - **בצל:** מסלול מחיר עד סוף היום גם אחרי סטופ/יעד (`pathR`, `dayMfeR`, `dayMaeR`, `dayCloseR`, `nextOpenR`), נכתב פעם אחת בסגירה (בזיכרון בזמן היום; אתחול באמצע היום מאבד את מסלול אותו יום). עמודות חדשות: `universeRank`, `plansThisBar`, `decisionOutcome/Reason/Score`, `decidedAt`, `fundLike`. עמודות חדשות (15.11): `newsCount`, `newsOffering`, `newsHeadline` (רשימת המילים קפואה מ-`research/ideas`, כולל זיהויים שגויים ידועים; הכותרת נשמרת לבדיקה בעין; מטרה: להגיע ל-30 אירועי הנפקה, ראו `docs/RESEARCH_IDEAS_RESULTS_2026-11-14.md`). לא נאספים עדיין: מרווח קנייה-מכירה, קטליסט, הקשר שוק.
 - **מדידת מילוי:** `node server/scripts/measureAlpacaFills.js` (קריאה בלבד, לרוץ בשרת).
+- **מעקב רב-יומי (15.11):** לכל איתות בצל מחושב מה היה קורה אילו הוחזק עד 5 ימי מסחר באותו סטופ ויעד (`holdResultR`, `holdExitDay`, `holdReason`, ומערכים לכל יום: `holdCloseR`, `holdHighR`, `holdLowR`, `holdGapR`). פער פתיחה מתחת לסטופ יוצא במחיר הפתיחה; יום שנוגע גם בסטופ וגם ביעד נספר כסטופ. רץ פעם אחת לפני הסגירה ופעם אחרי (קריאה אחת לנרות יומיים), ממלא גם איתותים קיימים. איתות שנשאר חסר 14 ימים נסגר כ-partial/no_data. אין שום השפעה על מסחר; החשבון ממשיך לסגור בסוף היום.

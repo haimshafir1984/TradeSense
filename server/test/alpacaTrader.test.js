@@ -7,7 +7,7 @@ const os = require("node:os");
 function setup() {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "tradesense-alpaca-"));
   process.env.AUTOPILOT_DB_PATH = path.join(scratch, "test.sqlite");
-  for (const m of ["store", "settings", "risk", "broker", "entry", "exit", "universe", "shadow", "session"]) {
+  for (const m of ["store", "settings", "risk", "broker", "entry", "exit", "universe", "shadow", "session", "hold", "news"]) {
     const file = m === "store" ? "../src/autopilot/store" : `../src/alpaca-trader/${m}`;
     delete require.cache[require.resolve(file)];
   }
@@ -1006,6 +1006,74 @@ test("news: offering headlines are detected, the result is attached to the shado
     delete process.env.ALPACA_TRADER_NEWS;
     delete process.env.ALPACA_API_KEY_ID;
     delete process.env.ALPACA_API_SECRET_KEY;
+    cleanup();
+  }
+});
+
+test("hold: the 5-day simulation uses the signal's own stop/target, gap-stops, pessimistic same-day touches and the day-5 close", () => {
+  const { cleanup } = setup();
+  try {
+    const hold = require("../src/alpaca-trader/hold");
+    const rec = { date: "2026-11-13", entry: 10, stop: 9, target: 12, risk: 1, status: "resolved", result: "eod", resultR: 0.5 };
+    const day = (date, o, h, l, c) => ({ date, o, h, l, c });
+    const day0 = day("2026-11-13", 10, 10.7, 9.9, 10.5);
+    const quiet = (d) => day(d, 10.5, 11.0, 10.0, 10.6);
+    const d = ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"];
+
+    let r = hold.simulate(rec, [day0, quiet(d[0]), quiet(d[1]), day(d[2], 10.6, 12.3, 10.4, 12.0), quiet(d[3]), quiet(d[4])], "2026-11-23");
+    assert.equal(r.holdReason, "target"); assert.equal(r.holdExitDay, 3); assert.equal(r.holdResultR, 2);
+    assert.equal(r.holdCloseR.length, 5, "all five days are stored for later replays");
+
+    r = hold.simulate(rec, [day0, quiet(d[0]), day(d[1], 8.5, 9.0, 8.4, 8.8), quiet(d[2]), quiet(d[3]), quiet(d[4])], "2026-11-23");
+    assert.equal(r.holdReason, "gap_stop"); assert.equal(r.holdResultR, -1.5); assert.equal(r.holdExitDay, 2);
+
+    r = hold.simulate(rec, [day0, day(d[0], 10.5, 12.5, 8.9, 11), quiet(d[1]), quiet(d[2]), quiet(d[3]), quiet(d[4])], "2026-11-23");
+    assert.equal(r.holdReason, "stop", "a day touching both counts as the stop"); assert.equal(r.holdResultR, -1);
+
+    r = hold.simulate(rec, [day0, ...d.map(quiet)], "2026-11-23");
+    assert.equal(r.holdReason, "day5"); assert.ok(Math.abs(r.holdResultR - 0.6) < 1e-9); assert.equal(r.holdComplete, true);
+    assert.ok(Math.abs(r.holdGapR[0] - 0) < 1e-9, "gap of day 1 = open 10.5 vs the day-0 close 10.5");
+
+    r = hold.simulate({ ...rec, result: "target", resultR: 2 }, [day0, ...d.map(quiet)], "2026-11-23");
+    assert.equal(r.holdReason, "target"); assert.equal(r.holdExitDay, 0, "resolved on its own day: unchanged");
+
+    assert.equal(hold.simulate(rec, [day0, quiet(d[0]), quiet(d[1])], "2026-11-17"), null, "fewer than 5 days and not old yet: wait");
+    const stale = hold.simulate(rec, [day0, quiet(d[0]), quiet("2026-11-30")], "2026-11-30");
+    assert.equal(hold.simulate(rec, [], "2026-11-30").holdReason, "no_data", "no bars at all and old enough: closed out, not retried forever");
+    assert.equal(stale.holdComplete, false, "after 14 calendar days it stops waiting and records what exists");
+  } finally {
+    cleanup();
+  }
+});
+
+test("hold: update writes each finished record once, leaves today's and open records alone, and a failing fetch changes nothing", async () => {
+  const { cleanup } = setup();
+  try {
+    const hold = require("../src/alpaca-trader/hold");
+    const store = require("../src/autopilot/store");
+    const calendar = require("../src/alpaca-trader/session");
+    calendar.reset();
+    const base = { entry: 10, stop: 9, target: 12, risk: 1, features: {}, status: "resolved", result: "eod", resultR: 0.5 };
+    store.put("alpacaTrader:shadow", "2026-11-13:OLD:orb15", { ...base, id: "2026-11-13:OLD:orb15", date: "2026-11-13", symbol: "OLD", strategy: "orb15" });
+    store.put("alpacaTrader:shadow", "2026-11-13:OPN:orb15", { ...base, status: "open", id: "2026-11-13:OPN:orb15", date: "2026-11-13", symbol: "OPN", strategy: "orb15" });
+    store.put("alpacaTrader:shadow", "2026-11-23:TODAY:orb15", { ...base, id: "2026-11-23:TODAY:orb15", date: "2026-11-23", symbol: "TODAY", strategy: "orb15" });
+    const bar = (date, c) => ({ date, o: c, h: c + 0.3, l: c - 0.3, c });
+    const bars = ["2026-11-13", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"].map((d) => bar(d, 10.5));
+    let calls = 0;
+    const fetchBars = async () => { calls += 1; return new Map([["OLD", bars], ["OPN", bars], ["TODAY", bars]]); };
+    const now = Date.parse("2026-11-23T15:00:00Z"); // Monday, mid-session
+    const first = await hold.update(now, { fetchBars });
+    assert.equal(first.written, 1);
+    assert.equal(calls, 1, "one batched fetch");
+    assert.equal(store.get("alpacaTrader:shadow", "2026-11-13:OLD:orb15").holdReason, "day5");
+    assert.equal(store.get("alpacaTrader:shadow", "2026-11-13:OPN:orb15").holdComplete, undefined, "an open record is not touched");
+    assert.equal(store.get("alpacaTrader:shadow", "2026-11-23:TODAY:orb15").holdComplete, undefined, "today's record is not touched");
+    assert.equal((await hold.update(now, { fetchBars })).written, 0, "idempotent");
+
+    store.put("alpacaTrader:shadow", "2026-11-12:BAD:orb15", { ...base, id: "2026-11-12:BAD:orb15", date: "2026-11-12", symbol: "BAD", strategy: "orb15" });
+    await assert.rejects(hold.update(now, { fetchBars: async () => { throw new Error("network down"); } }));
+    assert.equal(store.get("alpacaTrader:shadow", "2026-11-12:BAD:orb15").holdComplete, undefined, "a failed fetch writes nothing");
+  } finally {
     cleanup();
   }
 });

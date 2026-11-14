@@ -180,6 +180,7 @@ async function tick(now = Date.now()) {
     recordScan(now, diagnostics, entries);
     try {
       require("./shadow").finalizeStale(now);
+      require("./hold").maybeRun(now); // multi-day follow-up of shadow signals: fire-and-forget, own error handling
     } catch {
       // learning data only
     }
