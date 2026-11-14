@@ -57,6 +57,7 @@ server/src/alpaca-trader/
   history.js    היסטוריית שווי יומית מ-Alpaca
   shadow.js     תיוג בצל של כל איתות + סיכום + CSV (מסלול יום מלא נכתב פעם אחת בסגירה)
   session.js    שעות מסחר אמיתיות מהלוח של Alpaca (יום מקוצר, חג); נפילה לשעות קבועות אם הלוח לא זמין
+  news.js       תיוג כותרת הנפקה/דילול לכל איתות בצל (איסוף נתונים בלבד; ALPACA_TRADER_NEWS=off מכבה)
   fundFilter.js סינון קרנות ממונפות/ETF לפי שם: לא נסחרות, כן מתויגות בבצל (features.fundLike)
 server/src/routes/alpacaTrader.js   /status, /settings (PATCH), /notify (PUT), /shadow-export
 client/src/AlpacaTraderPanel.jsx    הלשונית; AlpacaPanelParts.jsx (Hint, גרף, שעון שוק); pollWhileVisible.js
@@ -118,5 +119,5 @@ docker exec $(docker ps --filter "name=tradesense" --format '{{.Names}}' | head 
 
 - **לוח מסחר:** פתיחה/סגירה/ימים מקוצרים נלקחים מ-Alpaca (`session.js`). סגירת סוף יום 5 דקות לפני הסגירה האמיתית (12:55 ב-27.11.2026). בלי לוח: השעות הקבועות הקודמות.
 - **קרנות ממונפות/ETF:** נפסלות ממסחר לפי שם (מילים חזקות: 2X, 3X, Daily, Leverag*, Inverse, ETF, ETN, שמות מנפיקים). נשארות בסריקה ובבצל עם `fundLike`. רשימת הנפסלות ורשימת "מילים חלשות" לבדיקה בעין: `diagnostics.fundLike` / `weakFlagged` של המאגר (ב-`/status`).
-- **בצל:** מסלול מחיר עד סוף היום גם אחרי סטופ/יעד (`pathR`, `dayMfeR`, `dayMaeR`, `dayCloseR`, `nextOpenR`), נכתב פעם אחת בסגירה (בזיכרון בזמן היום; אתחול באמצע היום מאבד את מסלול אותו יום). עמודות חדשות: `universeRank`, `plansThisBar`, `decisionOutcome/Reason/Score`, `decidedAt`, `fundLike`. לא נאספים עדיין: מרווח קנייה-מכירה, קטליסט, הקשר שוק.
+- **בצל:** מסלול מחיר עד סוף היום גם אחרי סטופ/יעד (`pathR`, `dayMfeR`, `dayMaeR`, `dayCloseR`, `nextOpenR`), נכתב פעם אחת בסגירה (בזיכרון בזמן היום; אתחול באמצע היום מאבד את מסלול אותו יום). עמודות חדשות: `universeRank`, `plansThisBar`, `decisionOutcome/Reason/Score`, `decidedAt`, `fundLike`. עמודות חדשות (15.11): `newsCount`, `newsOffering`, `newsHeadline` (רשימת המילים קפואה מ-`research/ideas`, כולל זיהויים שגויים ידועים; הכותרת נשמרת לבדיקה בעין; מטרה: להגיע ל-30 אירועי הנפקה, ראו `docs/RESEARCH_IDEAS_RESULTS_2026-11-14.md`). לא נאספים עדיין: מרווח קנייה-מכירה, קטליסט, הקשר שוק.
 - **מדידת מילוי:** `node server/scripts/measureAlpacaFills.js` (קריאה בלבד, לרוץ בשרת).

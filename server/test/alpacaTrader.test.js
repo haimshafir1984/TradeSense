@@ -963,3 +963,49 @@ test("shadow: the day-long path keeps going after the stop, is written once at t
     cleanup();
   }
 });
+
+test("news: offering headlines are detected, the result is attached to the shadow record, and a failing news call is harmless", async () => {
+  const { cleanup } = setup();
+  process.env.ALPACA_API_KEY_ID = "test";
+  process.env.ALPACA_API_SECRET_KEY = "test";
+  try {
+    const news = require("../src/alpaca-trader/news");
+    news.reset();
+    assert.equal(news.isOffering("Scholar Rock Announces $150M Public Offering of Common Stock"), true);
+    assert.equal(news.isOffering("Company reports quarterly revenue growth"), false);
+    // the window starts at 16:00 New York of the previous weekday (Monday looks back to Friday)
+    assert.equal(news.windowStart(Date.parse("2026-11-16T15:00:00Z")), Date.parse("2026-11-13T21:00:00Z"));
+
+    const shadow = require("../src/alpaca-trader/shadow");
+    const store = require("../src/autopilot/store");
+    shadow.resetIndex();
+    const session = { open: Date.parse("2026-11-13T14:30:00Z"), close: Date.parse("2026-11-13T21:00:00Z") };
+    const plan = { strategy: "orb15", entry: 10, stop: 9, target: 12, barAt: "2026-11-13T15:00:00.000Z" };
+    const now = Date.parse("2026-11-13T15:05:00Z");
+    shadow.recordSignal({ plan, symbol: "NEWS", daily: {}, rvol: 2, session, now });
+    const ok = async () => ({ ok: true, json: async () => ({ news: [{ headline: "NEWS Announces $50M Registered Direct Offering" }, { headline: "NEWS opens new office" }] }) });
+    await news.tag({ symbol: "NEWS", now, fetchImpl: ok, onResult: (info) => shadow.annotateNews("2026-11-13:NEWS:orb15", info) });
+    const rec = store.get("alpacaTrader:shadow", "2026-11-13:NEWS:orb15");
+    assert.equal(rec.newsOffering, true);
+    assert.equal(rec.newsCount, 2);
+    assert.match(rec.newsHeadline, /Registered Direct/);
+
+    // a failing call resolves quietly and writes nothing
+    news.reset();
+    shadow.recordSignal({ plan, symbol: "FAIL", daily: {}, rvol: 2, session, now });
+    const bad = async () => { throw new Error("network down"); };
+    await news.tag({ symbol: "FAIL", now, fetchImpl: bad, onResult: () => assert.fail("must not be called") });
+    assert.equal(store.get("alpacaTrader:shadow", "2026-11-13:FAIL:orb15").newsOffering, undefined);
+
+    // switched off
+    process.env.ALPACA_TRADER_NEWS = "off";
+    let called = false;
+    await news.tag({ symbol: "OFF", now, fetchImpl: async () => { called = true; return { ok: true, json: async () => ({}) }; }, onResult: () => {} });
+    assert.equal(called, false);
+  } finally {
+    delete process.env.ALPACA_TRADER_NEWS;
+    delete process.env.ALPACA_API_KEY_ID;
+    delete process.env.ALPACA_API_SECRET_KEY;
+    cleanup();
+  }
+});

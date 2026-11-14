@@ -141,6 +141,16 @@ function flushTails(today, afterClose) {
   return written;
 }
 
+// Offering/dilution headline tag (news.js), written asynchronously after the signal was recorded.
+function annotateNews(id, info) {
+  const rec = store.get(KIND, id);
+  if (!rec) return;
+  rec.newsCount = info.newsCount;
+  rec.newsOffering = info.newsOffering;
+  rec.newsHeadline = info.newsHeadline;
+  store.put(KIND, id, rec);
+}
+
 // What the engine decided about this stock's signals (bought or why not), written by entry.js: not reconstructable later.
 function annotate(symbol, strategies, now, info) {
   const date = nyDate(now);
@@ -269,7 +279,7 @@ function summary(now = Date.now(), days = 30) {
   return { days, rows, openToday, totalResolved: rows.reduce((sum, r) => sum + r.resolved, 0) };
 }
 
-const CSV_COLUMNS = ["date", "symbol", "strategy", "status", "result", "resultR", "mfeR", "maeR", "r30", "r60", "r120", "entry", "stop", "target", "riskPct", "targetR", "rvol", "atrPct", "gapPct", "adv20", "minutesSinceOpen", "hourNy", "aboveMa20", "ma20AboveMa50", "fundLike", "universeRank", "plansThisBar", "decisionOutcome", "decisionReason", "decisionScore", "decidedAt", "dayMfeR", "dayMaeR", "dayCloseR", "nextOpenR", "pathR"];
+const CSV_COLUMNS = ["date", "symbol", "strategy", "status", "result", "resultR", "mfeR", "maeR", "r30", "r60", "r120", "entry", "stop", "target", "riskPct", "targetR", "rvol", "atrPct", "gapPct", "adv20", "minutesSinceOpen", "hourNy", "aboveMa20", "ma20AboveMa50", "fundLike", "universeRank", "plansThisBar", "decisionOutcome", "decisionReason", "decisionScore", "decidedAt", "dayMfeR", "dayMaeR", "dayCloseR", "nextOpenR", "newsCount", "newsOffering", "newsHeadline", "pathR"];
 
 function toCsv(now = Date.now(), days = 60) {
   const since = nyDate(now - days * 86400000);
@@ -284,4 +294,4 @@ function toCsv(now = Date.now(), days = 60) {
   return rows.join("\n");
 }
 
-module.exports = { recordSignal, annotate, update, finalizeStale, summary, toCsv, resetIndex };
+module.exports = { recordSignal, annotate, annotateNews, update, finalizeStale, summary, toCsv, resetIndex };

@@ -5,13 +5,14 @@
 // Known v1 simplification: relative volume is a simple same-session proxy (today's cumulative IEX volume
 // vs. the stock's own 20-day IEX average volume from universe.js, scaled by elapsed time), not the
 // calendar-exact version the main engine uses. Trading hours come from session.js (Alpaca's calendar: holidays and shortened days).
-const { nyTimestamp } = require("../autopilot/market");
+const { nyDate, nyTimestamp } = require("../autopilot/market");
 const calendar = require("./session");
 const history = require("../autopilot/history");
 const strategies = require("../autopilot/strategies");
 const universe = require("./universe");
 const entry = require("./entry");
 const shadow = require("./shadow");
+const news = require("./news");
 
 const INTRADAY_BATCH = 20;
 
@@ -97,7 +98,11 @@ async function run(profile, now = Date.now()) {
       });
       // Shadow labelling: every signal is followed on the candles (bought or not), and open ones are updated with the new candles.
       try {
-        for (const plan of plans) shadow.recordSignal({ plan, symbol, daily, rvol, session, now: barBoundary, fundLike: fundLike.has(symbol), universeRank: rankOf.get(symbol), plansThisBar: plans.length });
+        for (const plan of plans) {
+          const isNew = shadow.recordSignal({ plan, symbol, daily, rvol, session, now: barBoundary, fundLike: fundLike.has(symbol), universeRank: rankOf.get(symbol), plansThisBar: plans.length });
+          // data collection only, fire-and-forget: never awaited, never affects the scan
+          if (isNew) news.tag({ symbol, now, onResult: (info) => shadow.annotateNews(`${nyDate(barBoundary)}:${symbol}:${plan.strategy}`, info) });
+        }
         shadow.update(symbol, bars, now);
       } catch {
         // learning data only: never let it affect the scan
