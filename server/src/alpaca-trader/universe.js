@@ -4,6 +4,7 @@
 const store = require("../autopilot/store");
 const market = require("../autopilot/market");
 const alpaca = require("../providers/alpacaService");
+const fundFilter = require("./fundFilter");
 
 const KIND = "alpacaTrader";
 // Lowered from 400 after a production OOM crash loop (2026-11-03): this engine's universe build runs
@@ -21,7 +22,7 @@ function overMemoryGuard() {
 }
 
 // Bump when the ranking rules change so a universe cached earlier the same day is rebuilt with the new rules.
-const RANK_VERSION = 3;
+const RANK_VERSION = 4; // 4: rows carry the asset name and a fund/leveraged flag (fundFilter.js)
 
 function validSymbol(symbol) {
   return typeof symbol === "string" && /^[A-Z]{1,5}$/.test(symbol);
@@ -95,7 +96,8 @@ async function build(now = Date.now(), profile) {
       const adv20 = avgDollarVolume20d(bars);
       if (!Number.isFinite(adv20) || adv20 < profile.minAdv20) { diagnostics.belowLiquidity += 1; continue; }
       if (Number(profile.maxAdv20) > 0 && adv20 > profile.maxAdv20) { diagnostics.aboveLiquidity += 1; continue; }
-      rows.push({ symbol: asset.symbol, close, avgDollarVolume20d: adv20, avgRangePct20: avgRangePct20(bars) ?? 0 });
+      const fund = fundFilter.classify(asset.name);
+      rows.push({ symbol: asset.symbol, name: asset.name || null, fundLike: fund.fundLike, fundWords: fund.words, weakWords: fund.weak, close, avgDollarVolume20d: adv20, avgRangePct20: avgRangePct20(bars) ?? 0 });
     }
     detail.bars.clear();
     await new Promise((resolve) => setImmediate(resolve));
@@ -105,6 +107,9 @@ async function build(now = Date.now(), profile) {
   const capped = rows.slice(0, MAX_UNIVERSE);
   await attachIexVolume(capped, date, now);
   diagnostics.eligible = rows.length;
+  // For the user's one-time eyeball review: funds kept out of trading, and names with weak words that were NOT excluded.
+  diagnostics.fundLike = capped.filter((r) => r.fundLike).map((r) => ({ symbol: r.symbol, name: r.name, words: r.fundWords }));
+  diagnostics.weakFlagged = capped.filter((r) => !r.fundLike && r.weakWords?.length).map((r) => ({ symbol: r.symbol, name: r.name, words: r.weakWords }));
   diagnostics.capped = Math.max(0, rows.length - capped.length);
   // Even a guard-stopped (partial) universe is cached and used: it's a real, if incomplete, result -
   // better than an empty scan, and never worse than what a crash loop gave (nothing).

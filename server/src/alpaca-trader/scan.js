@@ -52,6 +52,7 @@ async function run(profile, now = Date.now()) {
   if (!rows.length) return diagnostics;
 
   const symbols = rows.map((r) => r.symbol);
+  const fundLike = new Set(rows.filter((r) => r.fundLike).map((r) => r.symbol));
   const iexAvgVolume = new Map(rows.map((r) => [r.symbol, r.avgIexVolume20d]));
   const dailyResult = await history.ensureDailyFeatures(symbols, now);
   const session = sessionBounds(now);
@@ -95,7 +96,7 @@ async function run(profile, now = Date.now()) {
       });
       // Shadow labelling: every signal is followed on the candles (bought or not), and open ones are updated with the new candles.
       try {
-        for (const plan of plans) shadow.recordSignal({ plan, symbol, daily, rvol, session, now: barBoundary });
+        for (const plan of plans) shadow.recordSignal({ plan, symbol, daily, rvol, session, now: barBoundary, fundLike: fundLike.has(symbol) });
         shadow.update(symbol, bars, now);
       } catch {
         // learning data only: never let it affect the scan
@@ -109,6 +110,7 @@ async function run(profile, now = Date.now()) {
       }
       for (const plan of plans) {
         if (!profile.strategies.includes(plan.strategy)) continue;
+        if (fundLike.has(symbol)) { diagnostics.fundSkipped = (diagnostics.fundSkipped || 0) + 1; continue; } // labelled in the shadow, never traded
         diagnostics.matched += 1;
         entry.observe({
           now,

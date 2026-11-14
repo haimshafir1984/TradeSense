@@ -896,3 +896,33 @@ test("session: scan bounds and shadow finalisation follow the shortened close", 
     cleanup();
   }
 });
+
+test("fundFilter: leveraged / inverse / ETF names are flagged for exclusion, ordinary companies and weak words are not", () => {
+  const { classify } = require("../src/alpaca-trader/fundFilter");
+  for (const name of ["Direxion Daily NVDA Bull 2X Shares", "Defiance Daily Target 2X Long INTC ETF", "Tradr 2X Long SMCI Daily ETF", "ProShares UltraPro QQQ", "Leverage Shares 2X Long ABC"]) {
+    assert.equal(classify(name).fundLike, true, name);
+  }
+  for (const name of ["Oklo Inc. Common Stock", "Rocket Lab USA, Inc.", "Apple Hospitality REIT Trust", "Ultra Clean Holdings, Inc."]) {
+    assert.equal(classify(name).fundLike, false, name);
+  }
+  assert.deepEqual(classify("Apple Hospitality REIT Trust").weak, ["trust"], "weak word only flagged for review");
+  assert.equal(classify(undefined).fundLike, false);
+});
+
+test("shadow: a signal on a fund is still labelled, tagged fundLike, so it can be compared (it is only excluded from trading)", () => {
+  const { cleanup } = setup();
+  try {
+    const shadow = require("../src/alpaca-trader/shadow");
+    shadow.resetIndex();
+    const session = { open: Date.parse("2026-11-13T14:30:00Z"), close: Date.parse("2026-11-13T21:00:00Z") };
+    const plan = { strategy: "orb15", entry: 10, stop: 9, target: 12, barAt: "2026-11-13T15:00:00.000Z" };
+    const now = Date.parse("2026-11-13T15:00:00Z");
+    assert.equal(shadow.recordSignal({ plan, symbol: "NOWL", daily: {}, rvol: 2, session, now, fundLike: true }), true);
+    assert.equal(shadow.recordSignal({ plan, symbol: "TGT", daily: {}, rvol: 2, session, now }), true);
+    const store = require("../src/autopilot/store");
+    assert.equal(store.get("alpacaTrader:shadow", "2026-11-13:NOWL:orb15")?.features.fundLike, true);
+    assert.equal(store.get("alpacaTrader:shadow", "2026-11-13:TGT:orb15")?.features.fundLike, false);
+  } finally {
+    cleanup();
+  }
+});

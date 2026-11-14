@@ -38,7 +38,7 @@ function resetIndex() {
 }
 
 // First signal per stock, strategy and day. features come from the scan: daily indicators, relative volume, session timing.
-function recordSignal({ plan, symbol, daily = {}, rvol = null, session, now }) {
+function recordSignal({ plan, symbol, daily = {}, rvol = null, session, now, fundLike = false }) {
   const date = nyDate(now);
   const id = `${date}:${symbol}:${plan.strategy}`;
   if (store.get(KIND, id)) return false;
@@ -62,6 +62,7 @@ function recordSignal({ plan, symbol, daily = {}, rvol = null, session, now }) {
       gapPct: finite(daily.gapPct) ? Number(daily.gapPct) : null,
       adv20: finite(daily.avgDollarVolume20d) ? Number(daily.avgDollarVolume20d) : null,
       minutesSinceOpen,
+      fundLike: Boolean(fundLike),
       hourNy: Number(new Date(entryAtMs).toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false })) % 24,
       aboveMa20: finite(daily.ma20) && finite(daily.price) ? daily.price > daily.ma20 : null,
       ma20AboveMa50: finite(daily.ma20) && finite(daily.ma50) ? daily.ma20 > daily.ma50 : null,
