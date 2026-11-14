@@ -5,6 +5,7 @@ const risk = require("./risk");
 const scan = require("./scan");
 const entry = require("./entry");
 const exitManager = require("./exit");
+const calendar = require("./session");
 
 const KIND = "alpacaTrader";
 const STATE_KEY = "state";
@@ -123,6 +124,7 @@ let lastExitTickAt = null; // in memory only: the exit loop runs every 30s, not 
 
 async function exitTick(now = Date.now()) {
   try {
+    await calendar.ensure(now); // real open/close of today (shortened days, holidays); never throws
     if (!broker.isConfigured() || !exitManager.inSession(now)) return [];
     lastExitTickAt = new Date(now).toISOString();
     const profile = settings.read();
@@ -140,6 +142,7 @@ async function tick(now = Date.now()) {
   if (running) return;
   running = true;
   try {
+    await calendar.ensure(now);
     const profile = settings.read();
     state({ heartbeatAt: new Date(now).toISOString(), enabled: profile.enabled });
     if (!broker.isConfigured()) {

@@ -4,9 +4,9 @@
 //
 // Known v1 simplification: relative volume is a simple same-session proxy (today's cumulative IEX volume
 // vs. the stock's own 20-day IEX average volume from universe.js, scaled by elapsed time), not the
-// calendar-exact version the main engine uses. Also no exchange holiday calendar: a non-trading day just yields a closed market and
-// an empty scan, not a crash.
-const { nyDate, nyTimestamp } = require("../autopilot/market");
+// calendar-exact version the main engine uses. Trading hours come from session.js (Alpaca's calendar: holidays and shortened days).
+const { nyTimestamp } = require("../autopilot/market");
+const calendar = require("./session");
 const history = require("../autopilot/history");
 const strategies = require("../autopilot/strategies");
 const universe = require("./universe");
@@ -16,17 +16,12 @@ const shadow = require("./shadow");
 const INTRADAY_BATCH = 20;
 
 function isMarketHours(now) {
-  const date = nyDate(now);
-  const day = new Date(now).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short" });
-  if (day === "Sat" || day === "Sun") return false;
-  const open = nyTimestamp(date, "09:30");
-  const close = nyTimestamp(date, "16:00");
-  return now >= open && now < close;
+  return calendar.inSession(now);
 }
 
 function sessionBounds(now) {
-  const date = nyDate(now);
-  return { open: nyTimestamp(date, "09:30"), close: nyTimestamp(date, "16:00") };
+  const s = calendar.sessionFor(now);
+  return { open: s.open ?? nyTimestamp(s.date, "09:30"), close: s.close ?? nyTimestamp(s.date, "16:00") };
 }
 
 function simpleRvol(bars, session, now, avgVolume20d) {

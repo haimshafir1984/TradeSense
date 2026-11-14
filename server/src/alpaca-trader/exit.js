@@ -65,18 +65,13 @@ function logExit(entry, now = Date.now()) {
   return id;
 }
 
-// Regular session only (weekdays 09:30-16:00 New York). Outside it a market order is not executed: it queues for the next
-// open. On 2026-11-09 the end-of-day close went out at 16:20 NY, sat in the queue overnight, and filled at the next open
-// after a -8..-10% gap.
-function inSession(now) {
-  const date = nyDate(now);
-  const weekday = new Date(date + "T12:00:00Z").getUTCDay();
-  return weekday >= 1 && weekday <= 5 && now >= nyTimestamp(date, "09:30") && now < nyTimestamp(date, "16:00");
-}
-
-function isPastClose(now) {
-  return now >= nyTimestamp(nyDate(now), "15:55");
-}
+// Regular session only, with the day's real hours from Alpaca's calendar (session.js): a shortened day closes at 13:00, a
+// holiday has no session. Outside it a market order is not executed: it queues for the next open. On 2026-11-09 the
+// end-of-day close went out at 16:20 NY, sat in the queue overnight, and filled at the next open after a -8..-10% gap.
+const session = require("./session");
+const inSession = (now) => session.inSession(now);
+// Five minutes before the real close (15:55 on a regular day, 12:55 on a shortened one).
+const isPastClose = (now) => session.isPastClose(now);
 
 // One pass over every open Alpaca position: close it if the stop, the target, the daily-loss breach,
 // or the end of day calls for it. Never throws; a single symbol's failure is logged and skipped.

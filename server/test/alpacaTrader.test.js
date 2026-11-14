@@ -7,7 +7,7 @@ const os = require("node:os");
 function setup() {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "tradesense-alpaca-"));
   process.env.AUTOPILOT_DB_PATH = path.join(scratch, "test.sqlite");
-  for (const m of ["store", "settings", "risk", "broker", "entry", "exit", "universe", "shadow"]) {
+  for (const m of ["store", "settings", "risk", "broker", "entry", "exit", "universe", "shadow", "session"]) {
     const file = m === "store" ? "../src/autopilot/store" : `../src/alpaca-trader/${m}`;
     delete require.cache[require.resolve(file)];
   }
@@ -184,7 +184,8 @@ test("scan: intraday bars are requested for today's session only, never the 26-d
     delete require.cache[require.resolve("../src/alpaca-trader/scan")];
     delete require.cache[require.resolve("../src/autopilot/history")];
     const history = require("../src/autopilot/history");
-    const scan = require("../src/alpaca-trader/scan");
+    delete require.cache[require.resolve("../src/alpaca-trader/scan")];
+  const scan = require("../src/alpaca-trader/scan");
     const now = Date.parse("2026-11-03T15:00:00Z"); // Tuesday 10:00 New York, inside the session
     universe.getRows = () => [{ symbol: "AAAA" }, { symbol: "BBBB" }];
     history.ensureDailyFeatures = async () => ({ features: new Map(), complete: true });
@@ -275,7 +276,8 @@ test("universe + scan: relative volume compares today's IEX volume with the stoc
     delete require.cache[require.resolve("../src/alpaca-trader/scan")];
     delete require.cache[require.resolve("../src/autopilot/history")];
     const history = require("../src/autopilot/history");
-    const scan = require("../src/alpaca-trader/scan");
+    delete require.cache[require.resolve("../src/alpaca-trader/scan")];
+  const scan = require("../src/alpaca-trader/scan");
     history.ensureDailyFeatures = async () => ({ features: new Map([["AAAA", { features: { avgVolume20d: 5_000_000 } }]]), complete: true });
     const intraday = Array.from({ length: 6 }, (_, i) => ({ t: new Date(Date.parse("2026-11-05T14:30:00Z") + i * 300000).toISOString(), o: 10, h: 10.1, l: 9.9, c: 10, v: 100 }));
     history.ensureIntradayBars = async () => ({ bars: new Map([["AAAA", intraday]]), errors: [] });
@@ -481,6 +483,7 @@ test("engine: the exit loop closes a stopped-out position by itself during the s
   process.env.ALPACA_TRADER_API_SECRET_KEY = "test";
   try {
     delete require.cache[require.resolve("../src/alpaca-trader/engine")];
+    require("../src/alpaca-trader/session").load([{ date: "2026-11-10", open: "09:30", close: "16:00" }]);
     const engine = require("../src/alpaca-trader/engine");
     exitManager.recordPlan("STOPME", { stop: 9, target: 12 }, Date.parse("2026-11-10T14:40:00Z"));
     const closed = [];
@@ -568,7 +571,8 @@ test("scan: a scan that starts a few minutes into a 5-minute window still sees t
     delete require.cache[require.resolve("../src/alpaca-trader/scan")];
     delete require.cache[require.resolve("../src/autopilot/history")];
     const history = require("../src/autopilot/history");
-    const scan = require("../src/alpaca-trader/scan");
+    delete require.cache[require.resolve("../src/alpaca-trader/scan")];
+  const scan = require("../src/alpaca-trader/scan");
     const now = Date.parse("2026-11-12T15:02:52Z"); // 10:02:52 New York: 2:52 after the 15:00 boundary
     universe.getRows = () => [{ symbol: "LATE", avgIexVolume20d: 1000 }];
     history.ensureDailyFeatures = async () => ({ features: new Map([["LATE", { features: { atr14: 1, avgVolume20d: 5_000_000, price: 10 } }]]), complete: true });
@@ -822,6 +826,72 @@ test("shadow: signals left open from an earlier day are finalised on the next ru
     assert.equal(shadow.finalizeStale(Date.parse("2026-11-13T14:40:00Z")), 1);
     assert.equal(shadow.summary(Date.parse("2026-11-13T14:40:00Z")).rows[0].eod, 1);
     assert.equal(shadow.finalizeStale(Date.parse("2026-11-13T14:45:00Z")), 0, "nothing more to do");
+  } finally {
+    cleanup();
+  }
+});
+
+test("session: shortened day (2026-11-27 closes 13:00) closes positions at 12:55 and the session ends at 13:00", () => {
+  const { exitManager, cleanup } = setup();
+  const calendar = require("../src/alpaca-trader/session");
+  try {
+    calendar.load([
+      { date: "2026-11-25", open: "09:30", close: "16:00" },
+      { date: "2026-11-27", open: "09:30", close: "13:00" },
+    ]);
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-27T17:50:00Z")), false); // 12:50 NY
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-27T17:56:00Z")), true); // 12:56 NY
+    assert.equal(exitManager.inSession(Date.parse("2026-11-27T17:59:00Z")), true); // 12:59 NY
+    assert.equal(exitManager.inSession(Date.parse("2026-11-27T18:00:00Z")), false); // 13:00 NY: closed, no order may be sent
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-25T20:56:00Z")), true, "regular day still 15:55");
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-25T20:50:00Z")), false);
+    assert.equal(calendar.sessionFor(Date.parse("2026-11-27T15:00:00Z")).early, true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("session: an exchange holiday inside the calendar range is not a trading day (2026-11-26)", () => {
+  const { exitManager, cleanup } = setup();
+  const calendar = require("../src/alpaca-trader/session");
+  try {
+    calendar.load([
+      { date: "2026-11-25", open: "09:30", close: "16:00" },
+      { date: "2026-11-27", open: "09:30", close: "13:00" },
+    ]);
+    assert.equal(exitManager.inSession(Date.parse("2026-11-26T15:00:00Z")), false);
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-26T21:00:00Z")), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("session: calendar unavailable falls back to the regular 09:30-16:00 weekday hours", async () => {
+  const { exitManager, cleanup } = setup();
+  const calendar = require("../src/alpaca-trader/session");
+  try {
+    calendar.reset();
+    assert.equal(calendar.sessionFor(Date.parse("2026-11-09T15:00:00Z")).source, "fallback");
+    assert.equal(exitManager.inSession(Date.parse("2026-11-09T20:59:00Z")), true);
+    assert.equal(exitManager.inSession(Date.parse("2026-11-09T21:00:00Z")), false);
+    assert.equal(exitManager.inSession(Date.parse("2026-11-07T16:00:00Z")), false, "Saturday");
+    assert.equal(exitManager.isPastClose(Date.parse("2026-11-09T20:56:00Z")), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("session: scan bounds and shadow finalisation follow the shortened close", () => {
+  const { cleanup } = setup();
+  const calendar = require("../src/alpaca-trader/session");
+  delete require.cache[require.resolve("../src/alpaca-trader/scan")];
+  const scan = require("../src/alpaca-trader/scan");
+  try {
+    calendar.load([{ date: "2026-11-27", open: "09:30", close: "13:00" }]);
+    const bounds = scan.sessionBounds(Date.parse("2026-11-27T15:00:00Z"));
+    assert.equal(bounds.close - bounds.open, 3.5 * 3600000);
+    assert.equal(scan.isMarketHours(Date.parse("2026-11-27T18:30:00Z")), false);
+    assert.equal(scan.isMarketHours(Date.parse("2026-11-27T17:30:00Z")), true);
   } finally {
     cleanup();
   }

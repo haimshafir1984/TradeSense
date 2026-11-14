@@ -5,6 +5,7 @@
 // conditions that work (or do not) can be analysed later. Read-only with respect to trading: nothing here places an order.
 const store = require("../autopilot/store");
 const { nyDate, nyTimestamp } = require("../autopilot/market");
+const calendar = require("./session");
 
 const KIND = "alpacaTrader:shadow";
 const K_DAILY = "alpacaTrader:shadowDaily"; // date -> per-strategy aggregates of the signals resolved that day
@@ -138,7 +139,8 @@ const doneDates = new Set();
 
 function finalizeStale(now) {
   const today = nyDate(now);
-  const afterClose = now >= nyTimestamp(today, "16:00");
+  const day = calendar.sessionFor(now);
+  const afterClose = now >= (day.tradingDay ? day.close : nyTimestamp(today, "16:00"));
   let finalized = 0;
   const finish = (id) => {
     const rec = store.get(KIND, id);
