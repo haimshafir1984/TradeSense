@@ -10,12 +10,19 @@ const calendar = require("./session");
 const KIND = "alpacaTrader:shadow";
 const K_DAILY = "alpacaTrader:shadowDaily"; // date -> per-strategy aggregates of the signals resolved that day
 const BAR_MS = 300000;
-const KEEP_DAYS = 60;
+// Kept long enough for the statistical protocol (15-20+ trading days, then more). Override with ALPACA_SHADOW_KEEP_DAYS.
+const KEEP_DAYS = Number(process.env.ALPACA_SHADOW_KEEP_DAYS || 120);
 const CHECKPOINTS = [30, 60, 120]; // minutes after the entry candle: the R reached at that time
 
 // Open records of the current day by symbol, so the scan does not list the whole table for every stock.
 let openIndex = { date: null, bySymbol: new Map() };
 let lastPrunedDate = null;
+
+// Day-long price path of every signal, kept IN MEMORY while the day runs and written to the record ONCE at the end of the day
+// (a write per scan would add fsyncs to the single SQLite writer). It keeps following the price after the stop or the target
+// was hit, so that a wider stop / different target can be replayed later. A restart mid-day loses the path of that day only.
+const tails = new Map(); // id -> { date, symbol, entry, risk, entryAtMs, processedUntil, pathR: [], dayMfeR, dayMaeR, closeR, nextOpenR }
+const tailsBySymbol = new Map(); // symbol -> Set of ids
 
 const finite = (v) => Number.isFinite(Number(v));
 
@@ -38,7 +45,7 @@ function resetIndex() {
 }
 
 // First signal per stock, strategy and day. features come from the scan: daily indicators, relative volume, session timing.
-function recordSignal({ plan, symbol, daily = {}, rvol = null, session, now, fundLike = false }) {
+function recordSignal({ plan, symbol, daily = {}, rvol = null, session, now, fundLike = false, universeRank = null, plansThisBar = null }) {
   const date = nyDate(now);
   const id = `${date}:${symbol}:${plan.strategy}`;
   if (store.get(KIND, id)) return false;
@@ -63,12 +70,16 @@ function recordSignal({ plan, symbol, daily = {}, rvol = null, session, now, fun
       adv20: finite(daily.avgDollarVolume20d) ? Number(daily.avgDollarVolume20d) : null,
       minutesSinceOpen,
       fundLike: Boolean(fundLike),
+      universeRank: finite(universeRank) ? Number(universeRank) : null, // position in the day's ranked universe
+      plansThisBar: finite(plansThisBar) ? Number(plansThisBar) : null, // strategies that matched this stock on the same bar
       hourNy: Number(new Date(entryAtMs).toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false })) % 24,
       aboveMa20: finite(daily.ma20) && finite(daily.price) ? daily.price > daily.ma20 : null,
       ma20AboveMa50: finite(daily.ma20) && finite(daily.ma50) ? daily.ma20 > daily.ma50 : null,
     },
   };
   store.put(KIND, id, rec);
+  tails.set(id, { date, symbol, entry, risk, entryAtMs, processedUntil: entryAtMs, pathR: [], dayMfeR: 0, dayMaeR: 0, closeR: null, nextOpenR: null });
+  (tailsBySymbol.get(symbol) || tailsBySymbol.set(symbol, new Set()).get(symbol)).add(id);
   const index = loadIndex(date);
   (index.bySymbol.get(symbol) || index.bySymbol.set(symbol, new Set()).get(symbol)).add(id);
   return true;
@@ -92,14 +103,68 @@ function resolve(rec, result, resultR) {
   bump(rec.date, rec);
 }
 
+function followTails(symbol, closed) {
+  for (const id of tailsBySymbol.get(symbol) || []) {
+    const tail = tails.get(id);
+    if (!tail) continue;
+    for (const bar of closed) {
+      const start = Date.parse(bar.t);
+      if (start < tail.processedUntil) continue;
+      if (tail.nextOpenR === null) tail.nextOpenR = (Number(bar.o) - tail.entry) / tail.risk; // a realistic entry: the next candle's open
+      tail.dayMfeR = Math.max(tail.dayMfeR, (Number(bar.h) - tail.entry) / tail.risk);
+      tail.dayMaeR = Math.max(tail.dayMaeR, (tail.entry - Number(bar.l)) / tail.risk);
+      tail.closeR = (Number(bar.c) - tail.entry) / tail.risk;
+      tail.pathR.push(Number(tail.closeR.toFixed(2)));
+      tail.processedUntil = start + BAR_MS;
+    }
+  }
+}
+
+// Write the day-long path of finished days (or of today, after the close) onto the records, once.
+function flushTails(today, afterClose) {
+  let written = 0;
+  for (const [id, tail] of [...tails]) {
+    if (!(tail.date < today || (tail.date === today && afterClose))) continue;
+    const rec = store.get(KIND, id);
+    if (rec) {
+      rec.dayMfeR = tail.dayMfeR;
+      rec.dayMaeR = tail.dayMaeR;
+      rec.dayCloseR = tail.closeR;
+      rec.nextOpenR = tail.nextOpenR;
+      rec.pathR = tail.pathR;
+      store.put(KIND, id, rec);
+      written += 1;
+    }
+    tails.delete(id);
+    tailsBySymbol.get(tail.symbol)?.delete(id);
+  }
+  return written;
+}
+
+// What the engine decided about this stock's signals (bought or why not), written by entry.js: not reconstructable later.
+function annotate(symbol, strategies, now, info) {
+  const date = nyDate(now);
+  for (const strategy of strategies || []) {
+    const id = `${date}:${symbol}:${strategy}`;
+    const rec = store.get(KIND, id);
+    if (!rec) continue;
+    rec.decisionOutcome = info.outcome || null;
+    rec.decisionReason = info.reason || null;
+    rec.decisionScore = finite(info.score) ? Number(info.score) : null;
+    rec.decidedAt = new Date(now).toISOString();
+    store.put(KIND, id, rec);
+  }
+}
+
 // Feed the closed 5-minute candles of one stock. `now` is the scan time; only candles closed by then are used.
 function update(symbol, bars, now) {
   const date = nyDate(now);
-  const ids = loadIndex(date).bySymbol.get(symbol);
-  if (!ids?.size) return 0;
   const closed = (bars || [])
     .filter((b) => Date.parse(b.t) + BAR_MS <= now && [b.o, b.h, b.l, b.c].every((v) => Number.isFinite(Number(v))))
     .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+  followTails(symbol, closed);
+  const ids = loadIndex(date).bySymbol.get(symbol);
+  if (!ids?.size) return 0;
   let changed = 0;
   for (const id of [...ids]) {
     const rec = store.get(KIND, id);
@@ -157,6 +222,7 @@ function finalizeStale(now) {
     for (const id of ids) if (id.startsWith(`${date}:`)) finish(id);
     doneDates.add(date);
   }
+  flushTails(today, afterClose);
   if (afterClose && !doneDates.has(today)) {
     const index = loadIndex(today);
     for (const symbolIds of index.bySymbol.values()) {
@@ -203,7 +269,7 @@ function summary(now = Date.now(), days = 30) {
   return { days, rows, openToday, totalResolved: rows.reduce((sum, r) => sum + r.resolved, 0) };
 }
 
-const CSV_COLUMNS = ["date", "symbol", "strategy", "status", "result", "resultR", "mfeR", "maeR", "r30", "r60", "r120", "entry", "stop", "target", "riskPct", "targetR", "rvol", "atrPct", "gapPct", "adv20", "minutesSinceOpen", "hourNy", "aboveMa20", "ma20AboveMa50"];
+const CSV_COLUMNS = ["date", "symbol", "strategy", "status", "result", "resultR", "mfeR", "maeR", "r30", "r60", "r120", "entry", "stop", "target", "riskPct", "targetR", "rvol", "atrPct", "gapPct", "adv20", "minutesSinceOpen", "hourNy", "aboveMa20", "ma20AboveMa50", "fundLike", "universeRank", "plansThisBar", "decisionOutcome", "decisionReason", "decisionScore", "decidedAt", "dayMfeR", "dayMaeR", "dayCloseR", "nextOpenR", "pathR"];
 
 function toCsv(now = Date.now(), days = 60) {
   const since = nyDate(now - days * 86400000);
@@ -213,9 +279,9 @@ function toCsv(now = Date.now(), days = 60) {
     const rec = store.get(KIND, id);
     if (!rec) continue;
     const flat = { ...rec, ...rec.features };
-    rows.push(CSV_COLUMNS.map((c) => (flat[c] === undefined || flat[c] === null ? "" : typeof flat[c] === "number" ? Number(flat[c].toFixed(4)) : String(flat[c]))).join(","));
+    rows.push(CSV_COLUMNS.map((c) => (flat[c] === undefined || flat[c] === null ? "" : Array.isArray(flat[c]) ? flat[c].join(" ") : typeof flat[c] === "number" ? Number(flat[c].toFixed(4)) : String(flat[c]))).join(","));
   }
   return rows.join("\n");
 }
 
-module.exports = { recordSignal, update, finalizeStale, summary, toCsv, resetIndex };
+module.exports = { recordSignal, annotate, update, finalizeStale, summary, toCsv, resetIndex };

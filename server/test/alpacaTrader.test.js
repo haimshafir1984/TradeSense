@@ -926,3 +926,40 @@ test("shadow: a signal on a fund is still labelled, tagged fundLike, so it can b
     cleanup();
   }
 });
+
+test("shadow: the day-long path keeps going after the stop, is written once at the close, and the engine decision is annotated", () => {
+  const { cleanup } = setup();
+  try {
+    const shadow = require("../src/alpaca-trader/shadow");
+    const store = require("../src/autopilot/store");
+    shadow.resetIndex();
+    const calendar = require("../src/alpaca-trader/session");
+    calendar.load([{ date: "2026-11-13", open: "09:30", close: "16:00" }]);
+    const session = { open: Date.parse("2026-11-13T14:30:00Z"), close: Date.parse("2026-11-13T21:00:00Z") };
+    const plan = { strategy: "orb15", entry: 10, stop: 9, target: 12, barAt: "2026-11-13T15:00:00.000Z" };
+    shadow.recordSignal({ plan, symbol: "PATH", daily: {}, rvol: 2, session, now: Date.parse("2026-11-13T15:00:00Z"), universeRank: 7, plansThisBar: 2 });
+    shadow.annotate("PATH", ["orb15"], Date.parse("2026-11-13T15:05:00Z"), { outcome: "skipped", reason: "price_too_far", score: 55 });
+    const candle = (hhmm, o, h, l, c) => ({ t: `2026-11-13T${hhmm}:00Z`, o, h, l, c, v: 1000 });
+    // 15:05 candle hits the stop (low 8.9); the price then recovers to 11.5 by the close.
+    shadow.update("PATH", [candle("15:05", 10.1, 10.2, 8.9, 9.2)], Date.parse("2026-11-13T15:10:00Z"));
+    shadow.update("PATH", [candle("15:05", 10.1, 10.2, 8.9, 9.2), candle("15:10", 9.3, 11.6, 9.3, 11.5)], Date.parse("2026-11-13T15:15:00Z"));
+    const id = "2026-11-13:PATH:orb15";
+    assert.equal(store.get("alpacaTrader:shadow", id).status, "resolved");
+    assert.equal(store.get("alpacaTrader:shadow", id).pathR, undefined, "nothing written to the path before the close");
+    shadow.finalizeStale(Date.parse("2026-11-13T21:01:00Z"));
+    const rec = store.get("alpacaTrader:shadow", id);
+    assert.equal(rec.result, "stop");
+    assert.deepEqual(rec.pathR, [-0.8, 1.5]);
+    assert.ok(Math.abs(rec.dayMfeR - 1.6) < 1e-9);
+    assert.ok(Math.abs(rec.dayMaeR - 1.1) < 1e-9);
+    assert.ok(Math.abs(rec.dayCloseR - 1.5) < 1e-9);
+    assert.ok(Math.abs(rec.nextOpenR - 0.1) < 1e-9);
+    assert.equal(rec.decisionReason, "price_too_far");
+    assert.equal(rec.features.universeRank, 7);
+    const csv = shadow.toCsv(Date.parse("2026-11-13T21:05:00Z"));
+    assert.match(csv.split(String.fromCharCode(10))[0], /decisionReason.*pathR/);
+    assert.match(csv, /-0.8 1.5/);
+  } finally {
+    cleanup();
+  }
+});

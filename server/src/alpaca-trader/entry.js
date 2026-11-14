@@ -28,6 +28,11 @@ function putBox(symbol, now, value) {
 function record(entry, now) {
   const id = `${new Date(now).toISOString()}:${entry.symbol}`;
   store.put(K_LOG, id, { id, at: new Date(now).toISOString(), ...entry });
+  try {
+    if (entry.symbol && (entry.outcome === "entered" || entry.outcome === "skipped")) require("./shadow").annotate(entry.symbol, entry.strategies, now, { outcome: entry.outcome, reason: entry.reason, score: entry.score });
+  } catch {
+    // learning data only
+  }
   const ids = store.listIds(K_LOG).sort();
   for (const old of ids.slice(0, Math.max(0, ids.length - MAX_LOG))) store.remove(K_LOG, old);
   return id;
