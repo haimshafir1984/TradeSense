@@ -1,0 +1,13 @@
+{
+  "development": {
+    "stockDays": 968,
+    "offeringEvents": 8,
+    "dates": 481,
+    "meanOffering": -0.029814745405919926,
+    "meanNoOffering": 0.0012272387010347926,
+    "diff": -0.031041984106954718,
+    "p": 0.238,
+    "enough": false,
+    "diffOk": true
+  }
+}

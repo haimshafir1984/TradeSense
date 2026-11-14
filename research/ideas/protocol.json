@@ -1,0 +1,196 @@
+{
+  "id": "ideas-2",
+  "title": "Six preregistered tests of the external advisors ideas of 2026-11-14 (Codex 1, 3, 4 / Fable 1a, 3, 4), long-only",
+  "createdBeforeOutcomeAnalysis": true,
+  "motivation": "docs/ALPACA_UPGRADE_PLAN_2026-11-14.md and the chat of 2026-11-14. Every idea is a hypothesis, none is proven. eod-1 (SPY first/last 30 minutes) already FAILED and is reported separately. A failure here is reported as a failure.",
+  "notTested": {
+    "closingAuctionImbalance": "needs Nasdaq closing-cross imbalance data, which we do not have",
+    "absorptionPattern": "no tight definition exists: any definition written now would be tuned later; the proxy would be candle volume only, which cannot show who bought",
+    "unmeasurableHere": "bought dips with real fills: candles cannot say whether a limit order fills. HD tests an OPTIMISTIC bound only"
+  },
+  "common": {
+    "data": "Alpaca historical bars, feed=iex, 5Min, adjustment=split; daily bars feed=sip. IEX is a few percent of volume: prices are used, volumes only inside the news/ratio proxies named below. IEX 5-minute history starts 2020-07-27.",
+    "universeU": "From research/v6/data (302 hash-sampled current NASDAQ/NYSE common stocks with SIP daily bars). As of the LAST trading day of 2020 (no later data used): last close >= 5, 20-day average dollar volume (SIP) between 3,000,000 and 150,000,000, then the 100 with the highest 20-day average (high-low)/close (the live system's own ranking rule). Survivorship accepted: current listings only.",
+    "periods": {
+      "development": [
+        "2020-08-01",
+        "2023-12-31"
+      ],
+      "validation": [
+        "2024-01-01",
+        "2024-12-31"
+      ],
+      "lockedNotFetched": [
+        "2025-01-01",
+        "2026-11-13"
+      ]
+    },
+    "bars": "bar index i = 0 is the 09:30 candle, i = 77 the 15:55 candle (New York time). Only these 78 candles are used. A missing candle is forward-filled within the session (see amendments); a stock-day needs >= 25 real candles. A needed price that is still unavailable makes the event unformed (counted as censored).",
+    "usableCloses": "c[i] = close of candle i, o[i] = open, l[i] = low",
+    "beta": "per stock and day, from the previous 10 sessions (need >= 8): 5-minute log returns of the stock and of SPY on candles where both exist consecutively; beta = cov/var clipped to [0.3, 3]",
+    "z": "residual of a 12-candle window = r_stock - beta * r_SPY where r = c[t]/c[t-12]-1. sd = standard deviation of the same residual over non-overlapping 12-candle windows of the previous 10 sessions (need >= 40 windows). z = residual / sd.",
+    "unit": "first event per stock per day. Events on the same day are one market situation, so inference aggregates by DATE",
+    "inference": "per hypothesis the statistic is the unweighted mean over event dates of that date's mean net excess. One-sided p-value = share of 2000 circular block-bootstrap resamples (20-date blocks over the sorted event dates, seeded from the id) whose statistic <= 0. Holm correction over the 6 hypotheses on development p-values, alpha 0.05.",
+    "gateCommon": "pass only if ALL: events and event-dates at least the minimum named in the hypothesis; mean net excess > 0; Holm-adjusted p < 0.05; among calendar years with >= 8 event dates, at most one is negative (for HE, the two half-year buckets of its period instead of calendar years). Validation (2024) is opened only for a passing hypothesis and needs: >= 30 events, mean net excess > 0.",
+    "prohibited": "changing any threshold, window, cost or control after seeing any result; opening validation early; adding hypotheses to rescue a failure; touching 2025-2026"
+  },
+  "hypotheses": {
+    "HA": {
+      "from": "Codex idea 1: the stock that refuses to fall while the market falls, bought once the market steadies",
+      "event": "candle t in 12..60 (10:30..14:30). SPY r over the window <= -0.5% AND the lowest low of SPY over candles t-11..t occurred at candle <= t-3 (no new low in the last 3 candles, i.e. steadied). Stock: r over the window >= 0 AND z >= 1.0.",
+      "entry": "open of candle t+2 (one candle of delay)",
+      "exit": "close of candle t+13 (60 minutes)",
+      "control": "same date, same t, other stocks of U with beta within +-0.3 of the event stock's beta and r over the window < 0 and |z| <= 1 (they fell as expected). Need >= 3. Control forward return = same entry/exit candles.",
+      "excess": "stock forward return - cost - mean(control forward return)",
+      "costRoundTripPct": 0.3,
+      "minEvents": 150,
+      "minEventDates": 40
+    },
+    "HB": {
+      "from": "Codex idea 4: a stock that fell far more than the market explains, bought once it stops falling",
+      "event": "candle t in 12..60. z <= -2.0 AND r over the window <= -0.5% AND the stock's own lowest low over t-11..t occurred at candle <= t-3. Excluded: stock-days where |open of candle 0 / previous close - 1| >= 4% (a news/earnings proxy; we have no earnings calendar).",
+      "entry": "open of candle t+2",
+      "exit": "close of candle t+13",
+      "control": "same date, same t, other U stocks with beta within +-0.3, |z| <= 1, same exclusion. Need >= 3.",
+      "excess": "stock forward return - cost - mean(control forward return)",
+      "costRoundTripPct": 0.3,
+      "minEvents": 150,
+      "minEventDates": 40
+    },
+    "HD": {
+      "from": "Fable idea 4: wait with a low limit order instead of chasing (OPTIMISTIC bound: a fill is assumed whenever a candle trades through the limit)",
+      "event": "decision at the close of candle 5 (10:00). limit = c[5] * (1 - 1.5 * sd30) where sd30 = standard deviation of 6-candle returns over the previous 10 sessions. The order lives for candles 6..11 (30 minutes). It fills at the limit price if low[i] < limit * (1 - 0.0005) for some i in 6..11 (the first such i); no partial fills, no queue.",
+      "exit": "close of candle fill+12, capped at candle 77",
+      "excess": "exit / limit - 1 - cost. There is no matched control: the question is only whether even an optimistic fill model earns a positive net return. A positive result would NOT be trusted without a realistic fill model (adverse selection); a negative result is conclusive.",
+      "costRoundTripPct": 0.3,
+      "minEvents": 300,
+      "minEventDates": 100
+    },
+    "HE": {
+      "from": "Fable idea 1a: forced end-of-day buying by leveraged single-stock ETFs, ridden through the base stock",
+      "period": {
+        "development": [
+          "2023-01-01",
+          "2024-06-30"
+        ],
+        "validation": [
+          "2024-07-01",
+          "2024-12-31"
+        ],
+        "why": "most such ETFs list from 2022-2025, so the common development period has almost none"
+      },
+      "etfPairs": "assets.json names containing a leverage factor 2X/3X (any case) and a Long/Bull/Short/Bear marker; the base is the first uppercase token of 1-5 letters after that marker that is an active symbol. Inverse funds are included (their rebalancing is also in the direction of the day's move). Pairs that cannot be parsed are dropped and counted.",
+      "rho": "rho(day) = (sum over the base's ETFs of their 20-day mean SIP dollar volume up to the previous day) / (base 20-day mean SIP dollar volume up to the previous day). A proxy for forced flow because fund size (AUM) is not available.",
+      "event": "base stock whose return from the previous close to the close of candle 65 (15:00) is >= +3%. Treated = rho in the top third of the development events; controls = same date, same condition, stocks of U with NO leveraged ETF. Need >= 2 controls.",
+      "entry": "open of candle 66 (15:00)",
+      "exit": "close of candle 77 (15:55)",
+      "excess": "base forward return - cost - mean(control forward return)",
+      "costRoundTripPct": 0.1,
+      "minEvents": 60,
+      "minEventDates": 25
+    },
+    "HF": {
+      "from": "Codex idea 3: a sector leader moves and a related laggard has not yet",
+      "groups": {
+        "semis": [
+          "NVDA",
+          [
+            "AMD",
+            "AVGO",
+            "MU",
+            "MRVL",
+            "AMAT",
+            "LRCX"
+          ]
+        ],
+        "ev": [
+          "TSLA",
+          [
+            "NIO",
+            "RIVN",
+            "F",
+            "GM"
+          ]
+        ],
+        "crypto": [
+          "COIN",
+          [
+            "MARA",
+            "RIOT",
+            "MSTR"
+          ]
+        ],
+        "oil": [
+          "XOM",
+          [
+            "CVX",
+            "COP",
+            "OXY",
+            "SLB"
+          ]
+        ],
+        "banks": [
+          "JPM",
+          [
+            "BAC",
+            "C",
+            "WFC",
+            "GS"
+          ]
+        ],
+        "airlines": [
+          "DAL",
+          [
+            "UAL",
+            "AAL",
+            "LUV"
+          ]
+        ]
+      },
+      "event": "candle t in 6..64. Leader: (6-candle return) - (SPY 6-candle return) >= +2.0%. Follower: (its own 6-candle return) - (SPY 6-candle return) <= +0.5%.",
+      "entry": "open of candle t+2 (one full candle late, so a speed advantage of seconds cannot be assumed)",
+      "exit": "close of candle t+8 (30 minutes)",
+      "control": "same date, same t: mean forward return of all stocks of U (a market baseline)",
+      "excess": "follower forward return - cost - control mean",
+      "costRoundTripPct": 0.2,
+      "minEvents": 100,
+      "minEventDates": 40
+    },
+    "HC": {
+      "from": "Fable idea 3: an offering / dilution headline on a stock that has already jumped (the live system has no news input)",
+      "universe": "stock-days of U where c[5] (10:00) / previous close - 1 >= +5%",
+      "newsSource": "Alpaca news API (Benzinga), headlines published between 16:00 New York of the previous day and 10:00 of the day",
+      "offeringKeywords": [
+        "offering",
+        "public offering",
+        "registered direct",
+        "at-the-market",
+        "at the market",
+        "ATM program",
+        "shelf",
+        "dilut",
+        "private placement",
+        "convertible",
+        "priced"
+      ],
+      "outcome": "forward return from the open of candle 7 (10:05) to the close of candle 77",
+      "statistic": "mean(outcome | offering headline) - mean(outcome | no offering headline), aggregated by date; hypothesis is that the offering group is WORSE",
+      "passes": "mean difference <= -0.5 percentage points AND Holm-adjusted one-sided p < 0.05 for 'difference < 0' (bootstrap by date) AND at least 30 offering events. It is a FILTER idea: it trades nothing by itself.",
+      "costRoundTripPct": 0,
+      "minEvents": 30,
+      "minEventDates": 20
+    }
+  },
+  "statusRule": "A pass means only 'worth a registered next step'. Nothing here changes trading.",
+  "amendments": [
+    {
+      "at": "2026-11-14T08:53:38.219Z",
+      "reason": "Found while downloading, BEFORE any return was computed: IEX candle coverage of the universe is only about half of all 5-minute candles (about 860 of 1,640 per stock-month); SPY is complete. Requiring every needed candle to exist would leave almost no events and every test would fail on power, not on substance.",
+      "changes": [
+        "common.bars: a missing candle is forward-filled inside the same session (open=high=low=close=the previous available close; a candle before the first trade of the day is unavailable). A stock-day needs at least 25 real candles in the session to be usable. Nothing else changes: thresholds, windows, costs, controls and gates are untouched.",
+        "Consequence stated up front: prices are IEX last-trade prices and can be stale, so entry/exit fills in thin names are optimistic."
+      ],
+      "previousSha256": "c99d6bcfaeb05e97a409647e8fa4c230f9ddfcfcd5e2f34f0d67ddc94d94bb48"
+    }
+  ]
+}

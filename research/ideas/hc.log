@@ -1,0 +1,8 @@
+candidates (jump >= 5% by 10:00): 1240
+news fetched 200
+news fetched 400
+news fetched 600
+news fetched 800
+news fetched 1000
+news fetched 1200
+hc failed: Cannot read properties of undefined (reading 'development')

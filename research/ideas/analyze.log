@@ -1,0 +1,12 @@
+symbols 179, SPY sessions 1115
+HA dev: events 1033 on 160 dates (censored 127); mean net excess -0.233% (event-level -0.234%); p 1.0000; years 2020:-0.283%/18d 2021:-0.238%/28d 2022:-0.215%/92d 2023:-0.257%/22d  [0s]
+HB dev: events 4223 on 827 dates (censored 644); mean net excess -0.282% (event-level -0.282%); p 1.0000; years 2020:-0.367%/99d 2021:-0.279%/244d 2022:-0.223%/248d 2023:-0.309%/236d  [2s]
+HD dev: events 6048 on 828 dates (censored 0); mean net excess -0.510% (event-level -0.541%); p 1.0000; years 2020:-0.455%/99d 2021:-0.533%/247d 2022:-0.493%/245d 2023:-0.526%/237d  [0s]
+HE dev: events 115 on 96 dates (censored 3579); mean net excess 0.009% (event-level -0.012%); p 0.4580; years 2023:-0.110%/45d 2024:0.115%/51d  [0s]
+HF dev: events 1008 on 377 dates (censored 0); mean net excess -0.323% (event-level -0.239%); p 1.0000; years 2020:-0.408%/41d 2021:-0.130%/82d 2022:-0.406%/139d 2023:-0.330%/115d  [0s]
+HA: gate FAIL (enough true, mean>0 false, Holm p 1.0000, negative years 4)
+HB: gate FAIL (enough true, mean>0 false, Holm p 1.0000, negative years 4)
+HD: gate FAIL (enough true, mean>0 false, Holm p 1.0000, negative years 4)
+HE: gate FAIL (enough true, mean>0 true, Holm p 1.0000, negative years 1)
+HF: gate FAIL (enough true, mean>0 false, Holm p 1.0000, negative years 4)
+HC: pending (news test not run yet)

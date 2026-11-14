@@ -1,0 +1,189 @@
+{
+  "protocolSha256": "32c4db1858fcc11d2505645a49ee6423a4049c4fdc241b3611a87763822beb3e",
+  "development": {
+    "HA": {
+      "events": 1033,
+      "eventDates": 160,
+      "meanNetExcess": -0.0023272187405801,
+      "meanEventLevel": -0.002337295315333666,
+      "p": 1,
+      "years": [
+        {
+          "year": "2020",
+          "dates": 18,
+          "mean": -0.0028333789044525538
+        },
+        {
+          "year": "2021",
+          "dates": 28,
+          "mean": -0.0023796557918126754
+        },
+        {
+          "year": "2022",
+          "dates": 92,
+          "mean": -0.002154174108171858
+        },
+        {
+          "year": "2023",
+          "dates": 22,
+          "mean": -0.0025699908222774474
+        }
+      ],
+      "negativeYears": 4,
+      "enough": true,
+      "censored": 127,
+      "extra": {},
+      "holmP": 1,
+      "pass": false
+    },
+    "HB": {
+      "events": 4223,
+      "eventDates": 827,
+      "meanNetExcess": -0.002815152345900594,
+      "meanEventLevel": -0.0028249300393271893,
+      "p": 1,
+      "years": [
+        {
+          "year": "2020",
+          "dates": 99,
+          "mean": -0.0036679090772282087
+        },
+        {
+          "year": "2021",
+          "dates": 244,
+          "mean": -0.002791508725120231
+        },
+        {
+          "year": "2022",
+          "dates": 248,
+          "mean": -0.002234491952968942
+        },
+        {
+          "year": "2023",
+          "dates": 236,
+          "mean": -0.003092058720968488
+        }
+      ],
+      "negativeYears": 4,
+      "enough": true,
+      "censored": 644,
+      "extra": {},
+      "holmP": 1,
+      "pass": false
+    },
+    "HD": {
+      "events": 6048,
+      "eventDates": 828,
+      "meanNetExcess": -0.005099723966413845,
+      "meanEventLevel": -0.005407446848820309,
+      "p": 1,
+      "years": [
+        {
+          "year": "2020",
+          "dates": 99,
+          "mean": -0.004548300259677831
+        },
+        {
+          "year": "2021",
+          "dates": 247,
+          "mean": -0.005333269517946508
+        },
+        {
+          "year": "2022",
+          "dates": 245,
+          "mean": -0.004929332975978332
+        },
+        {
+          "year": "2023",
+          "dates": 237,
+          "mean": -0.005262808305633255
+        }
+      ],
+      "negativeYears": 4,
+      "enough": true,
+      "censored": 0,
+      "extra": {
+        "decisions": 30483
+      },
+      "holmP": 1,
+      "pass": false
+    },
+    "HE": {
+      "events": 115,
+      "eventDates": 96,
+      "meanNetExcess": 0.00009384262676968521,
+      "meanEventLevel": -0.00012403861683463733,
+      "p": 0.458,
+      "years": [
+        {
+          "year": "2023",
+          "dates": 45,
+          "mean": -0.0011036764545106106
+        },
+        {
+          "year": "2024",
+          "dates": 51,
+          "mean": 0.0011504771102522993
+        }
+      ],
+      "negativeYears": 1,
+      "enough": true,
+      "censored": 3579,
+      "extra": {
+        "candidates": 343,
+        "cutoff": 0.0031578130836256283
+      },
+      "holmP": 1,
+      "pass": false
+    },
+    "HF": {
+      "events": 1008,
+      "eventDates": 377,
+      "meanNetExcess": -0.003230971955437081,
+      "meanEventLevel": -0.002392031919099033,
+      "p": 1,
+      "years": [
+        {
+          "year": "2020",
+          "dates": 41,
+          "mean": -0.004075941053834557
+        },
+        {
+          "year": "2021",
+          "dates": 82,
+          "mean": -0.001303948517632157
+        },
+        {
+          "year": "2022",
+          "dates": 139,
+          "mean": -0.004062072267977247
+        },
+        {
+          "year": "2023",
+          "dates": 115,
+          "mean": -0.0032992262634599034
+        }
+      ],
+      "negativeYears": 4,
+      "enough": true,
+      "censored": 0,
+      "extra": {},
+      "holmP": 1,
+      "pass": false
+    },
+    "HC": {
+      "stockDays": 968,
+      "offeringEvents": 8,
+      "dates": 481,
+      "meanOffering": -0.029814745405919926,
+      "meanNoOffering": 0.0012272387010347926,
+      "diff": -0.031041984106954718,
+      "p": 0.238,
+      "enough": false,
+      "diffOk": true,
+      "holmP": 1,
+      "pass": false
+    }
+  },
+  "validation": {}
+}
