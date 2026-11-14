@@ -25,7 +25,6 @@ const DEFAULTS = Object.freeze({
   dailyLossPct: 7,
   minPrice: 3,
   minAdv20: 3_000_000,
-  // Break-even trailing stop: once a position is up breakEvenAtR times its initial risk, the stop moves up to the entry price.
   // Entry: a marketable limit order (immediate-or-cancel) priced at most maxSlippagePct above the signal price. If the price
   // has already run further, nothing is bought (logged as price_too_far). Measured fills were +0.9% on average and +4% on some.
   limitEntryEnabled: true,
@@ -36,6 +35,7 @@ const DEFAULTS = Object.freeze({
   riskPerTradePct: 0.75,
   maxPositionPct: 15,
   maxOpenPositions: 5,
+  // Break-even trailing stop: once a position is up breakEvenAtR times its initial risk, the stop moves up to the entry price.
   trailingStopEnabled: true,
   breakEvenAtR: 1,
   // At the target (2R) sell partialPct % of the shares; the rest has no fixed target: its stop is raised to lock

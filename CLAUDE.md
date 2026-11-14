@@ -1,79 +1,88 @@
 # CLAUDE.md
 
-מסמך התמצאות לתחילת שיחה חדשה של Claude Code בפרויקט הזה. עודכן ב-28.10.2026. המסמך המלא והמפורט: [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — לקרוא אותו לפני כל שינוי בלוגיקת ביצוע או סיכון.
+מסמך התמצאות לתחילת שיחה חדשה של Claude Code בפרויקט הזה. עודכן ב-14.11.2026. המסמך המלא והמפורט: [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — לקרוא אותו לפני כל שינוי בלוגיקת ביצוע או סיכון. החלק של Alpaca: [docs/ALPACA_TRADER.md](docs/ALPACA_TRADER.md).
 
 ## כללי ברזל (הוראות המשתמש, מחייבות)
 
-- **אסור** לבצע מסחר בחשבון אמיתי, לפרוס את המערכת מרחוק, או לפגוע באפליקציה הקיימת של האח.
-- **אין לשנות הגדרות מסחר** (ערכי כניסה, סיכון, גודל פוזיציה, מצב ביצוע) **ולא להפעיל ביצוע פקודות** בלי אישור מפורש של המשתמש באותה שיחה.
-- המערכת רצה **בדמו בלבד**: חשבון Colmex MT4 דמו `102992`. הקוד דוחה כל חשבון שאינו מזוהה כדמו.
-- לא לבצע `git push` ולא לפרוס: המשתמש עושה בעצמו `Sync Changes` ב-VS Code, ו-Dokploy עושה deploy אוטומטי מ-`main`. מותר commit מקומי.
-- לא לחשוף ערכי `.env` / מפתחות / `EXECUTION_AGENT_TOKEN` בצ'אט או בלוגים.
+- **אסור** לבצע מסחר בחשבון אמיתי, לפרוס את המערכת מרחוק (`Deploy` ב-Dokploy רק על ידי המשתמש), או לפגוע באפליקציה הקיימת של האח ובמערכות האחרות על אותו שרת (FlowsBiz: שירותים ששמם מתחיל ב-`client-`, `flowsbiz-admin`, `dokploy`, `dokploy-traefik`).
+- **אין לשנות הגדרות מסחר** (ערכי כניסה, סיכון, גודל פוזיציה, מצב ביצוע, בשתי הזרועות) **ולא להפעיל ביצוע פקודות** בלי אישור מפורש של המשתמש באותה שיחה. גם שינוי התנהגות של כניסה/יציאה דורש אישור מפורש.
+- המערכת רצה **בדמו בלבד**: Colmex MT4 דמו `102992`, ו-Alpaca paper (`broker.js` מקובע ל-`paper-api.alpaca.markets`). הקוד דוחה כל חשבון שאינו מזוהה כדמו.
+- **`git push`:** מ-13.11.2026 המשתמש אישר במפורש לדחוף ל-`main` **אחרי שינוי שעבר בדיקות** (טסטים עוברים, מלבד 10 הכשלים הידועים). אחרי הדחיפה לומר למשתמש שאפשר לעשות דיפלוי. לא לדחוף שינוי שלא נבדק. את ה-`Deploy` עושה המשתמש.
+- לא לחשוף ערכי `.env` / מפתחות / `EXECUTION_AGENT_TOKEN` / סיסמאות בצ'אט, בלוגים או במסמכים. לא לכתוב כתובת IP של השרת במסמכים.
 
 ## העדפות תקשורת עם המשתמש (חיים)
 
-- עברית. כל מונח, פקודה או הגדרה באנגלית — **בשורה נפרדת משלה** (ה-RTL מבלבל אחרת), במיוחד בהוראות צעד-אחר-צעד.
-- שאלה מהצורה "אתה יכול X?" — קודם תשובה כן/לא, ולחכות ל"תעשה". לא להתחיל לבצע לבד.
-- תשובות קצרות ומעשיות. אחרי שינוי קוד: לומר מה עשה, ומה המשתמש צריך לעשות (`Sync Changes`, לחכות ל-`Done` ב-Dokploy, `Ctrl+F5`).
+- עברית, בשפה פשוטה. כל מונח, פקודה או הגדרה באנגלית — **בשורה נפרדת משלה** (ה-RTL מבלבל אחרת). פקודות לשרת: כל אחת בבלוק קוד משלה, בלי שורה מעורבבת.
+- שאלה מהצורה "אתה יכול X?" או "האם כדאי?" — קודם תשובה (כן/לא/המלצה), ולחכות ל"תעשה". לא להתחיל לבצע לבד.
+- תשובות קצרות ומעשיות. אחרי שינוי קוד: מה נעשה, האם נדחף, ומה המשתמש צריך לעשות (לרוב: דיפלוי ב-Dokploy, ואז `Ctrl + Shift + R`; במחשב נייד `Ctrl + F5` מכבה תאורה).
+- להסביר מונחי מסחר כשצריך (R, break-even, slippage). המשתמש לא מתכנת; חשוב לו שהמערכת תלמד את האסטרטגיות ולכן לא להתערב ידנית בעסקאות.
+- כשמשהו לא ברור: להציג הוכחה (מספרים, מדידה) ולא השערה; להודות בטעות אם התברר שהייתה.
 
 ## מה המערכת
 
-TradeSense מייצרת איתותי מניות ארה"ב (סורק + 4 אסטרטגיות), ומריצה אותם **אוטומטית** כפקודות דרך MT4 של Colmex בחשבון דמו. אתר React בעברית RTL מציג מצב, החלטות ותוצאות. מאוחדת עם מנוע האיתותים של האח (אסור לפגוע בו).
+TradeSense מייצרת איתותי מניות ארה"ב ומריצה אותם **אוטומטית** בשתי זרועות עצמאיות על אותו שרת ואתר (React בעברית RTL):
 
-- אתר חי: https://trade.flowsbiz.com (Dokploy, container יחיד, replica אחד, SQLite ב-`/data`).
-- ריפו: https://github.com/haimshafir1984/TradeSense (ענף `main`).
-- סביבות עבודה אצל המשתמש: `C:\Users\moshe\Projects\m.s.trader\_TradeSense_remote` (הריפו העיקרי) ו-`...\TradeSense-main\TradeSense-main` (עותק משוקף; לשמור סנכרון).
+1. **Colmex/MT4** (נבנתה עם האח): סורק + אסטרטגיות, פקודות דרך EA ב-MT4. 43 מניות ענק. מצב נוכחי: איתותים נוצרים; ה-MT4 מחובר רק כשהמחשב עם ה-EA פעיל.
+2. **Alpaca** (חשבון נייר, small/mid-cap): מנוע נפרד ב-`server/src/alpaca-trader/`, לשונית "חשבון דמו Alpaca". פרטים מלאים ב-[docs/ALPACA_TRADER.md](docs/ALPACA_TRADER.md).
 
-## זרימה מקצה לקצה
+- אתר חי: https://trade.flowsbiz.com. ריפו: https://github.com/haimshafir1984/TradeSense (`main`).
+- **תשתית:** VPS של Contabo, Docker Swarm דרך Dokploy. שירות `tradesense-tradesense-3pkcvj`, `replica` אחד, SQLite ב-`/data/autopilot.sqlite` (כ-1GB, WAL), מגבלות CPU 2 / זיכרון 1.5GiB. **סדר עדכון `stop-first`** מוגדר (שני קונטיינרים על אותו SQLite גרמו לקריסות). Dokploy עושה deploy מ-`main`.
+- סביבות עבודה של המשתמש: `C:\Users\haim\Projects\TradeSense` (המחשב הנוכחי) ובעבר `C:\Users\moshe\...` (לשמור סנכרון אם קיים).
 
-1. `server/src/autopilot/engine.js` — tick כל 30 שניות; סריקה כל `AUTOPILOT_SCAN_INTERVAL_MS` (ברירת מחדל 5 דקות, מינימום 60 שניות). האסטרטגיות (`strategies.js`) עובדות על נרות 5 דקות **סגורים**.
-2. איתות נרשם ← `execution/entryDecision.js`: "קופסה" לכל `יום:מניה` למשתמש. חלון איסוף (`windowMin`, כרגע 3 דקות), ציון משפחות + איכות + קטליסט (`catalystCache.js`). החלטה: `entered` / `skipped` (עם `reason`) ביומן `entryLog`.
-3. גודל פוזיציה לפי תקציב/סיכון/חשיפה; **מינימום 10 מניות** (מגבלת Colmex). מתחת ← `size_too_small`.
-4. `execution/risk.js` `validateSignal`: דמו בלבד, נתוני MT4 עדכניים, בסיס הפסד יומי, מגבלות, **מניה לא תפוסה** (`symbol_busy`) — נבדק על כל הפקודות של חשבון הברוקר (קולקציה גלובלית `executionOrder`), לא רק של המשתמש.
-5. `execution/bridge.js` ממפה ticker לסימול Colmex (מילון `COLMEX_US` + `EXECUTION_SYMBOL_MAP_JSON`; סיומת ברוקר `#`) ומכניס פקודה לתור (`orders.js`).
-6. ה-EA ב-MT4 (`mt4/TradeSenseExecutionEA.mq4`) עושה polling לשרת (HTTPS, בלי פורט בכתובת), מבצע, ומדווח `heartbeat` + פוזיציות + עסקאות סגורות (`TradeSensePositions.mqh`).
-7. `execution/exitManager.js` מנהל יציאות (הפסד יומי, סטופ, מימוש רווח במדרגות, סגירת סוף יום) ורושם ל-`exitLog`. `execution/outcomes.js` — ספר תוצאות לפי ticket.
-8. `execution/decisionFeed.js` ממזג כניסות ויציאות ← `GET /api/execution/decisions`.
-9. רווח/הפסד יומי: `positions.current()` מחזיר `dayPnl` (שווי חשבון פחות שווי בפתיחת יום ניו יורק). התראות push: הגדרה `pushOnlyBought` (רק כניסות).
+## זרימה מקצה לקצה — Colmex
+
+1. `server/src/autopilot/engine.js` — tick כל 30 שניות; סריקה כל `AUTOPILOT_SCAN_INTERVAL_MS` (ברירת מחדל 5 דקות). האסטרטגיות (`strategies.js`) עובדות על נרות 5 דקות **סגורים**; נר אחרון בן יותר מ-7 דקות ← `intraday_missing`.
+2. איתות ← `execution/entryDecision.js`: קופסה לכל `יום:מניה`, חלון איסוף (`windowMin`), ציון (משפחות + איכות + קטליסט). החלטה `entered` / `skipped` ביומן `entryLog`.
+3. גודל פוזיציה; **מינימום 10 מניות** (מגבלת Colmex) ← `size_too_small`.
+4. `execution/risk.js` `validateSignal`: דמו בלבד, נתוני MT4 עדכניים, בסיס הפסד יומי, **מניה לא תפוסה** (`symbol_busy`) על כל פקודות חשבון הברוקר (קולקציה גלובלית `executionOrder`).
+5. `execution/bridge.js` ממפה ticker לסימול Colmex (`COLMEX_US` + `EXECUTION_SYMBOL_MAP_JSON`, סיומת `#`) ← תור (`orders.js`).
+6. ה-EA (`mt4/TradeSenseExecutionEA.mq4`) עושה polling (HTTPS, בלי פורט), מבצע, ומדווח `heartbeat` + פוזיציות + עסקאות סגורות.
+7. `execution/exitManager.js`: הפסד יומי, סטופ, מדרגות רווח, סוף יום ← `exitLog`; `execution/outcomes.js` ספר תוצאות; `decisionFeed.js` ← `GET /api/execution/decisions`.
+8. רווח/הפסד יומי: `dayPnl` = שווי חשבון פחות שווי בפתיחת יום ניו יורק. התראות push: `pushOnlyBought`.
 
 ## מבנה קוד
 
 ```
 server/src/
-  autopilot/   engine, strategies, store (SQLite, kind + putUser/listUser), market, notifications,
-               premarketLog, sentimentLog, users, settings
-  execution/   autonomy, bridge, entryDecision, entryProfile, risk, riskProfile, positions, orders,
-               exitManager, exitLog, outcomes, decisionFeed, catalystCache, closeRequests, pnlHistory
-  routes/      autopilot.js, execution.js (+ ישנים: candidates, ledger, playbooks, portfolio, backtest)
+  autopilot/      engine, strategies, store (SQLite, kind + putUser/listUser), market, history, notifications,
+                  feedback (למידה), recommendations (תור בדיקות), users, settings, ...
+  execution/      צד Colmex: autonomy, bridge, entryDecision, risk, exitManager, outcomes, decisionFeed, ...
+  alpaca-trader/  צד Alpaca: universe, scan, entry, risk, exit, engine, notify, trades, history, shadow, settings, broker
+  routes/         autopilot.js, execution.js, alpacaTrader.js (+ ישנים)
+  eventLoopMonitor.js   ניטור אבחוני (LOOP_MONITOR=off מכבה)
   pipeline/ playbooks/ ledger/ providers/ services/ risk/   ← שרידי v2, לא במסלול הפעיל
-client/src/    App.jsx (ענק; מצב `tab`), ControlTerminal (בתוך App.jsx), EntryPanel, RiskPanel, PnlPanel,
-               DecisionLog, styles.css
-mt4/           EA + mqh + כלי אבחון WebRequest + tools/ (MfeCheck, port80-forwarder)
-deploy/        dokploy, vps, mt4-wine (Docker+Wine, לא נבדק)
+client/src/      App.jsx (ענק), AlpacaTraderPanel.jsx, AlpacaPanelParts.jsx, pollWhileVisible.js, EntryPanel, RiskPanel, ...
+mt4/             EA + mqh + כלי אבחון
+deploy/          dokploy (backup.sh, switch.sh), vps, mt4-wine
+server/scripts/backupDb.js   גיבוי עקבי של SQLite
 ```
 
-## אתר: ארבע לשוניות
+## אתר: לשוניות
 
-`מסחר חי` (ControlTerminal + איתותים והחלטות + פוזיציות MT4 + בקשות סגירה + ארכיון ידני מתקפל), `איתותים` (הזדמנויות היום), `תוצאות` (תת-לשוניות: רווח והפסד | היסטוריה ומעקב), `כללים והגדרות` (תת-לשוניות: כניסה | סיכונים ויציאות | סורק ואסטרטגיות | יומן פעילות). הסרגל העליון (`StatusRibbon`) מציג סורק, בוט, חיבור MT4, מצב חשבון, יתרה, רווח/הפסד היום ורווח פתוח.
+`מסחר חי` (Colmex), `איתותים`, `תוצאות`, `כללים והגדרות`, ו-**`חשבון דמו Alpaca`** (סדר: מצב חשבון, פוזיציות, ממתינות, מה נקנה, ביצועים והיסטוריה, מקופלים: עסקאות/יציאות/סריקות/איתותי בצל, ובתחתית הגדרות).
 
 ## משתני סביבה חשובים (שרת)
 
-`EXECUTION_AUTONOMY_ENABLED`, `EXECUTION_QUEUE_ENABLED`, `EXECUTION_AGENT_TOKEN`, `EXECUTION_BROKER_ACCOUNT_ID`, `EXECUTION_SYMBOL_MAP_JSON`, `AUTOPILOT_BROKER_ONLY` (מגביל ל-43 מניות ממופות), `AUTOPILOT_SCAN_INTERVAL_MS`, `AUTOPILOT_DB_PATH`, `FINNHUB_API_KEY` (קטליסט), `ALPACA_*`, `SENTIMENT_COLLECT`, `CLIENT_ORIGIN`, `AUTOPILOT_DISABLED`.
+Colmex: `EXECUTION_AUTONOMY_ENABLED`, `EXECUTION_QUEUE_ENABLED`, `EXECUTION_AGENT_TOKEN`, `EXECUTION_BROKER_ACCOUNT_ID`, `EXECUTION_SYMBOL_MAP_JSON`, `AUTOPILOT_BROKER_ONLY`, `AUTOPILOT_SCAN_INTERVAL_MS`. כללי: `AUTOPILOT_DB_PATH`, `FINNHUB_API_KEY`, `ALPACA_API_KEY_ID/SECRET` (נתונים), `CLIENT_ORIGIN`, `AUTOPILOT_DISABLED`, `SENTIMENT_COLLECT`, `AUTOPILOT_CODE_RESET(_USER)`. Alpaca: `ALPACA_TRADER_ENABLED`, `ALPACA_TRADER_API_KEY_ID/SECRET_KEY` (חשבון Paper נפרד), `ALPACA_TRADER_*` (מרווחים, מאגר, שומר זיכרון). ניטור: `LOOP_MONITOR`, `LOOP_MONITOR_SLOW_MS`. למידה: `FEEDBACK_REBUILD_MIN_MS`. **להגדיר משתנה פעם אחת בלבד ב-Dokploy** (כפילויות כבר גרמו לשינוי שלא נקלט).
 
 ## מוסכמות והכרת מלכודות
 
-- טסטים דורשים Node 24 (`node:sqlite`); `node` ברירת המחדל במחשב של המשתמש הוא 20. סוג הרשומה של יומן הכניסות הוא `entryDecision` (ב-`decisionFeed.js` וב-`outcomes.js` חייבים להתאים).
-- טסטים: `node:test` ב-`server/test/` (`node --test test/*.test.js` מתוך `server/`). **ידוע:** כ-6 טסטים נכשלים בסביבת הפיתוח (autopilot, decisionFeed — נתונים נשארים בין הרצות, v3flex, שירות הקליינט, system pause) ללא קשר לשינויים אחרונים; כתבו טסטים חדשים עם `AUTOPILOT_DB_PATH` זמני ומזהים ייחודיים.
-- הלקוח לא נבנה מקומית: לבדיקת תחביר `npx esbuild client/src/App.jsx --loader:.jsx=jsx`.
-- סטייט משתמש: `store.putUser/listUser` (kind `user:<id>:<kind>`); פקודות ביצוע וגם יומני יציאה/תוצאות — **גלובליים**.
-- `git` על תיקיית ה-Windows המחוברת משאיר קבצי `.lock` ו-`tmp_obj` (אי אפשר למחוק): להזיז ל-`.git/stale-*`. commit דורש `-c user.name=... -c user.email=...`.
-- בסיס הפסד יומי נקבע ב-`riskProfile.ensureDayBase`; מ-27.10 גם אוטומטית בניסיון כניסה ראשון של יום כשהמסחר העצמאי פעיל.
+- **SQLite כותב יחיד.** `node:sqlite` סינכרוני: כל קריאה/כתיבה חוסמת את ה-event loop, וכל כתיבה בנפרד היא fsync. עבודות כבדות (בניית דאטהסט, שאילתות בלי אינדקס) הפילו את האתר (502). לפני שאילתה חדשה בדקו `EXPLAIN QUERY PLAN` על עותק של המסד.
+- **שני קונטיינרים על אותו קובץ SQLite** = `database is locked`. לכן `replica` אחד ו-`stop-first`. עדכוני סטטוס של המנועים עטופים כדי שנעילה לא תפיל את התהליך.
+- טסטים דורשים Node 24 (`node:sqlite`). `node:test` ב-`server/test/` (`node --test test/*.test.js` מתוך `server/`). **10 טסטים נכשלים בסביבת הפיתוח** (autopilot, decisionFeed, v3flex, שירות הלקוח, system pause), ללא קשר לשינויים אחרונים. טסטים חדשים: `AUTOPILOT_DB_PATH` זמני ומזהים ייחודיים; בטסטים של Alpaca קוראים ל-`setup()` שמנקה מטמון מודולים.
+- הלקוח לא נבנה מקומית. בדיקת תחביר: `npx esbuild client/src/AlpacaTraderPanel.jsx --loader:.jsx=jsx`. אפשר לבדוק רינדור ב-Node עם `react-dom/server` (ראו הסשן שבנה את הלשונית) ובדפדפן על קובץ HTML סטטי.
+- שעון: `nyTimestamp()` מחזיר **מספר** (מילישניות), לא מחרוזת (`Date.parse` עליו נותן `NaN`).
+- Alpaca: נתוני IEX בלבד (חינמי); `rvol` חייב להשוות IEX מול IEX; הוראות מחוץ לשעות 9:30–16:00 ניו יורק לא מתבצעות אלא ממתינות לפתיחה.
+- `git` על Windows משאיר לפעמים קבצי `.lock`/`tmp_obj`; commit דורש `-c user.name=... -c user.email=...`; סיומות שורה LF/CRLF גורמות לאזהרות בלבד.
+- בסיס הפסד יומי: Colmex `riskProfile.ensureDayBase`; Alpaca `alpaca-trader/risk.js`.
 - ה-EA: ללא `ExecutionToken` ו-`BrokerAccountId` ב-Inputs הוא כותב "execution disabled". `EnableExecution=false` כברירת מחדל. WebRequest דורש כתובת ב-`Tools > Options > Expert Advisors`.
 - שרת מחזיר לפעמים `502` (Traefik); הלקוח מנסה שוב GET אחד ומציג הודעה קריאה.
 
-## מסמכים
+## מסמכים (בסדר קריאה מומלץ)
 
-- [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — תמונה מלאה של המצב, החלטות, בעיות פתוחות ורעיונות.
-- [docs/SPEC_V3_AUTOPILOT.md](docs/SPEC_V3_AUTOPILOT.md), [docs/SPEC_V3_FLEXIBLE_FILLS_AND_STRATEGIES.md](docs/SPEC_V3_FLEXIBLE_FILLS_AND_STRATEGIES.md), [docs/SPEC_V3_SCAN_COVERAGE.md](docs/SPEC_V3_SCAN_COVERAGE.md) — אסטרטגיות וסריקה.
-- [docs/DOKPLOY_DEPLOYMENT.md](docs/DOKPLOY_DEPLOYMENT.md), [deploy/mt4-wine/](deploy/mt4-wine/) — פריסה והרצת MT4 על שרת.
-- v2 (`SPEC_V2_ARCHITECTURE.md`, `BACKFILL_FINDINGS.md` וכו') — היסטוריה בלבד; הקוד ב-`pipeline/ playbooks/ ledger/` אינו במסלול הפעיל.
+1. [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) — תמונה מלאה: מצב, תשתית, למידה, אירועים ולקחים, תוכניות, בעיות.
+2. [docs/ALPACA_TRADER.md](docs/ALPACA_TRADER.md) — הזרוע של Alpaca.
+3. [docs/DOKPLOY_DEPLOYMENT.md](docs/DOKPLOY_DEPLOYMENT.md), [docs/VPS_MIGRATION.md](docs/VPS_MIGRATION.md), [docs/VPS_MIGRATION_HANDOFF.md](docs/VPS_MIGRATION_HANDOFF.md) — פריסה והעברה.
+4. [docs/CODEX_502_INVESTIGATION.md](docs/CODEX_502_INVESTIGATION.md), [docs/CPU_ANALYSIS_2026-11-11.md](docs/CPU_ANALYSIS_2026-11-11.md) — תחקיר ביצועים.
+5. [docs/SPEC_V3_AUTOPILOT.md](docs/SPEC_V3_AUTOPILOT.md), [docs/SPEC_V3_FLEXIBLE_FILLS_AND_STRATEGIES.md](docs/SPEC_V3_FLEXIBLE_FILLS_AND_STRATEGIES.md), [docs/SPEC_V3_SCAN_COVERAGE.md](docs/SPEC_V3_SCAN_COVERAGE.md) — אסטרטגיות וסריקה (Colmex).
+6. מחקר: `V3_STRATEGY_RESEARCH_RESULTS.md`, `V6_TREND_TEMPLATE_VCP_RESULTS.md` (כל התוצאות שליליות). v2 (`SPEC_V2_ARCHITECTURE.md` וכו') — היסטוריה בלבד.
