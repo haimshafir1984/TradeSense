@@ -1,0 +1,86 @@
+{
+  "id": "eod-1",
+  "title": "End-of-day flow study, step 1: does the first 30 minutes predict the last 30 minutes in SPY? (long-only)",
+  "createdBeforeOutcomeAnalysis": true,
+  "motivation": "External review 2026-11-14 (advisor idea 2). Mechanism: forced / predictable end-of-day buying (leveraged-fund rebalancing, hedging, index-linked flows) in the most liquid instrument. Published work (Gao, Han, Li, Zhou 2018, 'Market intraday momentum') reports that the return of the first 30 minutes (including the overnight gap) predicts the return of the last 30 minutes. It may have decayed since publication. This is step 1 of the group: if there is no effect in the broad index, the leveraged-single-stock version (H2, not frozen here) is not worth running.",
+  "hypothesisCount": 1,
+  "hypotheses": {
+    "H1": "On days when r_first30 > 0, the SPY return from the 15:30 candle open to the 15:55 candle close (r_last30) is higher than the mean r_last30 of ALL days, by more than the round-trip cost, with the same sign in most years."
+  },
+  "instrument": "SPY",
+  "data": {
+    "source": "Alpaca historical bars, feed=iex, timeframe 5Min, adjustment=split",
+    "note": "IEX is a few percent of consolidated volume; prices are used, volumes are not."
+  },
+  "definitions": {
+    "session": "regular day with a 09:30 candle and a 15:55 candle both present; days without them (early closes, data gaps) are excluded and counted, never filled",
+    "prevClose": "close of the 15:55 candle of the previous included session",
+    "r_first30": "close of the 09:55 candle / prevClose - 1 (first 30 minutes including the overnight gap, as in the paper)",
+    "r_last30": "close of the 15:55 candle / open of the 15:30 candle - 1",
+    "signalDay": "r_first30 > 0 (no other threshold; no tuning)",
+    "entry": "primary: open of the 15:30 candle; robustness (secondary): open of the 15:35 candle (one candle late)",
+    "exit": "close of the 15:55 candle (research convention; the live engine's own end-of-day close is a separate, later question)",
+    "direction": "long only"
+  },
+  "cost": {
+    "roundTripPct": 0.02,
+    "note": "conservative for SPY; also reported at 0.05 for sensitivity (descriptive only)"
+  },
+  "primaryEndpoint": "excess = mean(net r_last30 | signalDay) - mean(net-of-nothing r_last30 | all days). net r_last30 on signal days = r_last30 - cost.",
+  "periods": {
+    "warmup": [
+      "2020-07-27",
+      "2020-07-31"
+    ],
+    "development": [
+      "2020-08-01",
+      "2023-12-31"
+    ],
+    "validation": [
+      "2024-01-01",
+      "2024-12-31"
+    ],
+    "lockedTest": [
+      "2025-01-01",
+      "2025-12-31"
+    ],
+    "lockedRecent": [
+      "2026-01-01",
+      "2026-11-13"
+    ]
+  },
+  "gates": {
+    "development": "pass only if ALL: (1) mean net r_last30 on signal days > 0; (2) block-bootstrap one-sided 95% lower bound of excess > 0; (3) excess > 0 in at least 3 of the 4 calendar years (2020 covers Aug-Dec only); (4) at least 350 signal days",
+    "validation": "opened only if development passes. pass only if excess > 0 and net mean > 0 on 2024 and the one-candle-late entry still has net mean > 0",
+    "locked": "opened only if validation passes, once, and the downloader must be rerun with a later end date by hand. Not fetched by this study's downloader."
+  },
+  "inference": {
+    "bootstrap": "circular block bootstrap over 20-session blocks, 2000 resamples, of the paired (signalDay flag, r_last30) series so that the autocorrelation of days is kept",
+    "multipleTesting": "none needed: one primary hypothesis"
+  },
+  "descriptive_only_no_tests": [
+    "tercile of |r_first30| (does a larger morning move matter)",
+    "result by calendar year and by month",
+    "r_last30 on days r_first30 <= 0 (the mirror, for context; long-only strategy does not trade it)",
+    "sensitivity to cost 0.05"
+  ],
+  "prohibited": [
+    "changing the threshold, the windows, the cost or the gates after seeing any result",
+    "opening the validation or locked periods before the gate above allows it",
+    "adding a second hypothesis to rescue a failure; a failure is reported as a failure"
+  ],
+  "statusRule": "A pass means 'worth a registered next step' (the leveraged-single-stock version H2, then a separate decision about any engine change). It is not a claim of profitability and changes nothing in trading.",
+  "H2_outline_not_frozen": "Leveraged single-stock ETFs mostly listed from 2022-2025, so the v6-style development period (2019-2023) has almost none of them. H2 will be frozen in its own protocol file, with its own period split, before any return is computed. It needs an ETF -> base stock mapping and an AUM proxy that Alpaca does not provide.",
+  "amendments": [
+    {
+      "at": "2026-11-14",
+      "reason": "Data availability only, found while downloading and BEFORE any return was computed: Alpaca's free IEX 5-minute history for SPY starts 2020-07-27 (every earlier month is empty). Periods and the two gate numbers that depended on them were adjusted; nothing else changed.",
+      "changes": [
+        "periods.warmup -> none (2020-07-27..2020-07-31 only)",
+        "periods.development 2019-01-01..2023-12-31 -> 2020-08-01..2023-12-31",
+        "gates.development: 'at least 4 of the 5 development calendar years' -> 'at least 3 of the 4 calendar years (2020 covers Aug-Dec only)'; 'at least 400 signal days' -> 'at least 350 signal days'"
+      ],
+      "previousSha256": "2104bbf0a7a2f467df693e252fc9e320a54e4f6d465781b5ee2c8bd5e49ff1ef"
+    }
+  ]
+}

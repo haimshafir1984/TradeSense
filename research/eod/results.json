@@ -1,0 +1,67 @@
+{
+  "protocolSha256": "47eb69cc04af22a2587222947474913f422efcdf5290bc327855e97df8b6e800",
+  "data": {
+    "sessionsUsed": 1097,
+    "excluded": {
+      "missingBars": 10,
+      "staleOrNoPrev": 9
+    }
+  },
+  "development": {
+    "days": 847,
+    "signalDays": 476,
+    "netMeanSignal": -0.0005116460069891065,
+    "allDaysMean": -0.00017119029944327334,
+    "excess": -0.00034045570754583315,
+    "bootstrapLower95": -0.0004960942077126016,
+    "perYear": [
+      {
+        "year": "2020",
+        "days": 102,
+        "excess": -0.0006025211951029842
+      },
+      {
+        "year": "2021",
+        "days": 250,
+        "excess": -0.0003905960649910867
+      },
+      {
+        "year": "2022",
+        "days": 249,
+        "excess": -0.00045554157496891813
+      },
+      {
+        "year": "2023",
+        "days": 246,
+        "excess": -0.000038180208967360624
+      }
+    ],
+    "yearsPositive": 0,
+    "gate": {
+      "netMeanPositive": false,
+      "lowerBoundPositive": false,
+      "yearsOk": false,
+      "enoughSignalDays": true
+    },
+    "pass": false
+  },
+  "descriptive": {
+    "mirrorMeanRLastWhenRFirstNonPositive": 0.00000901702344572011,
+    "excessAtCost005": -0.0006404557075458331,
+    "terciles": [
+      {
+        "meanAbsRFirst": 0.0010780001716940697,
+        "meanRLastSignalOnly": -0.00007556464251223283
+      },
+      {
+        "meanAbsRFirst": 0.0038268037846523506,
+        "meanRLastSignalOnly": -0.0004497997090774053
+      },
+      {
+        "meanAbsRFirst": 0.010820607029737984,
+        "meanRLastSignalOnly": -0.00038400933226280303
+      }
+    ]
+  },
+  "validation": "NOT opened: development gate failed (protocol.json gates.validation)"
+}

@@ -1,0 +1,18 @@
+{
+  "at": "2026-11-14T08:45:50.590Z",
+  "note": "Local preregistration. Hash frozen BEFORE any return was computed.",
+  "files": {
+    "protocol.json": {
+      "sha256": "2104bbf0a7a2f467df693e252fc9e320a54e4f6d465781b5ee2c8bd5e49ff1ef",
+      "bytes": 4571
+    }
+  },
+  "amended": [
+    {
+      "at": "2026-11-14T08:46:31.235Z",
+      "note": "Re-frozen after a data-availability amendment, still before any return was computed.",
+      "sha256": "47eb69cc04af22a2587222947474913f422efcdf5290bc327855e97df8b6e800",
+      "bytes": 5510
+    }
+  ]
+}
