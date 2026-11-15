@@ -1,0 +1,177 @@
+{
+  "period": [
+    "2021-01-01",
+    "2023-12-31"
+  ],
+  "censored": {
+    "missing": 1898
+  },
+  "daysWithSignal": 614,
+  "days": 753,
+  "headline": {
+    "trades": 1775,
+    "dates": 614,
+    "meanNet": -0.000304319021558065,
+    "meanNetByDate": -0.00026480755839094913,
+    "p": 0.582,
+    "hit": 0.4383098591549296,
+    "byYear": [
+      {
+        "year": "2021",
+        "days": 224,
+        "mean": -0.00021484416768294094
+      },
+      {
+        "year": "2022",
+        "days": 184,
+        "mean": -0.0026792313667862136
+      },
+      {
+        "year": "2023",
+        "days": 206,
+        "mean": 0.0018374360397941595
+      }
+    ],
+    "grossMean": 0.0011956809784419234,
+    "breakevenRoundTripCost": 0.0011956809784419234,
+    "maxDrawdownCum": -1.3511927739558773,
+    "concentrationTop5pctDays": null
+  },
+  "allSignals": {
+    "trades": 2245,
+    "dates": 614,
+    "meanNet": -0.00019173347296846694,
+    "meanNetByDate": -0.0002685297254798723,
+    "p": 0.5865,
+    "hit": 0.44008908685968817,
+    "byYear": [
+      {
+        "year": "2021",
+        "days": 224,
+        "mean": -0.00037717534961906584
+      },
+      {
+        "year": "2022",
+        "days": 184,
+        "mean": -0.002770882601968837
+      },
+      {
+        "year": "2023",
+        "days": 206,
+        "mean": 0.0020847205127781246
+      }
+    ],
+    "grossMean": 0.001308266527031534,
+    "breakevenRoundTripCost": 0.001308266527031534,
+    "maxDrawdownCum": -1.3346296431455338,
+    "concentrationTop5pctDays": null
+  },
+  "control1Random": {
+    "trades": 3727,
+    "dates": 752,
+    "meanNet": -0.001299908511574046,
+    "meanNetByDate": -0.001257694198369593,
+    "p": 0.996,
+    "hit": 0.4349342634826939,
+    "byYear": [
+      {
+        "year": "2021",
+        "days": 252,
+        "mean": -0.00031389627592133946
+      },
+      {
+        "year": "2022",
+        "days": 251,
+        "mean": -0.0023930461598837007
+      },
+      {
+        "year": "2023",
+        "days": 249,
+        "mean": -0.0010683919257467825
+      }
+    ],
+    "grossMean": 0.0002000914884259376,
+    "breakevenRoundTripCost": 0.0002000914884259376,
+    "maxDrawdownCum": -1.2333610689908108,
+    "concentrationTop5pctDays": null
+  },
+  "control2WeakRange": {
+    "trades": 2079,
+    "dates": 636,
+    "meanNet": 0.0005868344610455358,
+    "meanNetByDate": 0.0008813197986812518,
+    "p": 0.1375,
+    "hit": 0.4766714766714767,
+    "byYear": [
+      {
+        "year": "2021",
+        "days": 228,
+        "mean": 0.0026238235518700062
+      },
+      {
+        "year": "2022",
+        "days": 198,
+        "mean": -0.000006214888183901183
+      },
+      {
+        "year": "2023",
+        "days": 210,
+        "mean": -0.00017372300002228215
+      }
+    ],
+    "grossMean": 0.002086834461045543,
+    "breakevenRoundTripCost": 0.002086834461045543,
+    "maxDrawdownCum": -0.4096852831229611,
+    "concentrationTop5pctDays": 3.338017505901559
+  },
+  "control3NextDayIntraday": {
+    "trades": 1775,
+    "dates": 614,
+    "meanNet": null,
+    "meanNetByDate": null,
+    "p": 0.118,
+    "hit": 0.4597183098591549,
+    "byYear": [
+      {
+        "year": "2021",
+        "days": 224,
+        "mean": null
+      },
+      {
+        "year": "2022",
+        "days": 184,
+        "mean": -0.0014271902275220293
+      },
+      {
+        "year": "2023",
+        "days": 206,
+        "mean": null
+      }
+    ],
+    "grossMean": null,
+    "breakevenRoundTripCost": null,
+    "maxDrawdownCum": null,
+    "concentrationTop5pctDays": null
+  },
+  "excessOverC1": {
+    "dates": 614,
+    "meanDiff": 0.0007128841744399942,
+    "p": 0.278
+  },
+  "excessOverC2": {
+    "dates": 526,
+    "meanDiff": -0.001650805281144079,
+    "p": 0.8575
+  },
+  "reportedSeparately": {
+    "tradesWithGapOver10pct": 35,
+    "sumNetShare": -6.080843926015531,
+    "meanNetWithoutThem": -0.0021981798875186642
+  },
+  "sensitivity": {
+    "halfCost": 0.0004456809784419185,
+    "doubleCost": -0.0018043190215580637
+  },
+  "yearsPositive": 1,
+  "p": 0.582
+}

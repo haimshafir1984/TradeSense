@@ -1,0 +1,43 @@
+{
+  "holm": {
+    "H1": {
+      "p": 1,
+      "have": true,
+      "holm": 1
+    },
+    "H2": {
+      "p": 0.582,
+      "have": true,
+      "holm": 1
+    },
+    "H3": {
+      "p": 0.007,
+      "have": true,
+      "holm": 0.042
+    },
+    "C2": {
+      "p": 0.682,
+      "have": true,
+      "holm": 1
+    },
+    "H5": {
+      "p": 1,
+      "have": true,
+      "holm": 1
+    },
+    "H6": {
+      "p": 1,
+      "have": true,
+      "holm": 1
+    }
+  },
+  "pass": {
+    "H1": false,
+    "H2": false,
+    "H3": true,
+    "C2": false,
+    "H5": false,
+    "H6": false
+  },
+  "missing": []
+}

@@ -1,0 +1,325 @@
+{
+  "period": [
+    "2021-01-01",
+    "2023-12-31"
+  ],
+  "reproduction": {
+    "description": "top K(t), long + short, zero cost",
+    "trades": 8381,
+    "dates": 752,
+    "hitRate": 0.1522491349480969,
+    "meanGrossR": 0.21984739467076533,
+    "meanNetR": 0.21984739467076533,
+    "meanNetRByDate": 0.21861810471590795,
+    "p": 0.0005,
+    "byYear": [
+      {
+        "year": "2021",
+        "days": 252,
+        "mean": 0.3015636980125229
+      },
+      {
+        "year": "2022",
+        "days": 250,
+        "mean": 0.24624683840469594
+      },
+      {
+        "year": "2023",
+        "days": 250,
+        "mean": 0.1073802129841322
+      }
+    ],
+    "breakevenPerSideCost": 0.00042070636562101314,
+    "maxDrawdownCumR": -14.007892560556598,
+    "concentrationTop5pctDays": 0.9452641146676223,
+    "censored": {
+      "no5m": 0,
+      "no1m": 259,
+      "noatr": 0
+    },
+    "pass": true
+  },
+  "controlBoth": {
+    "trades": 8575,
+    "dates": 749,
+    "hitRate": 0.18075801749271136,
+    "meanGrossR": 0.1033971917287382,
+    "meanNetR": 0.1033971917287382,
+    "meanNetRByDate": 0.1114331929861794,
+    "p": 0.001,
+    "byYear": [
+      {
+        "year": "2021",
+        "days": 251,
+        "mean": 0.009084068326642332
+      },
+      {
+        "year": "2022",
+        "days": 250,
+        "mean": 0.18825471296292565
+      },
+      {
+        "year": "2023",
+        "days": 248,
+        "mean": 0.13757936353197492
+      }
+    ],
+    "breakevenPerSideCost": 0.00018395723772768243,
+    "maxDrawdownCumR": -16.827717686917566,
+    "concentrationTop5pctDays": 1.3583305821593534,
+    "censored": {
+      "no5m": 0,
+      "no1m": 487,
+      "noatr": 0
+    }
+  },
+  "topLong": {
+    "primary": {
+      "trades": 4286,
+      "dates": 749,
+      "hitRate": 0.147690153989734,
+      "meanGrossR": 0.24758387379498667,
+      "meanNetR": -0.02308996459021516,
+      "meanNetRByDate": -0.11745071841363318,
+      "p": 0.9425,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 250,
+          "mean": 0.024323456305176537
+        },
+        {
+          "year": "2022",
+          "days": 250,
+          "mean": -0.19670237709013524
+        },
+        {
+          "year": "2023",
+          "days": 249,
+          "mean": -0.1802243288978774
+        }
+      ],
+      "breakevenPerSideCost": 0.0004573472546738068,
+      "maxDrawdownCumR": -123.62182406006752,
+      "concentrationTop5pctDays": null
+    },
+    "c0": {
+      "trades": 4286,
+      "dates": 749,
+      "hitRate": 0.147690153989734,
+      "meanGrossR": 0.24758387379498667,
+      "meanNetR": 0.24758387379498667,
+      "meanNetRByDate": 0.15447170226944423,
+      "p": 0.018,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 250,
+          "mean": 0.3016472664910826
+        },
+        {
+          "year": "2022",
+          "days": 250,
+          "mean": 0.03322881546929439
+        },
+        {
+          "year": "2023",
+          "days": 249,
+          "mean": 0.12843487754907415
+        }
+      ],
+      "breakevenPerSideCost": 0.0004573472546738068,
+      "maxDrawdownCumR": -24.067718192677305,
+      "concentrationTop5pctDays": 2.1192667282283515
+    },
+    "c025": {
+      "trades": 4286,
+      "dates": 749,
+      "hitRate": 0.147690153989734,
+      "meanGrossR": 0.24758387379498667,
+      "meanNetR": 0.11224695460238586,
+      "meanNetRByDate": 0.018510491927905513,
+      "p": 0.414,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 250,
+          "mean": 0.1629853613981295
+        },
+        {
+          "year": "2022",
+          "days": 250,
+          "mean": -0.08173678081042056
+        },
+        {
+          "year": "2023",
+          "days": 249,
+          "mean": -0.025894725674401584
+        }
+      ],
+      "breakevenPerSideCost": 0.0004573472546738068,
+      "maxDrawdownCumR": -55.80436259871039,
+      "concentrationTop5pctDays": 17.283320577350718
+    },
+    "c10": {
+      "trades": 4286,
+      "dates": 749,
+      "hitRate": 0.147690153989734,
+      "meanGrossR": 0.24758387379498667,
+      "meanNetR": -0.29376380297541654,
+      "meanNetRByDate": -0.3893731390967103,
+      "p": 1,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 250,
+          "mean": -0.25300035388072933
+        },
+        {
+          "year": "2022",
+          "days": 250,
+          "mean": -0.4266335696495652
+        },
+        {
+          "year": "2023",
+          "days": 249,
+          "mean": -0.4888835353448292
+        }
+      ],
+      "breakevenPerSideCost": 0.0004573472546738068,
+      "maxDrawdownCumR": -309.0466773571668,
+      "concentrationTop5pctDays": null
+    },
+    "censored": {
+      "no5m": 0,
+      "no1m": 129,
+      "noatr": 0
+    }
+  },
+  "controlLong": {
+    "primary": {
+      "trades": 4199,
+      "dates": 738,
+      "hitRate": 0.1698023338890212,
+      "meanGrossR": 0.05624273496541408,
+      "meanNetR": -0.22878242855385364,
+      "meanNetRByDate": -0.27231838979166983,
+      "p": 1,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 248,
+          "mean": -0.33888119832822555
+        },
+        {
+          "year": "2022",
+          "days": 242,
+          "mean": -0.3217738251221101
+        },
+        {
+          "year": "2023",
+          "days": 248,
+          "mean": -0.1574966483923459
+        }
+      ],
+      "breakevenPerSideCost": 0.00009866275361615905,
+      "maxDrawdownCumR": -214.85521695103196,
+      "concentrationTop5pctDays": null
+    },
+    "c0": {
+      "trades": 4199,
+      "dates": 738,
+      "hitRate": 0.1698023338890212,
+      "meanGrossR": 0.05624273496541408,
+      "meanNetR": 0.05624273496541408,
+      "meanNetRByDate": 0.020136407301810707,
+      "p": 0.3705,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 248,
+          "mean": -0.03776497176473541
+        },
+        {
+          "year": "2022",
+          "days": 242,
+          "mean": -0.07374220560259595
+        },
+        {
+          "year": "2023",
+          "days": 248,
+          "mean": 0.16964514250894722
+        }
+      ],
+      "breakevenPerSideCost": 0.00009866275361615905,
+      "maxDrawdownCumR": -37.14454344387258,
+      "concentrationTop5pctDays": 12.550795452903499
+    },
+    "c025": {
+      "trades": 4199,
+      "dates": 738,
+      "hitRate": 0.1698023338890212,
+      "meanGrossR": 0.05624273496541408,
+      "meanNetR": -0.08626984679421977,
+      "meanNetRByDate": -0.12609099124492962,
+      "p": 0.992,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 248,
+          "mean": -0.18832308504648054
+        },
+        {
+          "year": "2022",
+          "days": 242,
+          "mean": -0.19775801536235296
+        },
+        {
+          "year": "2023",
+          "days": 248,
+          "mean": 0.006074247058300667
+        }
+      ],
+      "breakevenPerSideCost": 0.00009866275361615905,
+      "maxDrawdownCumR": -111.5918104139374,
+      "concentrationTop5pctDays": null
+    },
+    "c10": {
+      "trades": 4199,
+      "dates": 738,
+      "hitRate": 0.1698023338890212,
+      "meanGrossR": 0.05624273496541408,
+      "meanNetR": -0.5138075920731232,
+      "meanNetRByDate": -0.5647731868851502,
+      "p": 1,
+      "byYear": [
+        {
+          "year": "2021",
+          "days": 248,
+          "mean": -0.6399974248917156
+        },
+        {
+          "year": "2022",
+          "days": 242,
+          "mean": -0.5698054446416242
+        },
+        {
+          "year": "2023",
+          "days": 248,
+          "mean": -0.48463843929363903
+        }
+      ],
+      "breakevenPerSideCost": 0.00009866275361615905,
+      "maxDrawdownCumR": -421.9814659157635,
+      "concentrationTop5pctDays": null
+    },
+    "censored": {
+      "no5m": 0,
+      "no1m": 240,
+      "noatr": 0
+    }
+  },
+  "excessOverControl": 0.15486767137803664,
+  "yearsPositive": 1,
+  "p": 0.9425
+}

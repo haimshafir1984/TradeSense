@@ -1,0 +1,170 @@
+{
+  "id": "round2-1",
+  "title": "Round 2: six preregistered tests of published intraday / overnight rules (Fable doc RESEARCH_ROUND2_LOGIC_2026-11-15 H1-H3, Codex experiments 1-4), long-only headline",
+  "createdBeforeOutcomeAnalysis": true,
+  "status": "Nothing here changes trading. Local research only. Rules were verified against the full text of the two Zarattini et al. papers (ORB 'Stocks in Play'; 'Beat the Market' Noise Area). Codex experiments 2-4 and Fable H2 come from the advisors' own descriptions, NOT from verified source texts.",
+  "sources": {
+    "orbPaper": "Zarattini, Barbon, Aziz (2024), SSRN 4729284. Verified: universe = all US stocks 2016-2023 incl. delisted (CRSP); filters open>5, 14-day avg volume>=1,000,000, 14-day ATR>0.5; relative volume = volume of first 5 min / mean of the same over the previous 14 days; stocks in play = RelVol>=100% and top 20; long if first 5-min candle up (stop-buy at its high), short if down (stop-sell at its low), doji none; stop = 10% of 14-day ATR from the executed entry; no profit target; exit at the close; size so a stop-out loses 1% of capital, max leverage 4; cost only $0.0035/share commission (no slippage); reported base strategy (all filtered stocks) 3.2%/yr Sharpe 0.48; top-20 stocks in play '>1,600% net, Sharpe 2.81' (authors' figures, not independently confirmed).",
+    "noiseAreaPaper": "Zarattini, Aziz, Barbon (2024), 'Beat the Market'. Verified: move(t-i, HH:MM) = |Close(t-i,HH:MM)/Open(t-i,9:30) - 1| ; sigma(t,HH:MM) = mean over the previous 14 days; UpperBound = max(Open(t,9:30), Close(t-1,16:00)) * (1+sigma); LowerBound = min(...) * (1-sigma); trades only at HH:00 and HH:30; long above the upper bound, short below the lower; exit at the close or on a crossover (stops are also checked only semi-hourly); improved exit = price crosses the current band OR the VWAP (market-hours VWAP) -> 'Curr.Band + VWAP'; cost $0.0035/share + $0.001/share slippage; leverage cap 4x; authors' figures 2007-2024: 9.7%/yr, Sharpe 1.24 (fixed size)."
+  },
+  "common": {
+    "data": "Alpaca historical bars, feed=sip (consolidated), adjustment=split. Candles are real; a missing candle is NOT filled: an event that needs a missing candle is unformed and counted as censored.",
+    "survivorship": "The stock pool includes inactive (delisted) symbols from Alpaca's inactive-assets list when they have SIP bars (checked: BBBY, SIVB, TWTR, FRC do).",
+    "periods": {
+      "stocks": {
+        "warmup": [
+          "2020-12-01",
+          "2020-12-31"
+        ],
+        "development": [
+          "2021-01-01",
+          "2023-12-31"
+        ],
+        "locked": [
+          "2024-01-01",
+          "2026-10-30"
+        ]
+      },
+      "indexEtfs": {
+        "development": [
+          "2016-01-04",
+          "2024-04-30"
+        ],
+        "locked": [
+          "2024-05-01",
+          "2026-10-30"
+        ]
+      },
+      "rule": "The locked period of each hypothesis is NOT downloaded until that hypothesis has passed development (the download itself is gated)."
+    },
+    "bars": "5-minute candle index i = 0 is 09:30-09:35 New York, i = 77 is 15:55-16:00. Price 'at HH:MM' = close of the candle ending at HH:MM. 'Open of the next candle' is the next available price after a signal.",
+    "stockPool": "Common stocks: names matching /common stock|ordinary shares|common shares/i and not /(ETF|fund|preferred|warrant|rights|units|notes|depositary|trust)/i, symbol /^[A-Z]{1,5}$/, from Alpaca assets (active + inactive).",
+    "dailyEligibility": {
+      "H1": "open of the day > 5 AND mean daily volume of the previous 14 sessions >= 1,000,000 AND ATR14 (mean of the previous 14 true ranges) > 0.50",
+      "H2": "open of the day > 5 AND mean daily dollar volume (close*volume) of the previous 20 sessions >= 20,000,000",
+      "marketCounts": "n_elig_H1(t), n_elig_H2(t) = number of pool stocks eligible on day t, from the daily bars of the WHOLE pool"
+    },
+    "sample": "Because 5-minute data for every stock is too heavy, a seeded random sample S of 400 stocks of the pool that were H1-eligible on at least 100 days in 2021-2023 (seed 'round2-1-sample', sha256 ordering). Selections that the papers make 'top 20 of the market' are scaled: K(t) = max(1, round(20 * n_elig_in_S(t) / n_elig_H1(t))) for H1 and K2(t) = max(1, round(10 * n_elig_in_S_H2(t) / n_elig_H2(t))) for H2. All-eligible-signal results are reported next to the scaled ones.",
+    "beyondPapers": "Papers use their own cost models. The costs below are mine and more conservative.",
+    "inference": "Primary statistic of a hypothesis = mean over event dates of that date's mean (net) result. One-sided p = share of 2000 circular block-bootstrap resamples (20-date blocks, seeded from the id) whose statistic <= 0. Holm over the 6 primary hypotheses (HA=H1, HB=H2, HC=H3, HD=C2, HE=H5, HF=H6), alpha 0.05, development p-values. Hypotheses that cannot be run (not enough events or events not identifiable) count with p = 1.",
+    "report": "For every test: gross and net mean, number of trades and dates, hit rate, mean R where defined, results by calendar year, breakeven round-trip cost (gross mean divided by the number of cost legs), maximum drawdown of the daily-return curve, and the share of total net profit that comes from the best 5% of days.",
+    "prohibited": "changing any threshold, window, cost or control after seeing a result; opening a locked period early; adding hypotheses to rescue a failure; counting a development period as untouched when it was seen in earlier studies of this repository (v3-v6, eod-1, ideas-2 did not use these data but are context)."
+  },
+  "hypotheses": {
+    "H1": {
+      "name": "5-minute opening-range breakout on Stocks in Play (Fable H1)",
+      "universe": "S stocks, dailyEligibility.H1 on the day; relVol = volume of candle 0 today / mean of the volume of candle 0 over the previous 14 sessions of that stock (a stock needs all 14); RelVol >= 1.0; ranked by relVol, top K(t).",
+      "direction": "Long only in the headline. Reproduction check also trades the short side as in the paper.",
+      "entry": "first 5-minute candle up (close > open): buy stop at its high, active from the open of candle 1 until the close; filled at max(level, open of the 1-minute candle in which the high is first reached) using 1-minute candles of the selected stocks. Doji / down candle: no trade.",
+      "stop": "entry price - 0.10 * ATR14 (a 1-minute candle that opens at or below the stop exits at its open; a candle that reaches the stop exits at the stop). Entry and stop in the same 1-minute candle = full loss (-1R).",
+      "exit": "close of the 15:59 1-minute candle (16:00) if not stopped. No profit target.",
+      "R": "(exit - entry) / (0.10 * ATR14), net of cost expressed in the same units",
+      "cost": "0.05% per side, primary (round trip 0.10%); sensitivity 0, 0.025%, 0.10% per side",
+      "controls": "same rules on K(t) stocks drawn at random from the eligible stocks of S that day (seeded), without ranking by relVol",
+      "reproductionCheck": "long+short, zero cost, development period, top K(t): pass if mean R > 0 and the bootstrap one-sided p < 0.05. If it fails, STOP and report that the published result does not reproduce on these data; the long-only cost test is then not run.",
+      "development": "pass if reproduction passes AND mean net R > 0 AND Holm-adjusted p < 0.05 AND excess over the random control > 0 AND positive in at least 2 of the 3 development years",
+      "locked": "pass if mean net R > 0, p < 0.05, positive in at least 2 of the 3 calendar years, excess over control > 0",
+      "splitsReportedOnly": [
+        "2R target vs hold to close",
+        "positive vs negative opening gap",
+        "first 10 ranks vs next 10 (scaled)"
+      ]
+    },
+    "H2": {
+      "name": "Late-day strength, held overnight (Fable H2)",
+      "universe": "S stocks, dailyEligibility.H2.",
+      "signal": "evaluated with candles up to the one ending 15:50 (i = 0..75): price(15:50) >= 1.02 * previous close AND price(15:50) > VWAP (cumulative typical price (h+l+c)/3 weighted by volume, market hours) AND (price - day low)/(day high - day low) >= 0.75 AND cumulative volume up to 15:50 >= 2.0 * mean of the same cumulative volume over the previous 20 sessions. Ranked by that volume ratio; the K2(t) highest (scaled) are the headline; all signals reported too.",
+      "entry": "close of the candle starting 15:50 (i = 76: the price at about 15:55, one candle after the signal)",
+      "exit": "open of the first 5-minute candle of the next session (the next session in the data, no holiday filling), no stop",
+      "cost": "0.05% at entry, 0.10% at exit (round trip 0.15%); sensitivity half and double",
+      "controls": [
+        "C1: eligible S stocks drawn at random on the same days (same count), same entry/exit",
+        "C2: eligible stocks up >= 2% at 15:50 but with (price-low)/(high-low) < 0.5, same entry/exit",
+        "C3: the signal stocks' NEXT day open-to-close (should be weak or negative if the overnight principle holds)"
+      ],
+      "reportedSeparately": "share of the profit coming from nights with an opening gap above 10% (probably earnings); result without those nights",
+      "development": "pass if mean net return > 0 AND Holm-adjusted p < 0.05 AND excess over C1 > 0 AND excess over C2 > 0 AND positive in at least 2 of 3 years",
+      "locked": "same conditions on the locked period"
+    },
+    "H3": {
+      "name": "Intraday momentum on SPY with the Noise Area (Fable H3 = Codex experiment 1)",
+      "instruments": [
+        "SPY (primary)",
+        "QQQ (replication, not part of the primary p)"
+      ],
+      "rules": "exactly as in the paper (see sources.noiseAreaPaper) with these implementation choices: 5-minute candles instead of 1-minute; evaluation at HH:00 and HH:30 from 10:00 to 15:30 using price(HH:MM); execution at the open of the next 5-minute candle; flat -> long if price > UpperBound; long -> exit if price < max(UpperBound, VWAP) at an evaluation time; always flat at the close of candle 77; re-entry allowed at later evaluation times; full allocation, no leverage.",
+      "headline": "long only; cost 0.01% per side",
+      "reproduction": "reported separately, not gating: long+short with the paper's costs ($0.0035 + $0.001 per share) on the development period",
+      "controls": "buy and hold open (candle 0 open) to close; buy and hold from 10:00 to the close",
+      "development": "pass if mean daily net return > 0 AND Holm-adjusted p < 0.05 AND the annualised mean/std of daily returns exceeds both controls",
+      "locked": "pass if mean daily net return > 0, p < 0.05, and Sharpe above both controls"
+    },
+    "C2": {
+      "name": "Trend breakout plus short-term reversal entry on SPY (Codex experiment 2; the advisor's own description, source paper not read)",
+      "boundary": "B = Open(t,9:30) + 0.5 * ATR14 (mean of the previous 14 true ranges from regular-session daily bars derived from the 5-minute data)",
+      "controlRule": "the first 15-minute candle (3 five-minute candles, starting 09:30, 09:45, ..., 15:15) that CLOSES above B, evaluated until the candle ending 15:30, is the signal; enter at the open of the next 5-minute candle",
+      "combinedRule": "after the same signal at time T: wait at most the next 3 five-minute candles for a candle that closes below its open (red) AND still closes above B; enter at the open of the candle after it. Cancel for the day if any 5-minute candle closes below B first, or if the wait ends without such a candle.",
+      "both": "one entry per day, long only, full allocation no leverage, stop = the day's open price (a candle whose low reaches it exits at the stop, or at its open if it opens below), exit at the close of candle 77, cost 0.01% per side",
+      "metric": "the portfolio over ALL days: daily return of the combined version (0 on days it did not trade) versus the control version (0 on days without a signal)",
+      "development": "pass if the combined version's mean daily net return > 0 AND (combined - control) mean daily difference has Holm-adjusted p < 0.05",
+      "locked": "pass if combined mean daily net > 0 and the difference > 0 with p < 0.05",
+      "instruments": [
+        "SPY (primary)",
+        "QQQ (replication)"
+      ]
+    },
+    "H5": {
+      "name": "Guidance raise before the open + Stocks in Play + breakout (Codex experiment 3)",
+      "event": "A Benzinga headline (Alpaca news API) published between 16:00 New York of the previous session and 09:30 of the day for the symbol, matching the frozen pattern in news.eventPattern. The pattern's precision is checked first on 40 randomly drawn matches (seed 'round2-1-news'); if fewer than 28 of 40 (70%) are real company guidance raises, H5 and H6 are reported as NOT TESTABLE and count with p = 1. Only articles that tag at most 2 symbols count, and the event symbol must be one of the tagged symbols (multi-company roundups are ignored).",
+      "universe": "S stocks, price > 5, previous-20-day mean dollar volume >= 20,000,000 (H2 eligibility)",
+      "groups": {
+        "EVENT_ONLY": "all event stocks",
+        "VOLUME_ONLY": "the 5 stocks with the highest relVol among the eligible stocks, relVol >= 2",
+        "COMBINED": "event stocks with relVol >= 2, the 5 highest by relVol"
+      },
+      "relVol": "as in H1 but over the previous 20 sessions",
+      "entry": "the opening 5-minute candle must be up; buy at the open of the candle after the first 5-minute candle (not the opening one) that closes above the high of the opening candle, from the candle ending 09:40 up to the one ending 10:30",
+      "stop": "low of the opening 5-minute candle; no partial exit; exit at the close of candle 77",
+      "cost": "0.05% per side",
+      "metric": "mean net R per trade by date; the test statistic is COMBINED minus VOLUME_ONLY (does the event add information?)",
+      "minimum": "at least 100 COMBINED trades, otherwise 'underpowered, not decidable' (p = 1)",
+      "development": "pass if the statistic > 0 with Holm-adjusted p < 0.05 and COMBINED mean net R > 0",
+      "locked": "same conditions"
+    },
+    "H6": {
+      "name": "Second day after a positive event (Codex experiment 4, the advisor's own mechanical version of S. Spencer's idea)",
+      "event": "as in H5 on day t-1",
+      "dayBefore": "on day t-1: close/previous close - 1 >= 5% AND volume >= 2 * mean of the previous 20 sessions AND close in the top quarter of the day's range AND close above the high of day t-2 (that high is the fixed test level L)",
+      "today": "open of day t above L; until the candle ending 11:00 a candle whose low <= L and that closes above L (the test candle); then buy at the open of the candle after the first later candle that closes above the high of the test candle",
+      "stop": "low of the test candle",
+      "target": "high of day t-1; skip the trade if (target - entry) / (entry - stop) < 2; exit at the target or at the close of candle 77",
+      "cost": "0.05% per side",
+      "control": "the identical pattern on stocks that satisfy dayBefore but had NO event headline",
+      "metric": "mean net R per trade by date; statistic = event pattern minus control pattern",
+      "minimum": "at least 100 event trades, otherwise 'underpowered, not decidable' (p = 1)",
+      "development": "pass if the statistic > 0 with Holm-adjusted p < 0.05 and event-pattern mean net R > 0",
+      "locked": "same conditions"
+    }
+  },
+  "news": {
+    "eventPattern": "/\\b(raises?|raised|lifts?|lifted|boosts?|boosted|increases?|increased|hikes?|hiked)\\b[^.]{0,80}\\b(guidance|outlook|forecast)\\b/i OR /\\b(guidance|outlook|forecast)\\b[^.]{0,40}\\b(raised|boosted|lifted|increased)\\b/i, excluded when the headline also matches /(price target|\\bPT\\b|analyst|upgrade|downgrade|rating|initiates|maintains|reiterates)/i",
+    "source": "Alpaca news API (Benzinga), https://data.alpaca.markets/v1beta1/news"
+  },
+  "rateLimitPolicy": "All downloads are local (this computer -> Alpaca). They never touch the TradeSense or FlowsBiz servers. To avoid starving the live app that shares the Alpaca data key: at most 100 requests per minute, nothing during New York market hours on weekdays (09:00-16:30), exponential backoff on HTTP 429.",
+  "statusRule": "A pass means only 'worth a registered next step'. Nothing here changes trading.",
+  "amendments": [
+    {
+      "at": "2026-11-15T05:25:59.897Z",
+      "reason": "Index typo found while writing the analysis code, BEFORE any return was computed: the words 'ending 15:50' and 'starting 15:50' were right, the candle numbers were off by one (candle i starts at 09:30 + 5*i minutes, so the candle ending 15:50 is i=75 and the one starting 15:50 is i=76). The numbers were corrected to match the words.",
+      "previousSha256": "129bb1aca31d1a33d2e599a30aa75bcd4e0b0621c6305c015c45910b8429e7ef"
+    },
+    {
+      "at": "2026-11-15T05:27:46.567Z",
+      "reason": "Clarification written before the news data was downloaded and before any return was computed: articles that tag many symbols are roundups, not a company's own guidance announcement.",
+      "changes": [
+        "H5.event (and therefore H6.event): only articles tagging at most 2 symbols count; the event symbol must be one of them"
+      ],
+      "previousSha256": "99eb7ec5ca84fc1ee9d1a24f40916de3766dd68939eba0c3bd2a8ac540bb67c1"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+data/
+papers/
+*.log
+*.lock
+*.pdf

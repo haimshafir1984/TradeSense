@@ -1,0 +1,405 @@
+{
+  "range": [
+    "2024-05-01",
+    "2026-10-30"
+  ],
+  "locked": true,
+  "H3": {
+    "SPY": {
+      "longOnlyOurCost": {
+        "days": 628,
+        "meanDaily": -0.0001060616888633915,
+        "sharpe": -0.7166166873909059,
+        "maxDrawdown": -0.06750643403859458,
+        "p": 0.901,
+        "concentrationTop5pctDays": null,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.00019995490172883745
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": -0.000022608168805571705
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": -0.0001299632536490115
+          }
+        ],
+        "tradesPerDay": 0.4840764331210191,
+        "grossMeanDaily": -0.000009289332977538227,
+        "breakevenPerSideCost": -0.000009594903141273037
+      },
+      "reproductionLongShortPaperCost": {
+        "days": 628,
+        "meanDaily": 0.00001206524726741273,
+        "sharpe": 0.052944250986692094,
+        "maxDrawdown": -0.08885169295625472,
+        "p": 0.469,
+        "concentrationTop5pctDays": 43.329695114791086,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": 0.00012001377531206439
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": 0.00011311511980887756
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": -0.00019609632868910565
+          }
+        ],
+        "tradesPerDay": 0.9713375796178344,
+        "grossMeanDaily": 0.00002585771180530575,
+        "breakevenPerSideCost": 0.000013310363126009845
+      },
+      "descriptiveLongOnlyOneCandleLater": {
+        "days": 628,
+        "meanDaily": -0.00013520139732348308,
+        "sharpe": -1.0754685001157462,
+        "maxDrawdown": -0.08255179518658251,
+        "p": 0.9805,
+        "concentrationTop5pctDays": null,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.00020464459472238478
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": -0.00013723714155005462
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": -0.00007661366327057745
+          }
+        ],
+        "tradesPerDay": 0.4840764331210191,
+        "grossMeanDaily": -0.000038424958955415886,
+        "breakevenPerSideCost": -0.00003968893786842299
+      },
+      "descriptiveLongOnlyCost2bp": {
+        "days": 628,
+        "meanDaily": -0.00020279892298555985,
+        "sharpe": -1.3552633438686017,
+        "maxDrawdown": -0.12113923547956884,
+        "p": 0.992,
+        "concentrationTop5pctDays": null,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.00029806694071342024
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": -0.00011616394022546395
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": -0.00022939438085166307
+          }
+        ],
+        "tradesPerDay": 0.4840764331210191,
+        "grossMeanDaily": -0.000009289332977538227,
+        "breakevenPerSideCost": -0.000009594903141273037
+      },
+      "controlBuyHoldOpenClose": {
+        "meanDaily": -0.000031399772909813776,
+        "sharpe": -0.06136152383934934,
+        "maxDrawdown": -0.16477097704836208
+      },
+      "controlBuyHold10to16": {
+        "meanDaily": -0.00006015852276808277,
+        "sharpe": -0.1300583621543133,
+        "maxDrawdown": -0.15316545651320856
+      }
+    },
+    "QQQ": {
+      "longOnlyOurCost": {
+        "days": 628,
+        "meanDaily": 0.00011676231638518565,
+        "sharpe": 0.45262240647343543,
+        "maxDrawdown": -0.04339568190783327,
+        "p": 0.2125,
+        "concentrationTop5pctDays": 3.877895466054013,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": 0.000043401846202106196
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": 0.00019840226753209845
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.00007842706123787575
+          }
+        ],
+        "tradesPerDay": 0.4299363057324841,
+        "grossMeanDaily": 0.00020281520657116308,
+        "breakevenPerSideCost": 0.0002358665735679452
+      },
+      "reproductionLongShortPaperCost": {
+        "days": 628,
+        "meanDaily": 0.0004325939497612283,
+        "sharpe": 1.2359906395916067,
+        "maxDrawdown": -0.07085782772330951,
+        "p": 0.01,
+        "concentrationTop5pctDays": 1.8522662766633944,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": 0.0004783115952635421
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": 0.00046430251777292543
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.0003576971837668967
+          }
+        ],
+        "tradesPerDay": 0.9315286624203821,
+        "grossMeanDaily": 0.00044761151287762757,
+        "breakevenPerSideCost": 0.0002402564359719232
+      },
+      "descriptiveLongOnlyOneCandleLater": {
+        "days": 628,
+        "meanDaily": 0.00012169899933618375,
+        "sharpe": 0.4722822796980504,
+        "maxDrawdown": -0.04278643744179211,
+        "p": 0.214,
+        "concentrationTop5pctDays": 3.8153034234787655,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": 0.00001977816355984274
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": 0.00015199400419989572
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.00016787541096428726
+          }
+        ],
+        "tradesPerDay": 0.4299363057324841,
+        "grossMeanDaily": 0.0002077577218142236,
+        "breakevenPerSideCost": 0.00024161453573950448
+      },
+      "descriptiveLongOnlyCost2bp": {
+        "days": 628,
+        "meanDaily": 0.00003073951511336729,
+        "sharpe": 0.1194271790481242,
+        "maxDrawdown": -0.053671565851660774,
+        "p": 0.4375,
+        "concentrationTop5pctDays": 14.311004750784909,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.00004532718790507021
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": 0.00011747891778161845
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": -0.000011507268891163105
+          }
+        ],
+        "tradesPerDay": 0.4299363057324841,
+        "grossMeanDaily": 0.00020281520657116308,
+        "breakevenPerSideCost": 0.0002358665735679452
+      },
+      "controlBuyHoldOpenClose": {
+        "meanDaily": -0.00004302945192804061,
+        "sharpe": -0.06339595764619904,
+        "maxDrawdown": -0.22719006569589362
+      },
+      "controlBuyHold10to16": {
+        "meanDaily": -0.000051516722812330103,
+        "sharpe": -0.08761437165868755,
+        "maxDrawdown": -0.21217154452395037
+      }
+    }
+  },
+  "C2": {
+    "SPY": {
+      "days": 628,
+      "control": {
+        "meanDaily": 0.000024573167757260445,
+        "sharpe": 0.1023647053837473,
+        "tradeDays": 166,
+        "maxDrawdown": -0.06917603028450914,
+        "p": 0.493,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.00021227096738381598
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": 0.0001928914539312707
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.00001475061893113293
+          }
+        ]
+      },
+      "combined": {
+        "meanDaily": -0.00001837764414169228,
+        "sharpe": -0.19969794703978333,
+        "tradeDays": 99,
+        "maxDrawdown": -0.03867553083529163,
+        "p": 0.642,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.00012590216578072468
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": -0.00005134301923763562
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.00010800028854243361
+          }
+        ],
+        "concentrationTop5pctDays": null
+      },
+      "difference": {
+        "meanDaily": -0.000042950811898952725,
+        "p": 0.5605,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": 0.00008636880160309132
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": -0.00024423447316890637
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.00009324966961130068
+          }
+        ]
+      }
+    },
+    "QQQ": {
+      "days": 628,
+      "control": {
+        "meanDaily": 0.00006970868763260945,
+        "sharpe": 0.24090473199996035,
+        "tradeDays": 167,
+        "maxDrawdown": -0.07553919218128091,
+        "p": 0.4145,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.0001600063731591474
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": 0.00020644882800680442
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.00009189438227499302
+          }
+        ]
+      },
+      "combined": {
+        "meanDaily": 0.00001454405845009323,
+        "sharpe": 0.11366562484318064,
+        "tradeDays": 97,
+        "maxDrawdown": -0.03514709250092973,
+        "p": 0.439,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": -0.000027216329841567462
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": -0.00003230769253835497
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.00010435479227020187
+          }
+        ],
+        "concentrationTop5pctDays": 17.417608179186637
+      },
+      "difference": {
+        "meanDaily": -0.000055164629182516216,
+        "p": 0.584,
+        "byYear": [
+          {
+            "year": "2024",
+            "days": 169,
+            "mean": 0.00013279004331757995
+          },
+          {
+            "year": "2025",
+            "days": 250,
+            "mean": -0.0002387565205451594
+          },
+          {
+            "year": "2026",
+            "days": 209,
+            "mean": 0.000012460409995208859
+          }
+        ]
+      }
+    }
+  }
+}

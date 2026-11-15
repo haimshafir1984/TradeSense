@@ -1,0 +1,134 @@
+{
+  "testable": true,
+  "precision": {
+    "real": 40,
+    "matches": 40,
+    "note": "40 seeded random matches read manually; all are genuine guidance raises (no. 3 affirms EPS but raises sales guidance)"
+  },
+  "eventStockDays": 261,
+  "eventWithRv2": 189,
+  "H5": {
+    "groups": {
+      "EVENT_ONLY": {
+        "trades": 71,
+        "dates": 62,
+        "meanGrossR": -0.0031998584001239226,
+        "meanNetR": -0.044491227346104625,
+        "hit": 0.4788732394366197,
+        "byYear": [
+          {
+            "year": "2021",
+            "days": 35,
+            "mean": -0.10252937215535811
+          },
+          {
+            "year": "2022",
+            "days": 14,
+            "mean": -0.057201202585099926
+          },
+          {
+            "year": "2023",
+            "days": 22,
+            "mean": 0.05593035091161387
+          }
+        ]
+      },
+      "VOLUME_ONLY": {
+        "trades": 1125,
+        "dates": 587,
+        "meanGrossR": 0.058806002478484234,
+        "meanNetR": 0.014476490824801869,
+        "hit": 0.4817777777777778,
+        "byYear": [
+          {
+            "year": "2021",
+            "days": 365,
+            "mean": 0.024920597531592363
+          },
+          {
+            "year": "2022",
+            "days": 369,
+            "mean": 0.043597784506442694
+          },
+          {
+            "year": "2023",
+            "days": 391,
+            "mean": -0.0227558782711163
+          }
+        ]
+      },
+      "COMBINED": {
+        "trades": 48,
+        "dates": 42,
+        "meanGrossR": 0.058250854001785764,
+        "meanNetR": 0.024552108371854012,
+        "hit": 0.5416666666666666,
+        "byYear": [
+          {
+            "year": "2021",
+            "days": 19,
+            "mean": 0.014938828372294514
+          },
+          {
+            "year": "2022",
+            "days": 10,
+            "mean": 0.09860656151326486
+          },
+          {
+            "year": "2023",
+            "days": 19,
+            "mean": -0.00481063959775006
+          }
+        ]
+      }
+    },
+    "statistic": {
+      "combinedMinusVolumeOnly": 0.010075617547052143,
+      "p": 1,
+      "underpowered": true
+    },
+    "p": 1
+  },
+  "H6": {
+    "groups": {
+      "event": {
+        "trades": 0,
+        "dates": 0,
+        "meanGrossR": null,
+        "meanNetR": null,
+        "hit": 0,
+        "byYear": []
+      },
+      "control": {
+        "trades": 39,
+        "dates": 34,
+        "meanGrossR": -0.070456359582255,
+        "meanNetR": -0.16149893442603883,
+        "hit": 0.3076923076923077,
+        "byYear": [
+          {
+            "year": "2021",
+            "days": 13,
+            "mean": -0.7871632145805111
+          },
+          {
+            "year": "2022",
+            "days": 16,
+            "mean": 0.005433082748765125
+          },
+          {
+            "year": "2023",
+            "days": 10,
+            "mean": 0.38477340229508894
+          }
+        ]
+      }
+    },
+    "statistic": {
+      "eventMinusControl": null,
+      "p": 1,
+      "underpowered": true
+    },
+    "p": 1
+  }
+}
