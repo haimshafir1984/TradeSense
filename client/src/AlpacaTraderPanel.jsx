@@ -86,7 +86,7 @@ function toPayload(f) {
 const STRATEGY_LABEL = {
   orb15: "פריצת טווח פתיחה", orb15_retest: "פריצה ובדיקה חוזרת", vwap_reclaim: "חזרה מעל VWAP",
   vwap_pullback: "תיקון ל-VWAP", reversal5: "התאוששות קצרה", pullback2_v1: "תיקון יומיים",
-  breakout20_v1: "פריצת שיא 20 יום",
+  breakout20_v1: "פריצת שיא 20 יום", cameron_gap: "גאפ וריצה (קמרון, צל)", minervini_trend: "מגמה ופריצה (מינרוויני, צל)",
 };
 
 export default function AlpacaTraderPanel({ alpacaApi, busy, onNotice, onError }) {

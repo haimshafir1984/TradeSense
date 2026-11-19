@@ -1077,3 +1077,36 @@ test("hold: update writes each finished record once, leaves today's and open rec
     cleanup();
   }
 });
+
+test("style shadow: Cameron gap-and-go and Minervini trend breakout are recognised, and stale or non-matching data are not", () => {
+  const style = require("../src/alpaca-trader/styleShadow");
+  const open = Date.parse("2026-11-16T14:30:00Z"); // 09:30 New York
+  const session = { open, close: open + 390 * 60000 };
+  const bar = (i, o, h, l, c, v = 100000) => ({ t: new Date(open + i * 300000).toISOString(), o, h, l, c, v });
+  // Cameron: prior close 5.00, opens at 5.40 (+8%), green first candle high 5.50, third candle closes 5.60 (first close above)
+  const bars = [bar(0, 5.4, 5.5, 5.38, 5.48), bar(1, 5.48, 5.52, 5.45, 5.5), bar(2, 5.5, 5.62, 5.49, 5.6)];
+  const boundary = open + 3 * 300000;
+  const daily = { price: 5, ma50: 4, ma200: 3, ma50Slope: 0.02, high52w: 6, low52w: 2.5, high20d: 5.2 };
+  const plans = style.evaluate({ bars, session, barBoundary: boundary, daily, rvol: 2.5 });
+  const cam = plans.find((p) => p.strategy === "cameron_gap");
+  assert.ok(cam, "gap-and-go matched");
+  assert.equal(cam.entry, 5.6);
+  assert.equal(cam.stop, 5.38);
+  assert.ok(Math.abs(cam.target - (5.6 + 2 * (5.6 - 5.38))) < 1e-9, "target is 2R");
+  assert.equal(plans.find((p) => p.strategy === "minervini_trend"), undefined, "price 5 is below the $10 floor of the Minervini style");
+
+  assert.deepEqual(style.evaluate({ bars, session, barBoundary: boundary + 300000, daily, rvol: 2.5 }), [], "stale: the newest closed candle is not the latest boundary");
+  assert.equal(style.evaluate({ bars, session, barBoundary: boundary, daily, rvol: 1.5 }).find((p) => p.strategy === "cameron_gap"), undefined, "relative volume below 2");
+  assert.equal(style.evaluate({ bars, session, barBoundary: boundary, daily: { ...daily, price: 5.3 }, rvol: 2.5 }).find((p) => p.strategy === "cameron_gap"), undefined, "gap below 5%");
+
+  // Minervini: $40 stock in a stage-2 trend, first close above the 20-day high of 41 on rvol 2, 20 minutes into the session
+  const mDaily = { price: 40, ma50: 38, ma200: 30, ma50Slope: 0.03, high52w: 44, low52w: 25, high20d: 41 };
+  const mBars = [bar(0, 40.2, 40.5, 40, 40.4), bar(1, 40.4, 40.8, 40.3, 40.7), bar(2, 40.7, 40.9, 40.5, 40.8), bar(3, 40.8, 41.6, 40.8, 41.5)];
+  const hit = style.evaluate({ bars: mBars, session, barBoundary: open + 4 * 300000, daily: mDaily, rvol: 2 }).find((p) => p.strategy === "minervini_trend");
+  assert.ok(hit, "trend breakout matched");
+  assert.ok(Math.abs(hit.stop - 41.5 * 0.93) < 1e-9 && Math.abs(hit.target - (41.5 + 2 * (41.5 - 41.5 * 0.93))) < 1e-9, "7% stop and 2R target");
+  assert.equal(style.evaluate({ bars: [bar(0, 40.2, 41.6, 40, 41.5)], session, barBoundary: open + 300000, daily: mDaily, rvol: 2 }).find((p) => p.strategy === "minervini_trend"), undefined, "first 15 minutes of the session are skipped");
+  const again = [...mBars, bar(4, 41.5, 41.7, 41.4, 41.6)];
+  assert.equal(style.evaluate({ bars: again, session, barBoundary: open + 5 * 300000, daily: mDaily, rvol: 2 }).find((p) => p.strategy === "minervini_trend"), undefined, "an earlier candle already closed above the level: not the first close");
+  assert.equal(style.evaluate({ bars: mBars, session, barBoundary: open + 4 * 300000, daily: { ...mDaily, ma50Slope: -0.01 }, rvol: 2 }).find((p) => p.strategy === "minervini_trend"), undefined, "falling 50-day average");
+});

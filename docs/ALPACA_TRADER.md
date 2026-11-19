@@ -58,6 +58,7 @@ server/src/alpaca-trader/
   shadow.js     תיוג בצל של כל איתות + סיכום + CSV (מסלול יום מלא נכתב פעם אחת בסגירה)
   session.js    שעות מסחר אמיתיות מהלוח של Alpaca (יום מקוצר, חג); נפילה לשעות קבועות אם הלוח לא זמין
   hold.js       מעקב רב-יומי לאיתותי בצל (עד 5 ימי מסחר, אותו סטופ ויעד; נרות יומיים SIP; נכתב פעם אחת לכל איתות; ALPACA_TRADER_HOLD=off מכבה)
+  styleShadow.js  איתותי בצל בלבד בסגנון שני סוחרים: cameron_gap (גאפ 5%+, מחיר 2-20$, rvol 2+, פריצת נר ראשון בשעה הראשונה, סטופ לנמוך הנר) ו-minervini_trend (חלק מתבנית המגמה: מעל MA50 ו-MA200, MA50 עולה, 30% מעל שפל שנתי, עד 25% מתחת לשיא, סגירה ראשונה מעל שיא 20 יום, סטופ 7%). לא ב-settings.strategies ולכן אף פעם לא נקנים; נרשמים בצל ובמעקב 5 הימים. אין פרה-מרקט ואין float.
   news.js       תיוג כותרת הנפקה/דילול לכל איתות בצל (איסוף נתונים בלבד; ALPACA_TRADER_NEWS=off מכבה)
   fundFilter.js סינון קרנות ממונפות/ETF לפי שם: לא נסחרות, כן מתויגות בבצל (features.fundLike)
 server/src/routes/alpacaTrader.js   /status, /settings (PATCH), /notify (PUT), /shadow-export

@@ -13,6 +13,7 @@ const universe = require("./universe");
 const entry = require("./entry");
 const shadow = require("./shadow");
 const news = require("./news");
+const styleShadow = require("./styleShadow");
 
 const INTRADAY_BATCH = 20;
 
@@ -101,6 +102,11 @@ async function run(profile, now = Date.now()) {
         for (const plan of plans) {
           const isNew = shadow.recordSignal({ plan, symbol, daily, rvol, session, now: barBoundary, fundLike: fundLike.has(symbol), universeRank: rankOf.get(symbol), plansThisBar: plans.length });
           // data collection only, fire-and-forget: never awaited, never affects the scan
+          if (isNew) news.tag({ symbol, now, onResult: (info) => shadow.annotateNews(`${nyDate(barBoundary)}:${symbol}:${plan.strategy}`, info) });
+        }
+        // Style-shadow strategies (Cameron / Minervini): recorded only, never passed to entry.js (not in profile.strategies).
+        for (const plan of styleShadow.evaluate({ bars, session, barBoundary, daily, rvol })) {
+          const isNew = shadow.recordSignal({ plan, symbol, daily, rvol, session, now: barBoundary, fundLike: fundLike.has(symbol), universeRank: rankOf.get(symbol), plansThisBar: plans.length });
           if (isNew) news.tag({ symbol, now, onResult: (info) => shadow.annotateNews(`${nyDate(barBoundary)}:${symbol}:${plan.strategy}`, info) });
         }
         shadow.update(symbol, bars, now);
