@@ -1,0 +1,24 @@
+{
+  "id": "cameron-1",
+  "purpose": "Ross Cameron style gap-and-go: does a gapping small-cap that breaks its first 5-minute high in the first hour have a net edge? Same rule as the live shadow signal cameron_gap.",
+  "data": "Local 5-minute SIP candles (regular hours) and daily bars of the 400-stock sample S of research/round2 (data/m5, data/daily_S.json). Development period only; the locked period is not downloaded unless the hypothesis passes.",
+  "periods": { "development": ["2021-01-01", "2023-12-31"], "locked": ["2024-01-01", "2026-10-30"] },
+  "limits": "No premarket data (gap = first 5-minute open vs previous daily close), no float, no news filter. The sample is 400 random stocks, so the number of gappers per day is small.",
+  "signal": {
+    "gap": "open of the first 5-minute candle / previous daily close - 1 >= +5%",
+    "price": "close of the signal candle between 2 and 20 USD",
+    "relativeVolume": "cumulative volume since the open / (mean daily volume of the previous 20 sessions x elapsed minutes / 390) >= 2",
+    "firstCandle": "green (close > open)",
+    "trigger": "first closed 5-minute candle (candle index 1..11, i.e. 10 to 60 minutes after the open) whose close is above the high of the first candle; no earlier candle closed above it",
+    "stop": "low of the first candle; skipped when the stop is more than 8% below the signal close",
+    "target": "signal close + 2 x risk",
+    "entry": "open of the candle after the signal candle",
+    "exit": "stop, target, or the last candle's close (stop wins when one candle touches both; a candle opening beyond the level exits at its open)"
+  },
+  "costs": { "primaryPerSide": 0.0015, "sensitivityPerSide": [0.0005, 0.003] },
+  "control": "same rule but with an absolute gap below 1% (no gap), same price and relative-volume filters",
+  "statistic": { "primary": "mean net R of the gap group, per-date means, one-sided date-block bootstrap p (blocks of 20 dates, 2000 resamples) for mean <= 0", "secondary": "gap group minus control, date-matched, same bootstrap" },
+  "passRule": "primary p < 0.05 AND mean net R > 0 AND at least 100 trades AND at least 2 of 3 calendar years with positive mean net R AND excess over control > 0",
+  "report": ["trades", "dates", "gross R", "net R", "hit rate", "breakeven cost per side", "max drawdown of cumulative per-date mean R", "concentration in the best 5% of dates", "by year", "worst trade R", "share of trades stopped on the entry candle", "control results"],
+  "noTuning": "Thresholds are fixed now and not varied after the results."
+}
