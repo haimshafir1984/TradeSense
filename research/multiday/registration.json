@@ -1,0 +1,10 @@
+{
+  "at": "2026-11-19T07:20:01.152Z",
+  "note": "Local preregistration. Hash frozen BEFORE any return was computed.",
+  "files": {
+    "protocol.json": {
+      "sha256": "5d97710f090ae91cb5116ade8ec22a855ded24256e0dfcdf7bb338a2545d4427",
+      "bytes": 3287
+    }
+  }
+}

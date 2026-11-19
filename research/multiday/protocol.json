@@ -1,0 +1,18 @@
+{
+  "id": "multiday-1",
+  "purpose": "Does holding a signalled stock for 5 trading days (instead of closing it the same day) show a net edge on an Alpaca-like universe? Historical, daily bars only, local, long-only.",
+  "data": "Daily bars (SIP) already downloaded by research/round2 step1 for the whole pool incl. delisted symbols, 2020-11-02..2023-12-29. No new downloads in the development phase.",
+  "periods": { "development": ["2021-01-01", "2023-12-31"], "locked": ["2024-01-01", "2026-10-30"], "rule": "The locked period is not downloaded or analysed unless a hypothesis passes development (gated in code)." },
+  "universe": { "mimics": "alpaca-trader defaults", "minPrice": 3, "adv20Range": [3000000, 150000000], "advDefinition": "mean(close*volume) of the 20 sessions ending at signal day t", "pickTop": 150, "pickBy": "mean((high-low)/close) over the 20 sessions ending at t (highest first)" },
+  "execution": { "signalAt": "close of day t", "entry": "open of day t+1", "exitPrimary": "close of day t+5 (five sessions held)", "exitDescriptive": ["close of t+1", "close of t+3"], "stop": "none (daily bars cannot prove intraday stop order); a separate descriptive line reports a -1 x ATR-free worst-case via the worst single trade", "side": "long only", "missingBars": "if any session t+1..t+5 is missing or more than 10 calendar days away, the trade is censored and counted" },
+  "costs": { "primaryRoundTrip": 0.003, "sensitivityRoundTrip": [0.001, 0.005], "note": "0.15% per side primary; Alpaca measured average slippage was +0.13% in the live paper arm." },
+  "hypotheses": {
+    "M1": { "name": "continuation after a strong volume day", "rule": "return(t) >= +8%, volume(t) >= 2 x mean volume of the previous 20 sessions, close in the top quarter of the day's range", "rank": "volume ratio, highest first", "maxPerDay": 5 },
+    "M2": { "name": "short-term reversal after a sharp drop", "rule": "return(t) <= -8%, volume(t) >= 2 x mean volume of the previous 20 sessions", "rank": "largest drop first", "maxPerDay": 5 },
+    "M3": { "name": "20-day high breakout", "rule": "close(t) > max high of the previous 20 sessions, volume(t) >= 1.5 x mean volume of the previous 20 sessions, return(t) >= +3%", "rank": "volume ratio, highest first", "maxPerDay": 5 }
+  },
+  "control": "per day, up to 5 random stocks from the same top-150 universe (seeded sha256 order), same entry and exit",
+  "inference": { "statistic": "mean over dates of (picks mean net return - control mean net return), dates with both groups", "test": "date-block circular bootstrap, blocks of 20 dates, 2000 resamples, one-sided p for mean <= 0", "correction": "Holm over M1, M2, M3", "passRule": "Holm p < 0.05 AND excess > 0 AND absolute net mean > 0 AND at least 100 trades AND at least 2 of 3 calendar years with positive net mean" },
+  "report": ["trades", "dates", "gross mean", "net mean", "control net mean", "excess", "p", "hit rate", "breakeven round-trip cost", "max drawdown of the per-date mean curve", "concentration of profit in the best 5% of dates", "by year", "share of entries with an opening gap above +10% vs the signal close", "worst single trade", "censored count"],
+  "noTuning": "Thresholds, horizon and costs above are fixed now. No threshold is varied after seeing results."
+}
