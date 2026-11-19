@@ -1,0 +1,19 @@
+{
+  "id": "multiday-large-1",
+  "purpose": "Same 5-day holding question as multiday-1, but on LARGER, more liquid stocks (above the Alpaca small/mid-cap liquidity cap). Historical, daily bars, local, long-only, development period only.",
+  "data": "Same local daily bars as multiday-1 (research/round2/data/daily, incl. delisted symbols). No new downloads.",
+  "periods": { "development": ["2021-01-01", "2023-12-31"], "locked": ["2024-01-01", "2026-10-30"], "rule": "The locked period is not downloaded or analysed unless a hypothesis passes development." },
+  "universe": { "minPrice": 10, "adv20Min": 150000000, "advDefinition": "mean(close*volume) of the 20 sessions ending at signal day t", "pick": "all eligible stocks (no volatility ranking, there are only a few hundred per day)" },
+  "execution": { "signalAt": "close of day t", "entry": "open of day t+1", "exitPrimary": "close of day t+5", "exitDescriptive": ["close of t+1", "close of t+3"], "stop": "none", "side": "long only", "missingBars": "censored and counted; delisted symbols exit at last available close" },
+  "costs": { "primaryRoundTrip": 0.001, "sensitivityRoundTrip": [0.0005, 0.003], "note": "Large liquid stocks: 0.05% per side primary (spread plus slippage)." },
+  "hypotheses": {
+    "M1": { "name": "continuation after a strong volume day", "rule": "return(t) >= +4%, volume(t) >= 2 x mean volume of the previous 20 sessions, close in the top quarter of the day's range", "rank": "volume ratio, highest first", "maxPerDay": 5 },
+    "M2": { "name": "short-term reversal after a sharp drop", "rule": "return(t) <= -4%, volume(t) >= 2 x mean volume of the previous 20 sessions", "rank": "largest drop first", "maxPerDay": 5 },
+    "M3": { "name": "20-day high breakout", "rule": "close(t) > max high of the previous 20 sessions, volume(t) >= 1.5 x mean volume of the previous 20 sessions, return(t) >= +1.5%", "rank": "volume ratio, highest first", "maxPerDay": 5 }
+  },
+  "thresholdNote": "Thresholds are the multiday-1 thresholds halved (8% -> 4%, 3% -> 1.5%) because large stocks move less. Fixed now, not varied after results. The original multiday-1 thresholds are run as a descriptive line only and do not enter the tests.",
+  "control": "per day, 5 random stocks from the same universe (seeded sha256 order), same entry and exit",
+  "inference": { "statistic": "mean over dates of (picks mean net return - control mean net return)", "test": "date-block circular bootstrap, blocks of 20 dates, 2000 resamples, one-sided p for mean <= 0", "correction": "Holm over M1, M2, M3", "passRule": "Holm p < 0.05 AND excess > 0 AND absolute net mean > 0 AND at least 100 trades AND at least 2 of 3 calendar years with positive net mean" },
+  "report": ["trades", "dates", "gross", "net", "control net", "excess", "p", "hit rate", "breakeven round-trip cost", "max drawdown", "concentration", "by year", "entries gapping above +10%", "worst trade", "censored"],
+  "noTuning": "Nothing above is varied after seeing results."
+}
