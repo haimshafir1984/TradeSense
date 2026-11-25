@@ -1,0 +1,22 @@
+{
+  "id": "momentum-1",
+  "purpose": "Monthly cross-sectional momentum with a volatility filter on liquid US stocks (idea proposed independently by two external reviewers). Last planned search for an edge under the current constraints: long only, free daily data.",
+  "data": "Alpaca SIP daily bars, adjustment=all (splits and dividends), active and inactive common stocks (research/round2/data/pool.json) plus SPY. The locked period is NOT downloaded unless development passes (gated in code).",
+  "periods": { "warmupFrom": "2016-01-01", "development": ["2017-02", "2021-12"], "locked": ["2022-01", "2026-10"] },
+  "universe": {
+    "history": "at least 253 daily bars up to the signal day, and a bar on the signal day",
+    "liquidity": "mean close x volume over the previous 63 sessions >= 20,000,000 USD",
+    "priceFilter": "none (a price floor on split-adjusted history would look ahead at later splits)",
+    "funds": "names classified fundLike by server/src/alpaca-trader/fundFilter.js are excluded"
+  },
+  "signal": { "when": "close of the last session of each month", "volatilityFilter": "drop the 20% with the highest standard deviation of daily returns over 126 sessions", "rank": "close[t-21] / close[t-252] - 1, highest first", "holdings": 20, "weights": "equal" },
+  "execution": { "entry": "open of the first session of the next month", "exit": "open of the first session of the month after", "delisting": "a stock whose bars end during the holding month exits at its last close", "side": "long only, no leverage, no stops" },
+  "costs": { "primaryPerSide": 0.001, "appliedTo": "the fraction of names replaced each month (sell old plus buy new)", "sensitivityPerSide": [0.0025] },
+  "benchmarks": { "spy": "SPY open-to-open over the same months", "universe": "equal weight of all stocks that pass the universe and volatility filters (the expected result of a random pick), no costs" },
+  "passRuleDevelopment": "ALL of: mean monthly net excess over SPY > 0 with one-sided circular block bootstrap p < 0.10 (blocks of 6 months, 5000 resamples); mean monthly net excess over the universe > 0; annualised Sharpe above SPY's; maximum drawdown no worse than 1.25 times SPY's; beats SPY in at least 3 of the calendar years",
+  "passRuleLocked": "mean monthly net excess over SPY > 0, excess over the universe > 0, and Sharpe above SPY's",
+  "power": "About 59 development months. With a monthly tracking error near 5% only an excess of roughly 0.8% per month or more can reach p < 0.10. A fail is therefore 'not shown', not 'proven absent'.",
+  "descriptiveOnly": ["costs 0.25% per side", "50 holdings instead of 20", "delisting haircut of -30% on exits caused by the bars ending"],
+  "stopRule": "If development fails, the recommendation is to stop searching for an edge under the current constraints. No parameter is changed after results.",
+  "knownBiases": "Alpaca's coverage of delisted symbols is partial, which flatters long-only results; the share of inactive symbols with data is reported."
+}

@@ -1,0 +1,100 @@
+{
+  "period": [
+    "2017-02",
+    "2021-12"
+  ],
+  "coverage": {
+    "active": 2322,
+    "inactive": 408
+  },
+  "months": 59,
+  "avgEligible": 363,
+  "avgTurnover": 0.41610169491525417,
+  "strategy": {
+    "cagr": 0.15771822137119118,
+    "sharpe": 0.6921039677074818,
+    "maxDrawdown": -0.3036042161839043,
+    "monthly": 0.015047441333704966,
+    "grossMonthly": 0.015862695570993093
+  },
+  "spy": {
+    "cagr": 0.18141600761577803,
+    "sharpe": 1.0569887900068233,
+    "maxDrawdown": -0.22905122888125917,
+    "monthly": 0.015237332024001998
+  },
+  "universe": {
+    "cagr": 0.16820429177287832,
+    "sharpe": 0.8701005154739356,
+    "maxDrawdown": -0.28281939724279026,
+    "monthly": 0.014783143972336784
+  },
+  "excessVsSpy": -0.00018989069029703987,
+  "pVsSpy": 0.5206,
+  "excessVsUniverse": 0.0002642973613681689,
+  "pVsUniverse": 0.472,
+  "trackingErrorMonthly": 0.04931979730940904,
+  "excessVsSpyWithoutBest3Months": -0.005943190195306282,
+  "byYear": [
+    {
+      "year": "2017",
+      "strategy": 0.2234517855458622,
+      "spy": 0.19624270119319664,
+      "universe": 0.18992928450078916
+    },
+    {
+      "year": "2018",
+      "strategy": -0.14202376863294675,
+      "spy": -0.06837860780984706,
+      "universe": -0.0867277704359033
+    },
+    {
+      "year": "2019",
+      "strategy": 0.2737855850995523,
+      "spy": 0.3402432912661173,
+      "universe": 0.34051074998661
+    },
+    {
+      "year": "2020",
+      "strategy": 0.74274489659367,
+      "spy": 0.18166366386783128,
+      "universe": 0.2929985600621232
+    },
+    {
+      "year": "2021",
+      "strategy": -0.11829797291651922,
+      "spy": 0.2860101838267026,
+      "universe": 0.1401911706480079
+    }
+  ],
+  "yearsBeatingSpy": 2,
+  "descriptive": {
+    "cost025": {
+      "netMonthly": 0.013824559977772752,
+      "sharpe": 0.6361749463440376,
+      "excessVsSpy": -0.001412772046229245,
+      "excessVsUniverse": -0.0009585839945640353
+    },
+    "holdings50": {
+      "netMonthly": 0.014977800698377966,
+      "sharpe": 0.7892177551419028,
+      "excessVsSpy": -0.0002595313256240296,
+      "excessVsUniverse": 0.00019465672604117843
+    },
+    "delistHaircut30": {
+      "netMonthly": 0.014072484095652584,
+      "sharpe": 0.6456476711073903,
+      "excessVsSpy": -0.0011648479283494185,
+      "excessVsUniverse": -0.0001921744501052332
+    }
+  },
+  "checks": {
+    "excessSpy": false,
+    "p": false,
+    "excessUniverse": true,
+    "sharpe": false,
+    "drawdown": false,
+    "years": false
+  },
+  "pass": false
+}
