@@ -737,6 +737,28 @@ test("engine: the entry is a limit order capped above the signal price; an unfil
     const limits = [];
     broker.placeLimitOrder = async (order) => { limits.push(order); return { id: "ord-1", status: "accepted" }; };
 
+    // the price already fell to the stop (or below) while the decision window was open: nothing is sent at all
+    const alpaca = require("../src/providers/alpacaService");
+    const originalSnapshots = alpaca.getSnapshots;
+    let latest = 9.5;
+    alpaca.getSnapshots = async ({ symbols }) => new Map([[symbols[0], { latestTrade: { p: latest } }]]);
+    try {
+      await assert.rejects(() => engine.placeOrder("DOWN", 100, signal, profile), (error) => error.code === "below_stop");
+      latest = 9.4;
+      await assert.rejects(() => engine.placeOrder("DOWN", 100, signal, { limitEntryEnabled: false }), (error) => error.code === "below_stop", "market orders are guarded too");
+      assert.equal(limits.length, 0, "no order was sent");
+      assert.equal(exitManager.plans().length, 0, "and no exit plan was recorded");
+      latest = 9.51;
+      broker.getOrder = async () => ({ id: "ord-1", status: "canceled", filled_qty: "0", filled_avg_price: null });
+      await assert.rejects(() => engine.placeOrder("ABOVE", 100, signal, profile), (error) => error.code === "price_too_far");
+      assert.equal(limits.length, 1, "just above the stop the order is sent");
+      limits.length = 0;
+      alpaca.getSnapshots = async () => { throw new Error("data down"); };
+      await assert.rejects(() => engine.placeOrder("NODATA", 100, signal, profile), (error) => error.code === "price_too_far");
+      assert.equal(limits.length, 1, "without a latest price the order goes ahead as before");
+      limits.length = 0;
+      alpaca.getSnapshots = async () => new Map();
+
     broker.getOrder = async () => ({ id: "ord-1", status: "filled", filled_qty: "100", filled_avg_price: "10.04" });
     const filled = await engine.placeOrder("FILL", 100, signal, profile);
     assert.deepEqual(limits[0], { symbol: "FILL", qty: 100, side: "buy", limitPrice: 10.08, timeInForce: "ioc" }, "limit = 10 * 1.0075 rounded to the cent");
@@ -755,6 +777,9 @@ test("engine: the entry is a limit order capped above the signal price; an unfil
     broker.placeMarketOrder = async (order) => { market = order; return { id: "m1" }; };
     await engine.placeOrder("MKT", 5, signal, { limitEntryEnabled: false });
     assert.deepEqual(market, { symbol: "MKT", qty: 5, side: "buy" });
+    } finally {
+      alpaca.getSnapshots = originalSnapshots;
+    }
   } finally {
     cleanup();
   }

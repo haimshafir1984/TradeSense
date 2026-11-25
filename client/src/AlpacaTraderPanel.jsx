@@ -18,7 +18,7 @@ const OUTCOME_LABEL = { entered: "נכנסנו", skipped: "דילגנו" };
 const REASON_LABEL = {
   score_low: "ציון נמוך מהסף", signals_expired: "האיתותים פגו", size_too_small: "כמות קטנה מדי",
   disabled: "המסחר כבוי", daily_loss_breached: "הפסד יומי חרג", account_unavailable: "אין חיבור לחשבון",
-  symbol_busy: "כבר יש פוזיציה/הזמנה", not_configured: "המפתחות לא מוגדרים", price_too_far: "המחיר ברח מעל התקרה", max_positions: "הגעת למספר הפוזיציות המרבי", place_failed: "ההזמנה נכשלה",
+  symbol_busy: "כבר יש פוזיציה/הזמנה", not_configured: "המפתחות לא מוגדרים", price_too_far: "המחיר ברח מעל התקרה", below_stop: "המחיר כבר ירד לסטופ",max_positions: "הגעת למספר הפוזיציות המרבי", place_failed: "ההזמנה נכשלה",
 };
 const SCAN_REASON_LABEL = {
   intraday_missing: "אין נר טרי", trigger_not_met: "הטריגר לא התקיים", rvol_below_threshold: "נפח יחסי נמוך", opening_range_incomplete: "טווח הפתיחה לא שלם",

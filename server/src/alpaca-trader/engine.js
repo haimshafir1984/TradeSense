@@ -6,6 +6,7 @@ const scan = require("./scan");
 const entry = require("./entry");
 const exitManager = require("./exit");
 const calendar = require("./session");
+const alpaca = require("../providers/alpacaService");
 
 const KIND = "alpacaTrader";
 const STATE_KEY = "state";
@@ -85,7 +86,28 @@ async function confirmFill(order) {
   return { qty: Number(current?.filled_qty) || 0, price: Number(current?.filled_avg_price) || null, status: current?.status || null };
 }
 
+// The decision comes minutes after the signal candle, and a limit order only caps the price from above. If the price has
+// meanwhile fallen to the stop or below, the setup is already broken: buying it only to be stopped out (2026-11-18: SHAZ and
+// CLRO were bought under their stops). Nothing is bought then. When the latest price cannot be read, the order goes ahead as
+// before (the exit loop still protects the position); the IEX latest trade can lag, so this narrows the gap, not closes it.
+async function assertAboveStop(symbol, stop) {
+  if (!(Number(stop) > 0)) return;
+  let latest = null;
+  try {
+    const snapshots = await alpaca.getSnapshots({ symbols: [symbol], priority: "monitor" });
+    latest = Number(snapshots.get(symbol)?.latestTrade?.p);
+  } catch (error) {
+    console.warn(`[alpaca-trader] latest price unavailable for ${symbol}: ${error.message}`);
+  }
+  if (latest > 0 && latest <= Number(stop)) {
+    const error = new Error(`המחיר (${latest}) כבר בסטופ או מתחתיו (${stop}); לא נקנה`);
+    error.code = "below_stop";
+    throw error;
+  }
+}
+
 async function placeOrder(symbol, shares, signal, profile = settings.read()) {
+  await assertAboveStop(symbol, signal.stop);
   const planned = Number(signal.entry);
   if (profile.limitEntryEnabled && planned > 0) {
     const limitPrice = roundPrice(planned * (1 + Number(profile.maxSlippagePct) / 100));
